@@ -1,11 +1,18 @@
 FROM golang:1.25-alpine
 
+# Base image for development
 WORKDIR /app
 
-ENV GOBIN=/go/bin
+# Install Git and Air for live reload during development
+RUN apk add --no-cache git \
+    && go install github.com/cosmtrek/air@latest
 
-# Install Air once at build time
-RUN go install github.com/air-verse/air@latest
+# Copy dependency files first to leverage Docker layer caching
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Default command runs Air with service config
+# Copy the entire codebase
+COPY . .
+
+# Start Air with the provided configuration
 CMD ["air", "-c", ".air.toml"]
