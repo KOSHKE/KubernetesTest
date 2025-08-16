@@ -14,12 +14,12 @@ func NewPassword(plainPassword string) (Password, error) {
 	if len(plainPassword) < 6 {
 		return Password{}, fmt.Errorf("password must be at least 6 characters long")
 	}
-	
+
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return Password{}, fmt.Errorf("failed to hash password: %w", err)
 	}
-	
+
 	return Password{hashedValue: string(hashedBytes)}, nil
 }
 

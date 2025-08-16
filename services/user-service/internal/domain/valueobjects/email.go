@@ -14,15 +14,15 @@ var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]
 
 func NewEmail(email string) (Email, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	
+
 	if email == "" {
 		return Email{}, fmt.Errorf("email cannot be empty")
 	}
-	
+
 	if !emailRegex.MatchString(email) {
 		return Email{}, fmt.Errorf("invalid email format")
 	}
-	
+
 	return Email{value: email}, nil
 }
 

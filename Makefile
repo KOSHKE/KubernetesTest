@@ -1,6 +1,6 @@
 # Makefile for Microservices Order System (dev only)
 
-.PHONY: help proto proto-clean dev-up dev-rebuild dev-down
+.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -29,3 +29,12 @@ dev-rebuild: ## Rebuild images and start dev environment with Air (one-off)
 dev-down: ## Stop local development environment
 	@echo "Stopping development environment..."
 	docker compose down
+
+fmt: ## Run gofmt locally across all Go services (requires local Go toolchain)
+	@echo "Formatting Go code locally with go fmt..."
+	@echo "(Ensure Go is installed and available in PATH)"
+	cd services/api-gateway && go fmt ./...
+	cd services/user-service && go fmt ./...
+	cd services/order-service && go fmt ./...
+	cd services/inventory-service && go fmt ./...
+	cd services/payment-service && go fmt ./...
