@@ -1,0 +1,27 @@
+# VCS
+.git
+
+# Node projects under repo root
+frontend/node_modules
+frontend/.next
+frontend/build
+frontend/dist
+frontend/coverage
+frontend/.cache
+
+# Common junk
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+**/.cache
+**/tmp
+**/temp
+**/.env.local
+
+# Go build outputs (if any)
+**/bin
+**/out
+**/dist
+
+# Do NOT ignore proto-go (used by service builds)
+# proto-go

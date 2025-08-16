@@ -1,0 +1,45 @@
+# VCS
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# OS junk
+**/.DS_Store
+**/Thumbs.db
+
+# Logs & temp
+**/*.log
+**/*.tmp
+**/*.swp
+**/*.swo
+**/*.bak
+/tmp/
+.temp/
+.cache/
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.cache/
+
+# Go build/test artifacts
+bin/
+build/
+out/
+**/bin/
+**/build/
+**/out/
+**/coverage.out
+**/coverage*/
+
+# Env/secrets (avoid indexing)
+.env
+.env.*
+
+# Docker local artifacts
+**/.docker-cache/

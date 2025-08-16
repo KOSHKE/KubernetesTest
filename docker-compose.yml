@@ -1,0 +1,160 @@
+services:
+  # Infrastructure
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Go services with Air (hot reload)
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    working_dir: /app/services/api-gateway
+    volumes:
+      - .:/app
+      - air_cache_api:/root/.cache
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - FRONTEND_ORIGINS=${FRONTEND_ORIGINS}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - ORDER_SERVICE_URL=${ORDER_SERVICE_URL}
+      - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL}
+      - PAYMENT_SERVICE_URL=${PAYMENT_SERVICE_URL}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user-service
+      - order-service
+      - inventory-service
+      - payment-service
+
+  user-service:
+    build:
+      context: ./services/user-service
+    working_dir: /app/services/user-service
+    volumes:
+      - .:/app
+      - air_cache_user:/root/.cache
+    environment:
+      - HTTP_PORT=${USER_SERVICE_HTTP_PORT}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  order-service:
+    build:
+      context: ./services/order-service
+    working_dir: /app/services/order-service
+    volumes:
+      - .:/app
+      - air_cache_order:/root/.cache
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - "50052:50052"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+    working_dir: /app/services/inventory-service
+    volumes:
+      - .:/app
+      - air_cache_inventory:/root/.cache
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - "50053:50053"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+    working_dir: /app/services/payment-service
+    volumes:
+      - .:/app
+      - air_cache_payment:/root/.cache
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=${REDIS_URL}
+    ports:
+      - "50054:50054"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Frontend (Vite dev server)
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    command: sh -c "if [ -f package-lock.json ]; then npm ci --no-audit --no-fund --legacy-peer-deps; else npm install --no-audit --no-fund --legacy-peer-deps; fi && npm run dev"
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:
+  air_cache_api:
+  air_cache_user:
+  air_cache_order:
+  air_cache_payment:
+  air_cache_inventory:
