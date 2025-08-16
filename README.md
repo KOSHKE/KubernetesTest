@@ -43,6 +43,11 @@ make proto-clean  # clean generated protobuf stubs
 make dev-up       # start dev environment (no rebuild)
 make dev-rebuild  # rebuild images and start dev environment
 make dev-down     # stop dev environment
+make fmt          # local go fmt across services (requires local Go)
+make deps-get SERVICE=<svc> MOD=<module@ver>  # add/update module in one service
+make deps-tidy    # go mod tidy in all services (no version change)
+make mod-download # go mod download+tidy in all services (disposable golang image)
+make update-mod   # mod-download + dev-rebuild (one-shot update)
 ```
 
 ## Troubleshooting
