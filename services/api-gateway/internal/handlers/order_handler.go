@@ -21,10 +21,9 @@ func NewOrderHandler(orderClient clients.OrderClient, inventoryClient clients.In
 }
 
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	userID := c.Query("user_id")
+	if userID == "" {
+		userID = "demo-user"
 	}
 	var req struct {
 		Items           []clients.OrderItemRequest `json:"items"`
@@ -57,13 +56,13 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Some items are not available in requested quantities", "details": stockResponse.Results})
 		return
 	}
-	orderReq := &clients.CreateOrderRequest{UserID: userID.(string), Items: req.Items, ShippingAddress: req.ShippingAddress}
+	orderReq := &clients.CreateOrderRequest{UserID: userID, Items: req.Items, ShippingAddress: req.ShippingAddress}
 	order, err := h.orderClient.CreateOrder(c.Request.Context(), orderReq)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
 		return
 	}
-	paymentReq := &clients.ProcessPaymentRequest{OrderID: order.ID, UserID: userID.(string), Amount: types.Money{Amount: order.TotalAmount.Amount, Currency: order.TotalAmount.Currency}, Method: req.PaymentMethod, Details: req.PaymentDetails}
+	paymentReq := &clients.ProcessPaymentRequest{OrderID: order.ID, UserID: userID, Amount: types.Money{Amount: order.TotalAmount.Amount, Currency: order.TotalAmount.Currency}, Method: req.PaymentMethod, Details: req.PaymentDetails}
 	paymentResponse, err := h.paymentClient.ProcessPayment(c.Request.Context(), paymentReq)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process payment"})
@@ -77,10 +76,9 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetUserOrders(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	userID := c.Query("user_id")
+	if userID == "" {
+		userID = "demo-user"
 	}
 	page := int32(1)
 	limit := int32(10)
@@ -94,7 +92,7 @@ func (h *OrderHandler) GetUserOrders(c *gin.Context) {
 			limit = int32(l)
 		}
 	}
-	orders, err := h.orderClient.GetUserOrders(c.Request.Context(), userID.(string), page, limit)
+	orders, err := h.orderClient.GetUserOrders(c.Request.Context(), userID, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user orders"})
 		return
@@ -103,17 +101,16 @@ func (h *OrderHandler) GetUserOrders(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetOrder(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	userID := c.Query("user_id")
+	if userID == "" {
+		userID = "demo-user"
 	}
 	orderID := c.Param("id")
 	if orderID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
 		return
 	}
-	order, err := h.orderClient.GetOrder(c.Request.Context(), orderID, userID.(string))
+	order, err := h.orderClient.GetOrder(c.Request.Context(), orderID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
@@ -122,17 +119,16 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 }
 
 func (h *OrderHandler) CancelOrder(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	userID := c.Query("user_id")
+	if userID == "" {
+		userID = "demo-user"
 	}
 	orderID := c.Param("id")
 	if orderID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
 		return
 	}
-	order, err := h.orderClient.CancelOrder(c.Request.Context(), orderID, userID.(string))
+	order, err := h.orderClient.CancelOrder(c.Request.Context(), orderID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel order"})
 		return

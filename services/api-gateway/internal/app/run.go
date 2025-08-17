@@ -8,14 +8,10 @@ import (
 	"time"
 
 	"api-gateway/internal/clients"
-	"api-gateway/internal/config"
 	"api-gateway/internal/handlers"
-	"api-gateway/internal/middleware"
-	"api-gateway/internal/session"
-	"api-gateway/internal/token"
 
+	cors "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -47,19 +43,13 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	}
 	defer paymentClient.Close()
 
-	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL})
-	defer rdb.Close()
-
-	sessStore := session.NewRedisSessionStore(rdb, "sess:")
-	minter := token.NewSimpleMinter(sessStore, 15*60)
-
-	userHandler := handlers.NewUserHandlerWithSessions(userClient, sessStore, (*config.Config)(cfg))
-	authHandler := handlers.NewAuthHandlerWithDeps(sessStore, minter, (*config.Config)(cfg))
+	userHandler := handlers.NewUserHandler(userClient)
 	orderHandler := handlers.NewOrderHandler(orderClient, inventoryClient, paymentClient)
 	inventoryHandler := handlers.NewInventoryHandler(inventoryClient)
 	paymentHandler := handlers.NewPaymentHandler(paymentClient)
 
 	router := gin.Default()
+	router.Use(cors.Default())
 
 	trusted := os.Getenv("TRUSTED_PROXIES")
 	if trusted == "" {
@@ -76,17 +66,6 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		return err
 	}
 
-	if os.Getenv("JWKS_URL") == "" && cfg.JWKSURL != "" {
-		_ = os.Setenv("JWKS_URL", cfg.JWKSURL)
-	}
-	if os.Getenv("JWT_ISSUER") == "" && cfg.JWTIssuer != "" {
-		_ = os.Setenv("JWT_ISSUER", cfg.JWTIssuer)
-	}
-	if os.Getenv("JWT_AUDIENCE") == "" && cfg.JWTAudience != "" {
-		_ = os.Setenv("JWT_AUDIENCE", cfg.JWTAudience)
-	}
-
-	router.Use(middleware.CORS())
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "healthy"}) })
 
 	api := router.Group("/api/v1")
@@ -95,13 +74,8 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		{
 			users.POST("/register", userHandler.Register)
 			users.POST("/login", userHandler.Login)
-			users.GET("/profile", middleware.AuthRequired(), userHandler.GetProfile)
-			users.PUT("/profile", middleware.AuthRequired(), userHandler.UpdateProfile)
-		}
-		auth := api.Group("/auth")
-		{
-			auth.POST("/refresh", authHandler.Refresh)
-			auth.POST("/logout", authHandler.Logout)
+			users.GET("/profile", userHandler.GetProfile)
+			users.PUT("/profile", userHandler.UpdateProfile)
 		}
 		inventory := api.Group("/inventory")
 		{
@@ -110,7 +84,6 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			inventory.GET("/categories", inventoryHandler.GetCategories)
 		}
 		orders := api.Group("/orders")
-		orders.Use(middleware.AuthRequired())
 		{
 			orders.POST("", orderHandler.CreateOrder)
 			orders.GET("", orderHandler.GetUserOrders)
@@ -120,7 +93,6 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		api.GET("/payments/methods", paymentHandler.GetPaymentMethods)
 		api.GET("/payments/test-cards", paymentHandler.GetTestCards)
 		payments := api.Group("/payments")
-		payments.Use(middleware.AuthRequired())
 		{
 			payments.POST("", paymentHandler.ProcessPayment)
 			payments.GET("/:id", paymentHandler.GetPayment)

@@ -28,11 +28,10 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	User  *entities.User
-	Token string
+	User *entities.User
 }
 
-func NewUserService(userRepo repository.UserRepository, _ interface{}) *UserService {
+func NewUserService(userRepo repository.UserRepository) *UserService {
 	return &UserService{userRepo: userRepo}
 }
 
@@ -64,7 +63,7 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return &AuthResponse{User: user, Token: ""}, nil
+	return &AuthResponse{User: user}, nil
 }
 
 func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*AuthResponse, error) {
@@ -83,7 +82,7 @@ func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*AuthRe
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	return &AuthResponse{User: user, Token: ""}, nil
+	return &AuthResponse{User: user}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*entities.User, error) {

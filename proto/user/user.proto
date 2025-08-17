@@ -33,8 +33,7 @@ message RegisterRequest {
 
 message RegisterResponse {
   User user = 1;
-  string token = 2;
-  string message = 3;
+  string message = 2;
 }
 
 message LoginRequest {
@@ -44,8 +43,7 @@ message LoginRequest {
 
 message LoginResponse {
   User user = 1;
-  string token = 2;
-  string message = 3;
+  string message = 2;
 }
 
 message GetUserRequest {

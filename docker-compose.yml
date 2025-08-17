@@ -1,7 +1,7 @@
 services:
   # Infrastructure
   postgres:
-    image: postgres:15
+    image: postgres:15.4
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -18,14 +18,15 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     ports:
       - "6379:6379"
 
   # Go services with Air (hot reload)
   api-gateway:
     build:
-      context: ./services/api-gateway
+      context: .
+      dockerfile: ./services/api-gateway/Dockerfile
     working_dir: /app/services/api-gateway
     volumes:
       - .:/app
@@ -47,7 +48,8 @@ services:
 
   user-service:
     build:
-      context: ./services/user-service
+      context: .
+      dockerfile: ./services/user-service/Dockerfile
     working_dir: /app/services/user-service
     volumes:
       - .:/app
@@ -70,7 +72,8 @@ services:
 
   order-service:
     build:
-      context: ./services/order-service
+      context: .
+      dockerfile: ./services/order-service/Dockerfile
     working_dir: /app/services/order-service
     volumes:
       - .:/app
@@ -92,7 +95,8 @@ services:
 
   inventory-service:
     build:
-      context: ./services/inventory-service
+      context: .
+      dockerfile: ./services/inventory-service/Dockerfile
     working_dir: /app/services/inventory-service
     volumes:
       - .:/app
@@ -114,7 +118,8 @@ services:
 
   payment-service:
     build:
-      context: ./services/payment-service
+      context: .
+      dockerfile: ./services/payment-service/Dockerfile
     working_dir: /app/services/payment-service
     volumes:
       - .:/app

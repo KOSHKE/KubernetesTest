@@ -9,7 +9,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,
+  withCredentials: false,
 });
 
 // Products API (public endpoints: no credentials needed)
@@ -24,10 +24,10 @@ export const productsAPI = {
 
 // Orders API (temporarily public in dev-noauth)
 export const ordersAPI = {
-  createOrder: (orderData: CreateOrderRequest) => api.post('/orders', orderData),
-  getOrders: (params: Record<string, unknown> = {}) => api.get('/orders', { params }),
-  getOrder: (id: string) => api.get(`/orders/${id}`),
-  cancelOrder: (id: string) => api.put(`/orders/${id}/cancel`),
+  createOrder: (orderData: CreateOrderRequest) => api.post('/orders', orderData, { withCredentials: false }),
+  getOrders: (params: Record<string, unknown> = {}) => api.get('/orders', { params, withCredentials: false }),
+  getOrder: (id: string) => api.get(`/orders/${id}`, { withCredentials: false }),
+  cancelOrder: (id: string) => api.put(`/orders/${id}/cancel`, undefined, { withCredentials: false }),
 };
 
 export default api;

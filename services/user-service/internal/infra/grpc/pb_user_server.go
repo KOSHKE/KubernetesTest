@@ -36,7 +36,6 @@ func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest
 			CreatedAt: resp.User.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
 			UpdatedAt: resp.User.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
 		},
-		Token:   resp.Token,
 		Message: "User registered successfully",
 	}, nil
 }
@@ -56,7 +55,6 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 			CreatedAt: resp.User.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
 			UpdatedAt: resp.User.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
 		},
-		Token:   resp.Token,
 		Message: "Login successful",
 	}, nil
 }

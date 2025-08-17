@@ -100,7 +100,3 @@ func (u *User) ChangePassword(newPassword valueobjects.Password) {
 func (u *User) ValidatePassword(password string) bool {
 	return u.password.Verify(password)
 }
-
-// Subject (token) helpers to avoid adapters
-func (u *User) GetID() string    { return u.id }
-func (u *User) GetEmail() string { return u.email.Value() }

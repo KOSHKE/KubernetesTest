@@ -78,7 +78,7 @@ func (c *userClient) Register(ctx context.Context, req *RegisterRequest) (*AuthR
 	if err != nil {
 		return nil, err
 	}
-	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: resp.Token, Message: resp.Message}, nil
+	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: "", Message: resp.Message}, nil
 }
 
 func (c *userClient) Login(ctx context.Context, req *LoginRequest) (*AuthResponse, error) {
@@ -89,7 +89,7 @@ func (c *userClient) Login(ctx context.Context, req *LoginRequest) (*AuthRespons
 	if err != nil {
 		return nil, err
 	}
-	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: resp.Token, Message: resp.Message}, nil
+	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: "", Message: resp.Message}, nil
 }
 
 func (c *userClient) GetUser(ctx context.Context, userID string) (*User, error) {

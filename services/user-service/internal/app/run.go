@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"user-service/internal/app/services"
 	grpcsvc "user-service/internal/infra/grpc"
@@ -44,7 +43,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			return err
 		}
 	}
-	userService := services.NewUserService(userRepo, nil)
+	userService := services.NewUserService(userRepo)
 
 	// gRPC server
 	server := gogrpc.NewServer()
@@ -71,7 +70,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	case <-ctx.Done():
 		log.Infow("shutting down user-service...")
 		server.GracefulStop()
-		time.Sleep(100 * time.Millisecond)
+		<-serveErr
 		return nil
 	case err := <-serveErr:
 		log.Errorw("serve failed", "error", err)
