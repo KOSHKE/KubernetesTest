@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package events.order;
+
+option go_package = "proto-go/events";
+
+message OrderItem {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message OrderCreated {
+  string order_id = 1;
+  string user_id = 2;
+  repeated OrderItem items = 3;
+  int64 total_amount = 4; // minor units
+  string currency = 5;    // ISO 4217
+  string occurred_at = 6; // RFC3339
+}
+
+

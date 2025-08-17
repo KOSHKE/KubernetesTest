@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package events.payment;
+
+option go_package = "proto-go/events";
+
+message PaymentProcessed {
+  string order_id = 1;
+  string payment_id = 2;
+  bool success = 3;
+  string message = 4;
+  int64 amount = 5;     // minor units
+  string currency = 6;  // ISO 4217
+  string occurred_at = 7; // RFC3339
+}
+
+

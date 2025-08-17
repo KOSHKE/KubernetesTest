@@ -3,6 +3,7 @@ module payment-service
 go 1.25
 
 require (
+	github.com/confluentinc/confluent-kafka-go v1.9.2
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2

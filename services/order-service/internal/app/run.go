@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"order-service/internal/app/services"
+	"order-service/internal/domain/models"
 	ordergrpc "order-service/internal/infra/grpc"
+	"order-service/internal/infra/kafka"
 	"order-service/internal/infra/repository"
+	events "proto-go/events"
 
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
@@ -42,6 +45,28 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		}
 	}
 	orderService := services.NewOrderService(orderRepo)
+
+	// Kafka producer (best-effort)
+	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
+		if prod, err := kafka.NewProducer(brokers, "orders.v1.order_created"); err == nil {
+			defer prod.Close()
+			orderService = orderService.WithPublisher(prod)
+		} else {
+			log.Warnw("kafka producer init failed", "error", err)
+		}
+		// Kafka consumer for payments.v1.payment_processed
+		if cons, err := kafka.NewConsumer(brokers, "order-service", kafka.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
+			status := models.OrderStatusConfirmed
+			if !evt.Success {
+				status = models.OrderStatusCancelled
+			}
+			_, _ = orderService.UpdateOrderStatus(cctx, &services.UpdateOrderStatusRequest{OrderID: evt.OrderId, Status: status})
+			return nil
+		})); err == nil {
+			defer cons.Close()
+			go cons.Run(ctx, "payments.v1.payment_processed")
+		}
+	}
 
 	server := gogrpc.NewServer()
 	ordergrpc.RegisterOrderPBServer(server, orderService)

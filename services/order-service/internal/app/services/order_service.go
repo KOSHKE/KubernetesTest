@@ -8,13 +8,17 @@ import (
 	"order-service/internal/domain/models"
 	"order-service/internal/ports/clock"
 	"order-service/internal/ports/idgen"
+	"order-service/internal/ports/publisher"
 	"order-service/internal/ports/repository"
+
+	events "proto-go/events"
 )
 
 type OrderService struct {
 	orderRepo repository.OrderRepository
 	clock     clock.Clock
 	ids       idgen.IDGenerator
+	pub       publisher.EventPublisher
 }
 
 type CreateOrderRequest struct {
@@ -46,6 +50,9 @@ func (s *OrderService) WithClock(c clock.Clock) *OrderService { s.clock = c; ret
 // WithIDGenerator allows injecting a custom ID generator
 func (s *OrderService) WithIDGenerator(g idgen.IDGenerator) *OrderService { s.ids = g; return s }
 
+// WithPublisher sets event publisher
+func (s *OrderService) WithPublisher(p publisher.EventPublisher) *OrderService { s.pub = p; return s }
+
 func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*models.Order, error) {
 	if req.UserID == "" {
 		return nil, fmt.Errorf("user ID is required")
@@ -73,6 +80,21 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderRequest)
 
 	if err := s.orderRepo.Create(ctx, order); err != nil {
 		return nil, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	// Publish OrderCreated (best-effort)
+	if s.pub != nil {
+		evt := &events.OrderCreated{
+			OrderId:     order.ID,
+			UserId:      order.UserID,
+			TotalAmount: order.TotalAmount,
+			Currency:    order.Currency,
+			OccurredAt:  time.Now().Format(time.RFC3339),
+		}
+		for _, it := range order.Items {
+			evt.Items = append(evt.Items, &events.OrderItem{ProductId: it.ProductID, Quantity: it.Quantity})
+		}
+		_ = s.pub.PublishOrderCreated(ctx, evt)
 	}
 	return order, nil
 }

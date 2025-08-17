@@ -4,14 +4,19 @@ import (
 	"context"
 	"inventory-service/internal/domain/models"
 	"inventory-service/internal/ports/clock"
+	invpub "inventory-service/internal/ports/events"
 	"inventory-service/internal/ports/idgen"
 	"inventory-service/internal/ports/repository"
+	"time"
+
+	events "proto-go/events"
 )
 
 type InventoryService struct {
 	repo  repository.InventoryRepository
 	clock clock.Clock
 	ids   idgen.IDGenerator
+	pub   invpub.Publisher
 }
 
 func NewInventoryService(repo repository.InventoryRepository) *InventoryService {
@@ -26,6 +31,9 @@ func (s *InventoryService) WithIDGenerator(g idgen.IDGenerator) *InventoryServic
 	s.ids = g
 	return s
 }
+
+// WithPublisher sets event publisher
+func (s *InventoryService) WithPublisher(p invpub.Publisher) *InventoryService { s.pub = p; return s }
 
 type StockCheckItem struct {
 	ProductID string
@@ -76,6 +84,14 @@ func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, ite
 	// could write reservation audit with s.clock.Now()/s.ids.NewID(...)
 	_ = s.now()
 	_ = s.newID("res-")
+	// publish result (best-effort)
+	if s.pub != nil {
+		if len(failedProducts) == 0 {
+			_ = s.pub.PublishStockReserved(ctx, &events.StockReserved{OrderId: orderID, OccurredAt: time.Now().Format(time.RFC3339)})
+		} else {
+			_ = s.pub.PublishStockReservationFailed(ctx, &events.StockReservationFailed{OrderId: orderID, Reason: "insufficient stock", OccurredAt: time.Now().Format(time.RFC3339)})
+		}
+	}
 	return failedProducts, nil
 }
 
