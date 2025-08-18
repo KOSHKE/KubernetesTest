@@ -8,6 +8,7 @@ import (
 	"order-service/internal/domain/models"
 	"order-service/internal/ports/clock"
 	"order-service/internal/ports/idgen"
+	"order-service/internal/ports/productinfo"
 	"order-service/internal/ports/publisher"
 	"order-service/internal/ports/repository"
 
@@ -19,6 +20,7 @@ type OrderService struct {
 	clock     clock.Clock
 	ids       idgen.IDGenerator
 	pub       publisher.EventPublisher
+	products  productinfo.Provider
 }
 
 type CreateOrderRequest struct {
@@ -53,6 +55,17 @@ func (s *OrderService) WithIDGenerator(g idgen.IDGenerator) *OrderService { s.id
 // WithPublisher sets event publisher
 func (s *OrderService) WithPublisher(p publisher.EventPublisher) *OrderService { s.pub = p; return s }
 
+// WithProductProvider injects product info provider
+func (s *OrderService) WithProductProvider(p productinfo.Provider) *OrderService {
+	s.products = p
+	return s
+}
+
+// WithProductLookup is kept for backward compatibility but is now a no-op
+func (s *OrderService) WithProductLookup(fn func(ctx context.Context, productID string) (string, int64, string, error)) *OrderService {
+	return s
+}
+
 func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*models.Order, error) {
 	if req.UserID == "" {
 		return nil, fmt.Errorf("user ID is required")
@@ -64,16 +77,31 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderRequest)
 		return nil, fmt.Errorf("shipping address is required")
 	}
 	if req.Currency == "" {
-		return nil, fmt.Errorf("currency is required")
+		// default currency to USD if not provided (API Gateway proto does not pass it)
+		req.Currency = "USD"
 	}
 
-	order := &models.Order{UserID: req.UserID, Status: models.OrderStatusPending, ShippingAddress: req.ShippingAddress, Items: make([]models.OrderItem, 0, len(req.Items)), Currency: req.Currency}
-	order.ID = s.newID("order-")
+	// Determine next sequential number per user and human-friendly ID
+	num, err := s.orderRepo.NextOrderNumber(ctx, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate order number: %w", err)
+	}
+
+	order := &models.Order{UserID: req.UserID, Number: num, Status: models.OrderStatusPending, ShippingAddress: req.ShippingAddress, Items: make([]models.OrderItem, 0, len(req.Items)), Currency: req.Currency}
+	order.ID = fmt.Sprintf("%s-#%d", req.UserID, num)
 	now := s.now()
 	order.CreatedAt, order.UpdatedAt = now, now
 
 	for _, item := range req.Items {
-		if err := order.AddItem(item.ProductID, item.ProductName, item.Quantity, item.Price, req.Currency); err != nil {
+		name := item.ProductName
+		price := item.Price
+		currency := req.Currency
+		if s.products != nil {
+			if n, p, cur, err := s.products.GetProduct(ctx, item.ProductID); err == nil {
+				name, price, currency = n, p, cur
+			}
+		}
+		if err := order.AddItem(item.ProductID, name, item.Quantity, price, currency); err != nil {
 			return nil, fmt.Errorf("failed to add item %s: %w", item.ProductID, err)
 		}
 	}

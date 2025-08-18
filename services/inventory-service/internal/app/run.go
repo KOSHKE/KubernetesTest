@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
 	appsvc "inventory-service/internal/app/services"
+	"inventory-service/internal/domain/models"
 	grpcsvr "inventory-service/internal/infra/grpc"
 	"inventory-service/internal/infra/kafka"
 	repo "inventory-service/internal/infra/repository"
@@ -16,13 +18,55 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	log := logger.Sugar()
 
-	repository := repo.NewInMemoryInventoryRepository()
-	svc := appsvc.NewInventoryService(repository)
+	// Connect DB
+	db, err := connectDB(cfg)
+	if err != nil {
+		log.Errorw("db connect failed", "error", err)
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Errorw("db pool obtain failed", "error", err)
+		return err
+	}
+	defer sqlDB.Close()
+
+	// Repository + migrations
+	gormRepo := repo.NewGormInventoryRepository(db)
+	if getEnv("AUTO_MIGRATE", "") == "true" {
+		if err := gormRepo.AutoMigrate(); err != nil {
+			log.Errorw("automigrate failed", "error", err)
+			return err
+		}
+		// Seed default catalog and stock: 3 of prod-1, 1 of prod-2 (Smart Watch), 2 of prod-3 (Mug)
+		seedProducts := []*models.Product{
+			{ID: "prod-1", Name: "Wireless Headphones", Description: "High-quality wireless headphones with noise cancellation", PriceMinor: 9999, Currency: "USD", CategoryID: "cat-1", CategoryName: "Electronics", ImageURL: "/images/headphones.jpg", IsActive: true},
+			{ID: "prod-2", Name: "Smart Watch", Description: "Fitness tracking smart watch with heart rate monitor", PriceMinor: 19999, Currency: "USD", CategoryID: "cat-1", CategoryName: "Electronics", ImageURL: "/images/smartwatch.jpg", IsActive: true},
+			{ID: "prod-3", Name: "Coffee Mug", Description: "Ceramic coffee mug with custom design", PriceMinor: 1599, Currency: "USD", CategoryID: "cat-2", CategoryName: "Home & Kitchen", ImageURL: "/images/mug.jpg", IsActive: true},
+		}
+		for _, p := range seedProducts {
+			_ = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(p).Error
+		}
+		seedStocks := []*models.Stock{
+			{ProductID: "prod-1", AvailableQuantity: 3, ReservedQuantity: 0},
+			{ProductID: "prod-2", AvailableQuantity: 1, ReservedQuantity: 0},
+			{ProductID: "prod-3", AvailableQuantity: 2, ReservedQuantity: 0},
+		}
+		for _, s := range seedStocks {
+			_ = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(s).Error
+		}
+	}
+
+	svc := appsvc.NewInventoryService(gormRepo)
 
 	// Kafka producer for inventory events (best-effort)
 	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
@@ -45,6 +89,14 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		if cons, err := kafka.NewConsumer(brokers, "inventory-service", handler); err == nil {
 			defer cons.Close()
 			go cons.Run(ctx, "orders.v1.order_created")
+		}
+		// Consume payment outcomes to finalize or release reservations
+		if payCons, err := kafka.NewPaymentConsumer(brokers, "inventory-service", kafka.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
+			svc.FinalizeReservation(cctx, evt.OrderId, evt.Success)
+			return nil
+		})); err == nil {
+			defer payCons.Close()
+			go payCons.Run(ctx, "payments.v1.payment_processed")
 		}
 	}
 
@@ -74,4 +126,10 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		log.Errorw("serve failed", "error", err)
 		return err
 	}
+}
+
+func connectDB(cfg *Config) (*gorm.DB, error) {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName)
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
 }

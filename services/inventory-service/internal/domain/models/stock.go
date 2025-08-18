@@ -3,9 +3,9 @@ package models
 import "fmt"
 
 type Stock struct {
-	ProductID         string
-	AvailableQuantity int32
-	ReservedQuantity  int32
+	ProductID         string `gorm:"primaryKey;type:varchar(255)"`
+	AvailableQuantity int32  `gorm:"not null;default:0"`
+	ReservedQuantity  int32  `gorm:"not null;default:0"`
 }
 
 func (s *Stock) CanReserve(qty int32) bool { return qty > 0 && s.AvailableQuantity >= qty }

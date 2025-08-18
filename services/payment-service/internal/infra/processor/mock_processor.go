@@ -2,12 +2,13 @@ package processor
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"payment-service/internal/ports/processor"
 )
 
-// MockPaymentProcessor simulates payment outcomes based on card number
+// MockPaymentProcessor simulates payment outcomes (50% success) with latency
 type MockPaymentProcessor struct{}
 
 func NewMockPaymentProcessor() *MockPaymentProcessor { return &MockPaymentProcessor{} }
@@ -20,17 +21,10 @@ func (m *MockPaymentProcessor) Process(ctx context.Context, req processor.Proces
 		return processor.ProcessResult{Success: false, FailureReason: "context canceled"}, ctx.Err()
 	}
 
-	// Mock rules by card number
-	switch req.CardNumber {
-	case "", "0000000000000000":
-		return processor.ProcessResult{Success: false, FailureReason: "missing card details"}, nil
-	case "4000000000000002":
-		return processor.ProcessResult{Success: false, FailureReason: "declined - insufficient funds"}, nil
-	case "4000000000000119":
-		return processor.ProcessResult{Success: false, FailureReason: "processing error"}, nil
-	case "4000000000000341":
-		return processor.ProcessResult{Success: false, FailureReason: "card expired"}, nil
-	default:
+	// 50% random outcome to mimic real-world uncertainty
+	rand.Seed(time.Now().UnixNano())
+	if rand.Intn(2) == 0 {
 		return processor.ProcessResult{Success: true}, nil
 	}
+	return processor.ProcessResult{Success: false, FailureReason: "payment declined (mock)"}, nil
 }

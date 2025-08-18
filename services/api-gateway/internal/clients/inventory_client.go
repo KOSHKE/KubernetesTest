@@ -2,10 +2,10 @@ package clients
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"api-gateway/internal/types"
+	invpb "proto-go/inventory"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,7 +20,8 @@ type InventoryClient interface {
 }
 
 type inventoryClient struct {
-	conn *grpc.ClientConn
+	conn   *grpc.ClientConn
+	client invpb.InventoryServiceClient
 }
 
 type Product struct {
@@ -77,71 +78,87 @@ func NewInventoryClient(address string) (InventoryClient, error) {
 		return nil, err
 	}
 
-	return &inventoryClient{conn: conn}, nil
+	return &inventoryClient{conn: conn, client: invpb.NewInventoryServiceClient(conn)}, nil
 }
 
 func (c *inventoryClient) Close() error { return c.conn.Close() }
 
 func (c *inventoryClient) GetProducts(ctx context.Context, categoryID string, page, limit int32, search string) ([]*Product, int32, error) {
-	products := []*Product{
-		{ID: "prod-1", Name: "Wireless Headphones", Description: "High-quality wireless headphones with noise cancellation", Price: types.Money{Amount: 9999, Currency: "USD"}, CategoryID: "cat-1", CategoryName: "Electronics", StockQuantity: 50, ImageURL: "/images/headphones.jpg", IsActive: true, CreatedAt: time.Now().Add(-72 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-24 * time.Hour).Format(time.RFC3339)},
-		{ID: "prod-2", Name: "Smart Watch", Description: "Fitness tracking smart watch with heart rate monitor", Price: types.Money{Amount: 19999, Currency: "USD"}, CategoryID: "cat-1", CategoryName: "Electronics", StockQuantity: 25, ImageURL: "/images/smartwatch.jpg", IsActive: true, CreatedAt: time.Now().Add(-48 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-12 * time.Hour).Format(time.RFC3339)},
-		{ID: "prod-3", Name: "Coffee Mug", Description: "Ceramic coffee mug with custom design", Price: types.Money{Amount: 1599, Currency: "USD"}, CategoryID: "cat-2", CategoryName: "Home & Kitchen", StockQuantity: 100, ImageURL: "/images/mug.jpg", IsActive: true, CreatedAt: time.Now().Add(-24 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-6 * time.Hour).Format(time.RFC3339)},
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.GetProducts(ctx, &invpb.GetProductsRequest{CategoryId: categoryID, Page: page, Limit: limit, Search: search})
+	if err != nil {
+		return nil, 0, err
 	}
-	if categoryID != "" {
-		var filtered []*Product
-		for _, p := range products {
-			if p.CategoryID == categoryID {
-				filtered = append(filtered, p)
-			}
-		}
-		products = filtered
+	out := make([]*Product, 0, len(res.GetProducts()))
+	for _, p := range res.GetProducts() {
+		out = append(out, mapProductFromPB(p))
 	}
-	if search != "" {
-		var filtered []*Product
-		for _, p := range products {
-			if contains(p.Name, search) || contains(p.Description, search) {
-				filtered = append(filtered, p)
-			}
-		}
-		products = filtered
-	}
-	return products, int32(len(products)), nil
+	return out, res.GetTotal(), nil
 }
 
 func (c *inventoryClient) GetProduct(ctx context.Context, productID string) (*Product, error) {
-	return &Product{ID: productID, Name: "Mock Product " + productID, Description: "This is a mock product for testing purposes", Price: types.Money{Amount: 2999, Currency: "USD"}, CategoryID: "cat-1", CategoryName: "Electronics", StockQuantity: 10, ImageURL: fmt.Sprintf("/images/product-%s.jpg", productID), IsActive: true, CreatedAt: time.Now().Add(-24 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339)}, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.GetProduct(ctx, &invpb.GetProductRequest{Id: productID})
+	if err != nil {
+		return nil, err
+	}
+	return mapProductFromPB(res.GetProduct()), nil
 }
 
 func (c *inventoryClient) GetCategories(ctx context.Context, activeOnly bool) ([]*Category, error) {
-	categories := []*Category{{ID: "cat-1", Name: "Electronics", Description: "Electronic devices and gadgets", IsActive: true}, {ID: "cat-2", Name: "Home & Kitchen", Description: "Home and kitchen essentials", IsActive: true}, {ID: "cat-3", Name: "Books", Description: "Books and educational materials", IsActive: false}}
-	if activeOnly {
-		var filtered []*Category
-		for _, c := range categories {
-			if c.IsActive {
-				filtered = append(filtered, c)
-			}
-		}
-		return filtered, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.GetCategories(ctx, &invpb.GetCategoriesRequest{ActiveOnly: activeOnly})
+	if err != nil {
+		return nil, err
 	}
-	return categories, nil
+	out := make([]*Category, 0, len(res.GetCategories()))
+	for _, cat := range res.GetCategories() {
+		out = append(out, &Category{ID: cat.Id, Name: cat.Name, Description: cat.Description, IsActive: cat.IsActive})
+	}
+	return out, nil
 }
 
 func (c *inventoryClient) CheckStock(ctx context.Context, req *StockCheckRequest) (*StockCheckResponse, error) {
-	var results []StockCheckResult
-	allAvailable := true
-	for _, item := range req.Items {
-		availableQuantity := int32(10)
-		isAvailable := item.Quantity <= availableQuantity
-		if !isAvailable {
-			allAvailable = false
-		}
-		results = append(results, StockCheckResult{ProductID: item.ProductID, RequestedQuantity: item.Quantity, AvailableQuantity: availableQuantity, IsAvailable: isAvailable})
+	grpcItems := make([]*invpb.StockCheckItem, 0, len(req.Items))
+	for _, it := range req.Items {
+		grpcItems = append(grpcItems, &invpb.StockCheckItem{ProductId: it.ProductID, Quantity: it.Quantity})
 	}
-	return &StockCheckResponse{Results: results, AllAvailable: allAvailable}, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.CheckStock(ctx, &invpb.CheckStockRequest{Items: grpcItems})
+	if err != nil {
+		return nil, err
+	}
+	results := make([]StockCheckResult, 0, len(res.GetResults()))
+	for _, r := range res.GetResults() {
+		results = append(results, StockCheckResult{
+			ProductID:         r.ProductId,
+			RequestedQuantity: r.RequestedQuantity,
+			AvailableQuantity: r.AvailableQuantity,
+			IsAvailable:       r.IsAvailable,
+		})
+	}
+	return &StockCheckResponse{Results: results, AllAvailable: res.GetAllAvailable()}, nil
 }
 
-// Helper function
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0)
+func mapProductFromPB(p *invpb.Product) *Product {
+	if p == nil {
+		return nil
+	}
+	return &Product{
+		ID:            p.Id,
+		Name:          p.Name,
+		Description:   p.Description,
+		Price:         types.Money{Amount: p.Price.GetAmount(), Currency: p.Price.GetCurrency()},
+		CategoryID:    p.CategoryId,
+		CategoryName:  p.CategoryName,
+		StockQuantity: p.StockQuantity,
+		ImageURL:      p.ImageUrl,
+		IsActive:      p.IsActive,
+		CreatedAt:     p.CreatedAt,
+		UpdatedAt:     p.UpdatedAt,
+	}
 }

@@ -12,4 +12,5 @@ type OrderRepository interface {
 	Update(ctx context.Context, order *models.Order) error
 	Delete(ctx context.Context, id string) error
 	GetByStatus(ctx context.Context, status models.OrderStatus) ([]*models.Order, error)
+	NextOrderNumber(ctx context.Context, userID string) (int64, error)
 }

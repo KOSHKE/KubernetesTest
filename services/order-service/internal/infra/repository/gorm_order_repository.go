@@ -82,3 +82,21 @@ func (r *GormOrderRepository) GetByStatus(ctx context.Context, status models.Ord
 func (r *GormOrderRepository) AutoMigrate() error {
 	return r.db.AutoMigrate(&models.Order{}, &models.OrderItem{})
 }
+
+// NextOrderNumber returns next sequential number per user (transaction-safe)
+func (r *GormOrderRepository) NextOrderNumber(ctx context.Context, userID string) (int64, error) {
+	var maxNum int64
+	tx := r.db.WithContext(ctx).Begin()
+	if err := tx.Model(&models.Order{}).
+		Where("user_id = ?", userID).
+		Select("COALESCE(MAX(number), 0)").
+		Scan(&maxNum).Error; err != nil {
+		tx.Rollback()
+		return 0, err
+	}
+	next := maxNum + 1
+	if err := tx.Commit().Error; err != nil {
+		return 0, err
+	}
+	return next, nil
+}

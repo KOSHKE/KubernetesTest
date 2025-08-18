@@ -7,6 +7,7 @@ import (
 	invpub "inventory-service/internal/ports/events"
 	"inventory-service/internal/ports/idgen"
 	"inventory-service/internal/ports/repository"
+	"sync"
 	"time"
 
 	events "proto-go/events"
@@ -17,10 +18,13 @@ type InventoryService struct {
 	clock clock.Clock
 	ids   idgen.IDGenerator
 	pub   invpub.Publisher
+
+	mu              sync.Mutex
+	reservedByOrder map[string][]StockCheckItem
 }
 
 func NewInventoryService(repo repository.InventoryRepository) *InventoryService {
-	return &InventoryService{repo: repo}
+	return &InventoryService{repo: repo, reservedByOrder: make(map[string][]StockCheckItem)}
 }
 
 // WithClock allows injecting custom clock
@@ -55,6 +59,15 @@ func (s *InventoryService) ListProducts(ctx context.Context, categoryID string, 
 	return s.repo.ListProducts(ctx, categoryID, page, limit, search)
 }
 
+// GetStockQuantity returns available quantity for product
+func (s *InventoryService) GetStockQuantity(ctx context.Context, productID string) (int32, error) {
+	st, err := s.repo.GetStock(ctx, productID)
+	if err != nil {
+		return 0, err
+	}
+	return st.AvailableQuantity, nil
+}
+
 func (s *InventoryService) CheckStock(ctx context.Context, items []StockCheckItem) ([]StockCheckResult, bool, error) {
 	results := make([]StockCheckResult, 0, len(items))
 	allAvailable := true
@@ -81,9 +94,11 @@ func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, ite
 			failedProducts = append(failedProducts, it.ProductID)
 		}
 	}
-	// could write reservation audit with s.clock.Now()/s.ids.NewID(...)
-	_ = s.now()
-	_ = s.newID("res-")
+	// store reservation for later commit/release
+	s.mu.Lock()
+	s.reservedByOrder[orderID] = items
+	s.mu.Unlock()
+
 	// publish result (best-effort)
 	if s.pub != nil {
 		if len(failedProducts) == 0 {
@@ -93,6 +108,24 @@ func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, ite
 		}
 	}
 	return failedProducts, nil
+}
+
+// FinalizeReservation commits (success=true) or releases (success=false) reserved stock for order
+func (s *InventoryService) FinalizeReservation(ctx context.Context, orderID string, success bool) {
+	s.mu.Lock()
+	items := s.reservedByOrder[orderID]
+	delete(s.reservedByOrder, orderID)
+	s.mu.Unlock()
+	if len(items) == 0 {
+		return
+	}
+	for _, it := range items {
+		if success {
+			_ = s.repo.Commit(ctx, it.ProductID, it.Quantity)
+		} else {
+			_ = s.repo.Release(ctx, it.ProductID, it.Quantity)
+		}
+	}
 }
 
 func (s *InventoryService) ReleaseStock(ctx context.Context, orderID string, items []StockCheckItem) error {

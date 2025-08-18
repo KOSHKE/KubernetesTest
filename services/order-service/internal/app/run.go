@@ -10,8 +10,10 @@ import (
 	"order-service/internal/domain/models"
 	ordergrpc "order-service/internal/infra/grpc"
 	"order-service/internal/infra/kafka"
+	productinfoimpl "order-service/internal/infra/productinfo"
 	"order-service/internal/infra/repository"
 	events "proto-go/events"
+	invpb "proto-go/inventory"
 
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
@@ -65,6 +67,15 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		})); err == nil {
 			defer cons.Close()
 			go cons.Run(ctx, "payments.v1.payment_processed")
+		}
+	}
+
+	// Connect to inventory-service (best-effort) to enrich items
+	if cfg.InventoryServiceURL != "" {
+		if conn, err := gogrpc.Dial(cfg.InventoryServiceURL, gogrpc.WithInsecure()); err == nil {
+			invClient := invpb.NewInventoryServiceClient(conn)
+			provider := productinfoimpl.NewInventoryProvider(invClient)
+			orderService = orderService.WithProductProvider(provider)
 		}
 	}
 

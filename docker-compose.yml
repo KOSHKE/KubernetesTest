@@ -140,6 +140,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - AUTO_MIGRATE=true
+      - INVENTORY_SERVICE_URL=inventory-service:50053
     ports:
       - "50052:50052"
     depends_on:
@@ -168,6 +170,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - AUTO_MIGRATE=true
     ports:
       - "50053:50053"
     depends_on:

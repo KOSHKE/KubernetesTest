@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"api-gateway/internal/types"
+	orderpb "proto-go/order"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,7 +20,8 @@ type OrderClient interface {
 }
 
 type orderClient struct {
-	conn *grpc.ClientConn
+	conn   *grpc.ClientConn
+	client orderpb.OrderServiceClient
 }
 
 type Order struct {
@@ -65,35 +67,103 @@ func NewOrderClient(address string) (OrderClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &orderClient{conn: conn}, nil
+	return &orderClient{conn: conn, client: orderpb.NewOrderServiceClient(conn)}, nil
 }
 
 func (c *orderClient) Close() error { return c.conn.Close() }
 
 func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error) {
-	var items []OrderItem
-	total := int64(0)
-	for i, item := range req.Items {
-		price := int64(2999)
-		line := price * int64(item.Quantity)
-		total += line
-		items = append(items, OrderItem{ID: "item-" + string(rune(i+1)), ProductID: item.ProductID, ProductName: "Mock Product " + item.ProductID, Quantity: item.Quantity, Price: types.Money{Amount: price, Currency: req.Currency}, Total: types.Money{Amount: line, Currency: req.Currency}})
+	items := make([]*orderpb.OrderItemRequest, 0, len(req.Items))
+	for _, it := range req.Items {
+		items = append(items, &orderpb.OrderItemRequest{ProductId: it.ProductID, Quantity: it.Quantity})
 	}
-	return &Order{ID: "order-" + time.Now().Format("20060102150405"), UserID: req.UserID, Status: "PENDING", Items: items, TotalAmount: types.Money{Amount: total, Currency: req.Currency}, ShippingAddress: req.ShippingAddress, CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339)}, nil
+	grpcReq := &orderpb.CreateOrderRequest{UserId: req.UserID, Items: items, ShippingAddress: req.ShippingAddress}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.CreateOrder(ctx, grpcReq)
+	if err != nil {
+		return nil, err
+	}
+	return mapOrderFromPB(res.GetOrder()), nil
 }
 
 func (c *orderClient) GetOrder(ctx context.Context, orderID, userID string) (*Order, error) {
-	return &Order{ID: orderID, UserID: userID, Status: "CONFIRMED", Items: []OrderItem{{ID: "item-1", ProductID: "prod-1", ProductName: "Mock Product 1", Quantity: 2, Price: types.Money{Amount: 2999, Currency: "USD"}, Total: types.Money{Amount: 5998, Currency: "USD"}}}, TotalAmount: types.Money{Amount: 5998, Currency: "USD"}, ShippingAddress: "123 Main St, City, Country", CreatedAt: time.Now().Add(-2 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339)}, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.GetOrder(ctx, &orderpb.GetOrderRequest{Id: orderID, UserId: userID})
+	if err != nil {
+		return nil, err
+	}
+	return mapOrderFromPB(res.GetOrder()), nil
 }
 
 func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error) {
-	orders := []*Order{{ID: "order-1", UserID: userID, Status: "DELIVERED", Items: []OrderItem{{ID: "item-1", ProductID: "prod-1", ProductName: "Mock Product 1", Quantity: 1, Price: types.Money{Amount: 2999, Currency: "USD"}, Total: types.Money{Amount: 2999, Currency: "USD"}}}, TotalAmount: types.Money{Amount: 2999, Currency: "USD"}, ShippingAddress: "123 Main St, City, Country", CreatedAt: time.Now().Add(-48 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-24 * time.Hour).Format(time.RFC3339)}, {ID: "order-2", UserID: userID, Status: "PROCESSING", Items: []OrderItem{{ID: "item-2", ProductID: "prod-2", ProductName: "Mock Product 2", Quantity: 3, Price: types.Money{Amount: 1999, Currency: "USD"}, Total: types.Money{Amount: 5997, Currency: "USD"}}}, TotalAmount: types.Money{Amount: 5997, Currency: "USD"}, ShippingAddress: "456 Oak Ave, City, Country", CreatedAt: time.Now().Add(-12 * time.Hour).Format(time.RFC3339), UpdatedAt: time.Now().Add(-6 * time.Hour).Format(time.RFC3339)}}
-	return orders, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.GetUserOrders(ctx, &orderpb.GetUserOrdersRequest{UserId: userID, Page: page, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*Order, 0, len(res.GetOrders()))
+	for _, o := range res.GetOrders() {
+		out = append(out, mapOrderFromPB(o))
+	}
+	return out, nil
 }
 
 func (c *orderClient) CancelOrder(ctx context.Context, orderID, userID string) (*Order, error) {
-	order, _ := c.GetOrder(ctx, orderID, userID)
-	order.Status = "CANCELLED"
-	order.UpdatedAt = time.Now().Format(time.RFC3339)
-	return order, nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := c.client.CancelOrder(ctx, &orderpb.CancelOrderRequest{Id: orderID, UserId: userID})
+	if err != nil {
+		return nil, err
+	}
+	return mapOrderFromPB(res.GetOrder()), nil
+}
+
+// Mapping helpers from PB -> HTTP types
+func mapOrderFromPB(o *orderpb.Order) *Order {
+	if o == nil {
+		return nil
+	}
+	items := make([]OrderItem, 0, len(o.Items))
+	for _, it := range o.Items {
+		items = append(items, OrderItem{
+			ID:          it.Id,
+			ProductID:   it.ProductId,
+			ProductName: it.ProductName,
+			Quantity:    it.Quantity,
+			Price:       types.Money{Amount: it.Price.GetAmount(), Currency: it.Price.GetCurrency()},
+			Total:       types.Money{Amount: it.Total.GetAmount(), Currency: it.Total.GetCurrency()},
+		})
+	}
+	return &Order{
+		ID:              o.Id,
+		UserID:          o.UserId,
+		Status:          mapStatusFromPB(o.Status),
+		Items:           items,
+		TotalAmount:     types.Money{Amount: o.TotalAmount.GetAmount(), Currency: o.TotalAmount.GetCurrency()},
+		ShippingAddress: o.ShippingAddress,
+		CreatedAt:       o.CreatedAt,
+		UpdatedAt:       o.UpdatedAt,
+	}
+}
+
+func mapStatusFromPB(s orderpb.OrderStatus) string {
+	switch s {
+	case orderpb.OrderStatus_PENDING:
+		return "PENDING"
+	case orderpb.OrderStatus_CONFIRMED:
+		return "CONFIRMED"
+	case orderpb.OrderStatus_PROCESSING:
+		return "PROCESSING"
+	case orderpb.OrderStatus_SHIPPED:
+		return "SHIPPED"
+	case orderpb.OrderStatus_DELIVERED:
+		return "DELIVERED"
+	case orderpb.OrderStatus_CANCELLED:
+		return "CANCELLED"
+	default:
+		return "PENDING"
+	}
 }

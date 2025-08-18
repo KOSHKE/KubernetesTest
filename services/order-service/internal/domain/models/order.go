@@ -10,7 +10,8 @@ import (
 // Order - Aggregate Root
 type Order struct {
 	ID              string      `gorm:"primaryKey;type:varchar(255)"`
-	UserID          string      `gorm:"not null;type:varchar(255);index"`
+	UserID          string      `gorm:"not null;type:varchar(255);index:idx_user_number,unique"`
+	Number          int64       `gorm:"not null;default:0;index:idx_user_number,unique"`
 	Status          OrderStatus `gorm:"type:varchar(20);not null;default:'PENDING'"`
 	Items           []OrderItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE"`
 	TotalAmount     int64       `gorm:"type:bigint;not null"`

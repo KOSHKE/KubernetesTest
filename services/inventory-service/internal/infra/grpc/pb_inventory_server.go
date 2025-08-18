@@ -23,7 +23,8 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *invpb.GetProdu
 	}
 	out := make([]*invpb.Product, 0, len(products))
 	for _, p := range products {
-		out = append(out, mapProductToPB(p))
+		q, _ := s.svc.GetStockQuantity(ctx, p.ID)
+		out = append(out, mapProductToPB(p, q))
 	}
 	return &invpb.GetProductsResponse{Products: out, Total: int32(total)}, nil
 }
@@ -33,7 +34,8 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *invpb.GetProduc
 	if err != nil {
 		return nil, err
 	}
-	return &invpb.GetProductResponse{Product: mapProductToPB(p)}, nil
+	q, _ := s.svc.GetStockQuantity(ctx, p.ID)
+	return &invpb.GetProductResponse{Product: mapProductToPB(p, q)}, nil
 }
 
 func (s *PBInventoryServer) CheckStock(ctx context.Context, req *invpb.CheckStockRequest) (*invpb.CheckStockResponse, error) {
@@ -81,7 +83,7 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *invpb.Release
 }
 
 // mapping helpers
-func mapProductToPB(p *models.Product) *invpb.Product {
+func mapProductToPB(p *models.Product, stockQty int32) *invpb.Product {
 	return &invpb.Product{
 		Id:            p.ID,
 		Name:          p.Name,
@@ -89,7 +91,7 @@ func mapProductToPB(p *models.Product) *invpb.Product {
 		Price:         &invpb.Money{Amount: p.PriceMinor, Currency: p.Currency},
 		CategoryId:    p.CategoryID,
 		CategoryName:  p.CategoryName,
-		StockQuantity: 0,
+		StockQuantity: stockQty,
 		ImageUrl:      p.ImageURL,
 		IsActive:      p.IsActive,
 	}

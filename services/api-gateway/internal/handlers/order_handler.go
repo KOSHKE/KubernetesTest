@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"api-gateway/internal/clients"
-	"api-gateway/internal/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -62,17 +61,8 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
 		return
 	}
-	paymentReq := &clients.ProcessPaymentRequest{OrderID: order.ID, UserID: userID, Amount: types.Money{Amount: order.TotalAmount.Amount, Currency: order.TotalAmount.Currency}, Method: req.PaymentMethod, Details: req.PaymentDetails}
-	paymentResponse, err := h.paymentClient.ProcessPayment(c.Request.Context(), paymentReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process payment"})
-		return
-	}
-	if !paymentResponse.Success {
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "Payment failed", "message": paymentResponse.Message})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{"order": order, "payment": paymentResponse.Payment, "message": "Order created and payment processed successfully"})
+	// Defer payment to a separate explicit call from the client.
+	c.JSON(http.StatusCreated, gin.H{"order": order, "message": "Order created. Proceed to payment."})
 }
 
 func (h *OrderHandler) GetUserOrders(c *gin.Context) {

@@ -43,6 +43,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			if prod != nil && resp != nil && resp.Payment != nil {
 				pe := &events.PaymentProcessed{OrderId: resp.Payment.OrderID, PaymentId: resp.Payment.ID, Success: resp.Success, Message: resp.Message, Amount: resp.Payment.Amount.Amount, Currency: resp.Payment.Amount.Currency, OccurredAt: time.Now().Format(time.RFC3339)}
 				_ = prod.PublishPaymentProcessed(cctx, pe)
+				// Inventory finalization is handled inside inventory-service when reacting to PaymentProcessed if we wire it later.
 			}
 			return nil
 		})); err == nil {

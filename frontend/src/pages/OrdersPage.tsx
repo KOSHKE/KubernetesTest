@@ -121,7 +121,7 @@ const OrdersPage: React.FC = () => {
                 <CardContent>
                   <Stack direction="row" alignItems="flex-start" justifyContent="space-between" sx={{ mb: 2 }}>
                     <div>
-                      <Typography variant="h6">Order #{order.id}</Typography>
+                      <Typography variant="h6">Order: {order.id}</Typography>
                       <Typography color="text.secondary">Placed on {new Date(order.created_at).toLocaleDateString()}</Typography>
                       <Stack direction="row" spacing={1} sx={{ mt: 1 }}>{statusChip(order.status)}</Stack>
                     </div>

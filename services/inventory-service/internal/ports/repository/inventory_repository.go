@@ -12,4 +12,5 @@ type InventoryRepository interface {
 	GetStock(ctx context.Context, productID string) (*models.Stock, error)
 	Reserve(ctx context.Context, productID string, qty int32) error
 	Release(ctx context.Context, productID string, qty int32) error
+	Commit(ctx context.Context, productID string, qty int32) error
 }
