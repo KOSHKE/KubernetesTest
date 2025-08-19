@@ -10,11 +10,12 @@ import (
 	"order-service/internal/domain/models"
 	clockimpl "order-service/internal/infra/clock"
 	ordergrpc "order-service/internal/infra/grpc"
-	"order-service/internal/infra/kafka"
+	con "order-service/internal/infra/kafka/consumer"
+	pub "order-service/internal/infra/kafka/publisher"
 	productinfoimpl "order-service/internal/infra/productinfo"
 	"order-service/internal/infra/repository"
 	"order-service/internal/ports/productinfo"
-	events "proto-go/events"
+	"proto-go/events"
 	invpb "proto-go/inventory"
 
 	"go.uber.org/zap"
@@ -61,6 +62,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		log.Infow("kafka producer disabled or not configured")
 	}
 	if prod != nil {
+		_ = prod.WithLogger(log)
 		defer prod.Close()
 	}
 
@@ -93,7 +95,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	// Optional Kafka consumer (payments)
 	var wg sync.WaitGroup
 	if brokers != "" {
-		if cons, err := kafka.NewConsumer(brokers, "order-service", cfg.KafkaAutoOffsetReset, kafka.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
+		if cons, err := con.NewConsumer(brokers, "order-service", cfg.KafkaAutoOffsetReset, con.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
 			status := models.OrderStatusConfirmed
 			if !evt.Success {
 				status = models.OrderStatusCancelled
@@ -104,6 +106,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			return nil
 		})); err == nil {
 			defer cons.Close()
+			cons.WithLogger(log)
 			wg.Add(1)
 			go func() { defer wg.Done(); cons.Run(ctx, []string{"payments.v1.payment_processed"}) }()
 		} else {
@@ -167,11 +170,11 @@ func connectDB(cfg *Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func createKafkaProducer(brokers string, logger *zap.Logger) (*kafka.Producer, error) {
+func createKafkaProducer(brokers string, logger *zap.Logger) (*pub.OrderCreatedPublisher, error) {
 	if brokers == "" {
 		return nil, nil
 	}
-	prod, err := kafka.NewProducer(brokers, "orders.v1.order_created")
+	prod, err := pub.NewOrderCreatedPublisher(brokers, "orders.v1.order_created")
 	if err != nil {
 		return nil, err
 	}

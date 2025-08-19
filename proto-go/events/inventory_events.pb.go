@@ -25,6 +25,7 @@ type StockReserved struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	OccurredAt    string                 `protobuf:"bytes,2,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"` // RFC3339
+	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -73,11 +74,19 @@ func (x *StockReserved) GetOccurredAt() string {
 	return ""
 }
 
+func (x *StockReserved) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
 type StockReservationFailed struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	OccurredAt    string                 `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"` // RFC3339
+	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,20 +142,29 @@ func (x *StockReservationFailed) GetOccurredAt() string {
 	return ""
 }
 
+func (x *StockReservationFailed) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
 var File_events_inventory_events_proto protoreflect.FileDescriptor
 
 const file_events_inventory_events_proto_rawDesc = "" +
 	"\n" +
-	"\x1devents/inventory_events.proto\x12\x10events.inventory\"K\n" +
+	"\x1devents/inventory_events.proto\x12\x10events.inventory\"d\n" +
 	"\rStockReserved\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1f\n" +
 	"\voccurred_at\x18\x02 \x01(\tR\n" +
-	"occurredAt\"l\n" +
+	"occurredAt\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"\x85\x01\n" +
 	"\x16StockReservationFailed\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1f\n" +
 	"\voccurred_at\x18\x03 \x01(\tR\n" +
-	"occurredAtB\x11Z\x0fproto-go/eventsb\x06proto3"
+	"occurredAt\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userIdB\x11Z\x0fproto-go/eventsb\x06proto3"
 
 var (
 	file_events_inventory_events_proto_rawDescOnce sync.Once

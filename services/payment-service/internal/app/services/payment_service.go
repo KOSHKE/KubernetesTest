@@ -2,30 +2,26 @@ package services
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"payment-service/internal/domain/entities"
+	derrors "payment-service/internal/domain/errors"
 	"payment-service/internal/domain/valueobjects"
-	"payment-service/internal/ports/clock"
-	"payment-service/internal/ports/idgen"
 	procport "payment-service/internal/ports/processor"
 )
 
 type PaymentService struct {
 	processor procport.PaymentProcessor
-	clock     clock.Clock
-	ids       idgen.IDGenerator
+	mu        sync.RWMutex
+	payments  map[string]*entities.Payment
 }
 
 func NewPaymentService(processor procport.PaymentProcessor) *PaymentService {
-	return &PaymentService{processor: processor}
+	return &PaymentService{processor: processor, payments: make(map[string]*entities.Payment)}
 }
 
-// WithClock allows injecting a custom clock
-func (s *PaymentService) WithClock(c clock.Clock) *PaymentService { s.clock = c; return s }
-
-// WithIDGenerator allows injecting a custom ID generator
-func (s *PaymentService) WithIDGenerator(g idgen.IDGenerator) *PaymentService { s.ids = g; return s }
+// (Clock/IDGenerator injection removed as unused)
 
 type ProcessPaymentRequest struct {
 	OrderID string
@@ -49,72 +45,71 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, req *ProcessPayment
 	}
 
 	now := s.now()
+	message := "Payment failed"
+	status := entities.PaymentFailed
+	if res.Success {
+		status = entities.PaymentCompleted
+		message = "Payment processed successfully"
+	} else if res.FailureReason != "" {
+		message = "Payment failed - " + res.FailureReason
+	}
+
 	payment := &entities.Payment{
 		ID:            s.newID("pay-"),
 		OrderID:       req.OrderID,
 		UserID:        req.UserID,
 		Amount:        req.Amount,
-		Status:        entities.PaymentFailed,
+		Status:        status,
 		Method:        req.Method,
 		TransactionID: s.newID("txn-"),
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	message := "Payment processed successfully"
-	if res.Success {
-		payment.Status = entities.PaymentCompleted
-	} else {
-		payment.Status = entities.PaymentFailed
-		if res.FailureReason != "" {
-			message = "Payment failed - " + res.FailureReason
-		}
+
+	// persist in-memory for subsequent reads
+	s.mu.Lock()
+	s.payments[payment.ID] = payment
+	s.mu.Unlock()
+
+	if !res.Success {
+		return &ProcessPaymentResponse{Payment: payment, Success: res.Success, Message: message}, derrors.ErrPaymentDeclined
 	}
 
 	return &ProcessPaymentResponse{Payment: payment, Success: res.Success, Message: message}, nil
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, id string) (*entities.Payment, error) {
-	now := s.now()
-	amt, _ := valueobjects.NewMoney(9999, "USD")
-	return &entities.Payment{
-		ID:            id,
-		OrderID:       "order-" + id,
-		UserID:        "user-123",
-		Amount:        amt,
-		Status:        entities.PaymentCompleted,
-		Method:        entities.MethodCreditCard,
-		TransactionID: "txn-" + id,
-		CreatedAt:     now.Add(-time.Hour),
-		UpdatedAt:     now.Add(-time.Hour),
-	}, nil
+	s.mu.RLock()
+	p := s.payments[id]
+	s.mu.RUnlock()
+	if p == nil {
+		return nil, derrors.ErrPaymentNotFound
+	}
+	return p, nil
 }
 
 func (s *PaymentService) RefundPayment(ctx context.Context, paymentID string, amount valueobjects.Money, reason string) (*entities.Payment, string, bool, error) {
-	// Mock refund success
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.payments[paymentID]
+	if !ok {
+		return nil, "", false, derrors.ErrPaymentNotFound
+	}
+	if p.Status != entities.PaymentCompleted {
+		return nil, "", false, derrors.ErrInvalidRefund
+	}
+
 	now := s.now()
-	return &entities.Payment{
-		ID:            paymentID,
-		OrderID:       "order-" + paymentID,
-		UserID:        "user-123",
-		Amount:        amount,
-		Status:        entities.PaymentRefunded,
-		Method:        entities.MethodCreditCard,
-		TransactionID: "refund-" + now.Format("20060102150405"),
-		CreatedAt:     now.Add(-24 * time.Hour),
-		UpdatedAt:     now,
-	}, "Refund processed successfully - Reason: " + reason, true, nil
+	p.Status = entities.PaymentRefunded
+	p.UpdatedAt = now
+	p.TransactionID = "refund-" + now.Format("20060102150405")
+
+	return p, "Refund processed successfully - Reason: " + reason, true, nil
 }
 
-func (s *PaymentService) now() time.Time {
-	if s.clock != nil {
-		return s.clock.Now()
-	}
-	return time.Now()
-}
+func (s *PaymentService) now() time.Time { return time.Now() }
 
 func (s *PaymentService) newID(prefix string) string {
-	if s.ids != nil {
-		return s.ids.NewID(prefix)
-	}
 	return prefix + time.Now().Format("20060102150405")
 }

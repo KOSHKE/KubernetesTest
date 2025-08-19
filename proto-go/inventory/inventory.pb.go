@@ -755,6 +755,7 @@ type ReserveStockRequest struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	OrderId       string                  `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	Items         []*StockReservationItem `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
+	UserId        string                  `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -801,6 +802,13 @@ func (x *ReserveStockRequest) GetItems() []*StockReservationItem {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *ReserveStockRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
 }
 
 type StockReservationItem struct {
@@ -1168,10 +1176,11 @@ const file_inventory_inventory_proto_rawDesc = "" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12-\n" +
 	"\x12requested_quantity\x18\x02 \x01(\x05R\x11requestedQuantity\x12-\n" +
 	"\x12available_quantity\x18\x03 \x01(\x05R\x11availableQuantity\x12!\n" +
-	"\fis_available\x18\x04 \x01(\bR\visAvailable\"g\n" +
+	"\fis_available\x18\x04 \x01(\bR\visAvailable\"\x80\x01\n" +
 	"\x13ReserveStockRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x125\n" +
-	"\x05items\x18\x02 \x03(\v2\x1f.inventory.StockReservationItemR\x05items\"Q\n" +
+	"\x05items\x18\x02 \x03(\v2\x1f.inventory.StockReservationItemR\x05items\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\"Q\n" +
 	"\x14StockReservationItem\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x1a\n" +

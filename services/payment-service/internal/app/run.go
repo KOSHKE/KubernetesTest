@@ -2,22 +2,27 @@ package app
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"time"
 
+	pub "kubernetetest/libs/kafka"
 	app "payment-service/internal/app/services"
 	"payment-service/internal/domain/entities"
+	derrors "payment-service/internal/domain/errors"
 	"payment-service/internal/domain/valueobjects"
-	srv "payment-service/internal/grpc"
-	"payment-service/internal/infra/kafka"
+	"payment-service/internal/infra/cache"
+	srv "payment-service/internal/infra/grpc"
+	con "payment-service/internal/infra/kafka/consumer"
 	mockproc "payment-service/internal/infra/processor"
-	events "proto-go/events"
-	pb "proto-go/payment"
+	"proto-go/events"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
@@ -26,29 +31,95 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	server := grpc.NewServer()
 	processor := mockproc.NewMockPaymentProcessor()
 	paymentService := app.NewPaymentService(processor)
-	pb.RegisterPaymentServiceServer(server, srv.NewPaymentServer(paymentService))
+	srv.RegisterPaymentPBServer(server, paymentService)
 
 	// Kafka wiring (best-effort)
-	var prod *kafka.Producer
-	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
-		if p, err := kafka.NewProducer(brokers, "payments.v1.payment_processed"); err == nil {
-			prod = p
-			defer p.Close()
+	var prod pub.Publisher
+	var consSR *con.Consumer
+	var consOC *con.OrderCreatedConsumer
+
+	// Redis cache for order totals from OrderCreated
+	var totalsCache cache.OrderTotalsCache
+	var closers []io.Closer
+	if cfg.RedisAddr != "" {
+		totalsCache = cache.NewRedisOrderTotalsCache(cfg.RedisAddr, cfg.RedisDB, "order:total:")
+		closers = append(closers, totalsCache)
+		log.Infow("Redis cache initialized", "addr", cfg.RedisAddr, "db", cfg.RedisDB)
+	}
+	if cfg.KafkaBrokers != "" {
+		if p, err := pub.NewKafkaPublisher(cfg.KafkaBrokers, "payment-service"); err != nil {
+			log.Warnw("kafka producer init failed", "error", err)
+		} else {
+			prod = p.WithLogger(log)
+			closers = append(closers, prod)
+			log.Infow("Kafka producer initialized", "brokers", cfg.KafkaBrokers)
 		}
-		if cons, err := kafka.NewConsumer(brokers, "payment-service", kafka.StockReservedHandlerFunc(func(cctx context.Context, evt *events.StockReserved) error {
-			// Map to service request (mock minimal values)
-			amt, _ := valueobjects.NewMoney(0, "USD")
-			req := &app.ProcessPaymentRequest{OrderID: evt.OrderId, UserID: "", Amount: amt, Method: entities.MethodCreditCard, CardNumber: "4111111111111111"}
-			resp, _ := paymentService.ProcessPayment(cctx, req)
-			if prod != nil && resp != nil && resp.Payment != nil {
-				pe := &events.PaymentProcessed{OrderId: resp.Payment.OrderID, PaymentId: resp.Payment.ID, Success: resp.Success, Message: resp.Message, Amount: resp.Payment.Amount.Amount, Currency: resp.Payment.Amount.Currency, OccurredAt: time.Now().Format(time.RFC3339)}
-				_ = prod.PublishPaymentProcessed(cctx, pe)
-				// Inventory finalization is handled inside inventory-service when reacting to PaymentProcessed if we wire it later.
+		// consume OrderCreated to cache totals
+		if oc, err := con.NewOrderCreatedConsumer(cfg.KafkaBrokers, "payment-service", con.OrderCreatedHandlerFunc(func(cctx context.Context, evt *events.OrderCreated) error {
+			if totalsCache != nil {
+				if err := totalsCache.Set(cctx, evt.OrderId, evt.TotalAmount, evt.Currency, cfg.OrderTotalTTL); err != nil {
+					log.Warnw("cache set failed", "orderID", evt.OrderId, "error", err)
+				}
 			}
 			return nil
-		})); err == nil {
-			defer cons.Close()
-			go cons.Run(ctx, "inventory.v1.stock_reserved")
+		})); err != nil {
+			log.Warnw("kafka order-created consumer init failed", "error", err)
+		} else {
+			consOC = oc.WithLogger(log)
+			closers = append(closers, consOC)
+			go consOC.Run(ctx, []string{"orders.v1.order_created"})
+			log.Infow("Kafka consumer started", "topic", "orders.v1.order_created")
+		}
+
+		// consume StockReserved to process payments
+		if c, err := con.NewConsumer(cfg.KafkaBrokers, "payment-service", con.StockReservedHandlerFunc(func(cctx context.Context, evt *events.StockReserved) error {
+			// Build amount from Redis cached order total if present
+			amt := func() valueobjects.Money {
+				if totalsCache != nil {
+					if a, c, ok, _ := totalsCache.Get(cctx, evt.OrderId); ok {
+						if m, e := valueobjects.NewMoney(a, c); e == nil {
+							return m
+						}
+					}
+				}
+				m, _ := valueobjects.NewMoney(0, "USD")
+				return m
+			}()
+			req := &app.ProcessPaymentRequest{OrderID: evt.OrderId, UserID: evt.UserId, Amount: amt, Method: entities.MethodCreditCard, CardNumber: "4111111111111111"}
+			// Timeout for processing to avoid hanging
+			hctx, cancel := context.WithTimeout(cctx, cfg.PaymentProcessTimeout)
+			resp, err := paymentService.ProcessPayment(hctx, req)
+			cancel()
+			if err != nil && !errors.Is(err, derrors.ErrPaymentDeclined) {
+				log.Warnw("process payment failed (technical)", "orderID", evt.OrderId, "userID", evt.UserId, "error", err)
+				return nil
+			}
+			// publish outcome (both success and business-decline)
+			if prod != nil && resp != nil && resp.Payment != nil {
+				pe := &events.PaymentProcessed{OrderId: resp.Payment.OrderID, PaymentId: resp.Payment.ID, Success: resp.Success, Message: resp.Message, Amount: resp.Payment.Amount.Amount, Currency: resp.Payment.Amount.Currency, OccurredAt: time.Now().Format(time.RFC3339)}
+				bytes, _ := proto.Marshal(pe)
+				pctx, pcancel := context.WithTimeout(cctx, cfg.KafkaPublishTimeout)
+				if perr := prod.Publish(pctx, "payments.v1.payment_processed", bytes); perr != nil {
+					log.Errorw("publish PaymentProcessed failed", "orderID", pe.OrderId, "paymentID", pe.PaymentId, "userID", evt.UserId, "error", perr)
+				} else {
+					log.Infow("PaymentProcessed published", "orderID", pe.OrderId, "paymentID", pe.PaymentId, "userID", evt.UserId, "success", pe.Success)
+				}
+				pcancel()
+				// best-effort cleanup of cached total
+				if totalsCache != nil {
+					if err := totalsCache.Del(cctx, evt.OrderId); err != nil {
+						log.Warnw("cache delete failed", "orderID", evt.OrderId, "error", err)
+					}
+				}
+			}
+			return nil
+		})); err != nil {
+			log.Warnw("kafka consumer init failed", "error", err)
+		} else {
+			consSR = c.WithLogger(log)
+			closers = append(closers, consSR)
+			go consSR.Run(ctx, []string{"inventory.v1.stock_reserved"})
+			log.Infow("Kafka consumer started", "topic", "inventory.v1.stock_reserved")
 		}
 	}
 
@@ -66,14 +137,28 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(lis) }()
 
+	shutdown := func() {
+		// graceful gRPC with timeout fallback
+		done := make(chan struct{})
+		go func() { server.GracefulStop(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			server.Stop()
+		}
+		for _, c := range closers {
+			_ = c.Close()
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		log.Infow("shutting down payment-service...")
-		server.GracefulStop()
-		time.Sleep(100 * time.Millisecond)
+		shutdown()
 		return nil
 	case err := <-serveErr:
 		log.Errorw("serve failed", "error", err)
+		shutdown()
 		return err
 	}
 }

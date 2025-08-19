@@ -59,7 +59,7 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *invpb.Reserve
 	for _, it := range req.Items {
 		items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
 	}
-	failed, err := s.svc.ReserveStock(ctx, req.OrderId, items)
+	failed, err := s.svc.ReserveStock(ctx, req.OrderId, req.UserId, items)
 	if err != nil {
 		return nil, err
 	}

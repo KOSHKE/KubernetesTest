@@ -87,7 +87,7 @@ func (s *InventoryService) CheckStock(ctx context.Context, items []StockCheckIte
 	return results, allAvailable, nil
 }
 
-func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, items []StockCheckItem) (failed []string, err error) {
+func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, userID string, items []StockCheckItem) (failed []string, err error) {
 	var failedProducts []string
 	for _, it := range items {
 		if err := s.repo.Reserve(ctx, it.ProductID, it.Quantity); err != nil {
@@ -102,9 +102,9 @@ func (s *InventoryService) ReserveStock(ctx context.Context, orderID string, ite
 	// publish result (best-effort)
 	if s.pub != nil {
 		if len(failedProducts) == 0 {
-			_ = s.pub.PublishStockReserved(ctx, &events.StockReserved{OrderId: orderID, OccurredAt: time.Now().Format(time.RFC3339)})
+			_ = s.pub.PublishStockReserved(ctx, &events.StockReserved{OrderId: orderID, UserId: userID, OccurredAt: time.Now().Format(time.RFC3339)})
 		} else {
-			_ = s.pub.PublishStockReservationFailed(ctx, &events.StockReservationFailed{OrderId: orderID, Reason: "insufficient stock", OccurredAt: time.Now().Format(time.RFC3339)})
+			_ = s.pub.PublishStockReservationFailed(ctx, &events.StockReservationFailed{OrderId: orderID, UserId: userID, Reason: "insufficient stock", OccurredAt: time.Now().Format(time.RFC3339)})
 		}
 	}
 	return failedProducts, nil

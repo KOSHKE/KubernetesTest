@@ -9,9 +9,10 @@ import (
 	appsvc "inventory-service/internal/app/services"
 	"inventory-service/internal/domain/models"
 	grpcsvr "inventory-service/internal/infra/grpc"
-	"inventory-service/internal/infra/kafka"
+	con "inventory-service/internal/infra/kafka/consumer"
+	pub "inventory-service/internal/infra/kafka/publisher"
 	repo "inventory-service/internal/infra/repository"
-	events "proto-go/events"
+	"proto-go/events"
 	invpb "proto-go/inventory"
 
 	"go.uber.org/zap"
@@ -70,33 +71,36 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 
 	// Kafka producer for inventory events (best-effort)
 	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
-		if p, err := kafka.NewProducer(brokers, "inventory.v1.stock_reserved", "inventory.v1.stock_reservation_failed"); err == nil {
+		if p, err := pub.NewStockEventsPublisher(brokers, "inventory.v1.stock_reserved", "inventory.v1.stock_reservation_failed"); err == nil {
 			defer p.Close()
+			p = p.WithLogger(log)
 			svc = svc.WithPublisher(p)
 		}
 	}
 
 	// Kafka consumer for order created (best-effort)
 	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
-		handler := kafka.OrderCreatedHandlerFunc(func(cctx context.Context, evt *events.OrderCreated) error {
+		handler := con.OrderCreatedHandlerFunc(func(cctx context.Context, evt *events.OrderCreated) error {
 			items := make([]appsvc.StockCheckItem, 0, len(evt.Items))
 			for _, it := range evt.Items {
 				items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
 			}
-			_, _ = svc.ReserveStock(cctx, evt.OrderId, items)
+			_, _ = svc.ReserveStock(cctx, evt.OrderId, evt.UserId, items)
 			return nil
 		})
-		if cons, err := kafka.NewConsumer(brokers, "inventory-service", handler); err == nil {
+		if cons, err := con.NewConsumer(brokers, "inventory-service", handler); err == nil {
 			defer cons.Close()
-			go cons.Run(ctx, "orders.v1.order_created")
+			cons.WithLogger(log)
+			go cons.Run(ctx, []string{"orders.v1.order_created"})
 		}
 		// Consume payment outcomes to finalize or release reservations
-		if payCons, err := kafka.NewPaymentConsumer(brokers, "inventory-service", kafka.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
+		if payCons, err := con.NewPaymentConsumer(brokers, "inventory-service", con.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
 			svc.FinalizeReservation(cctx, evt.OrderId, evt.Success)
 			return nil
 		})); err == nil {
 			defer payCons.Close()
-			go payCons.Run(ctx, "payments.v1.payment_processed")
+			payCons.WithLogger(log)
+			go payCons.Run(ctx, []string{"payments.v1.payment_processed"})
 		}
 	}
 

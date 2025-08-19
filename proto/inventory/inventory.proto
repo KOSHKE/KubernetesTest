@@ -92,6 +92,7 @@ message StockCheckResult {
 message ReserveStockRequest {
   string order_id = 1;
   repeated StockReservationItem items = 2;
+  string user_id = 3;
 }
 
 message StockReservationItem {
