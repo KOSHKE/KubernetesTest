@@ -4,6 +4,8 @@ package order;
 
 option go_package = "proto/order";
 
+import "google/protobuf/timestamp.proto";
+
 // Value object for money in minor units
 message Money {
   int64 amount = 1;    // minor units
@@ -27,8 +29,8 @@ message Order {
   repeated OrderItem items = 4;
   Money total_amount = 5;
   string shipping_address = 6;
-  string created_at = 7;
-  string updated_at = 8;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
 }
 
 message OrderItem {
@@ -36,7 +38,6 @@ message OrderItem {
   string product_id = 2;
   string product_name = 3;
   int32 quantity = 4;
-  Money price = 5;
   Money total = 6;
 }
 

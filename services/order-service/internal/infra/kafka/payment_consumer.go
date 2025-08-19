@@ -2,13 +2,14 @@ package kafka
 
 import (
 	"context"
+	"log"
 	"time"
 
 	events "proto-go/events"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type PaymentProcessedHandler interface {
@@ -22,15 +23,18 @@ func (f PaymentProcessedHandlerFunc) Handle(ctx context.Context, evt *events.Pay
 }
 
 type Consumer struct {
-	c *kafka.Consumer
+	c *ckafka.Consumer
 	h PaymentProcessedHandler
 }
 
-func NewConsumer(bootstrapServers, groupID string, handler PaymentProcessedHandler) (*Consumer, error) {
-	c, err := kafka.NewConsumer(&kafka.ConfigMap{
+func NewConsumer(bootstrapServers, groupID, autoOffsetReset string, handler PaymentProcessedHandler) (*Consumer, error) {
+	if autoOffsetReset == "" {
+		autoOffsetReset = "earliest"
+	}
+	c, err := ckafka.NewConsumer(&ckafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
 		"group.id":          groupID,
-		"auto.offset.reset": "earliest",
+		"auto.offset.reset": autoOffsetReset,
 	})
 	if err != nil {
 		return nil, err
@@ -40,8 +44,9 @@ func NewConsumer(bootstrapServers, groupID string, handler PaymentProcessedHandl
 
 func (c *Consumer) Close() { _ = c.c.Close() }
 
-func (c *Consumer) Run(ctx context.Context, topic string) error {
-	if err := c.c.SubscribeTopics([]string{topic}, nil); err != nil {
+func (c *Consumer) Run(ctx context.Context, topics []string) error {
+	defer c.Close()
+	if err := c.c.SubscribeTopics(topics, nil); err != nil {
 		return err
 	}
 	for {
@@ -50,14 +55,29 @@ func (c *Consumer) Run(ctx context.Context, topic string) error {
 			return nil
 		default:
 			msg, err := c.c.ReadMessage(100 * time.Millisecond)
-			if err != nil || msg == nil {
+			if err != nil {
+				if kerr, ok := err.(ckafka.Error); ok {
+					if kerr.Code() != ckafka.ErrTimedOut {
+						log.Printf("kafka read error: %v", err)
+					}
+				} else {
+					log.Printf("kafka read error: %v", err)
+				}
+				continue
+			}
+			if msg == nil {
 				continue
 			}
 			var evt events.PaymentProcessed
 			if unmarshalErr := proto.Unmarshal(msg.Value, &evt); unmarshalErr != nil {
+				log.Printf("proto unmarshal error (topic=%s partition=%d offset=%d): %v", *msg.TopicPartition.Topic, msg.TopicPartition.Partition, msg.TopicPartition.Offset, unmarshalErr)
 				continue
 			}
-			_ = c.h.Handle(ctx, &evt)
+			handleCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := c.h.Handle(handleCtx, &evt); err != nil {
+				log.Printf("handler error (topic=%s partition=%d offset=%d): %v", *msg.TopicPartition.Topic, msg.TopicPartition.Partition, msg.TopicPartition.Offset, err)
+			}
+			cancel()
 		}
 	}
 }

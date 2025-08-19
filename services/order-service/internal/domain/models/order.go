@@ -168,5 +168,4 @@ func (o *Order) BeforeCreate(tx *gorm.DB) error {
 func (o *Order) BeforeUpdate(tx *gorm.DB) error { o.recalculateTotal(); return nil }
 
 // Helper functions
-func generateOrderID() string     { return "order-" + time.Now().Format("20060102150405") }
 func generateOrderItemID() string { return "item-" + time.Now().Format("20060102150405") }

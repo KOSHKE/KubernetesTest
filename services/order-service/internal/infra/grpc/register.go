@@ -8,6 +8,6 @@ import (
 )
 
 // RegisterOrderPBServer registers the protobuf server implementation
-func RegisterOrderPBServer(server *gogrpc.Server, svc *appsvc.OrderService) {
-	orderpb.RegisterOrderServiceServer(server, NewPBOrderServer(svc))
+func RegisterOrderPBServer(server *gogrpc.Server, svc *appsvc.OrderService, defaultCurrency string) {
+	orderpb.RegisterOrderServiceServer(server, NewPBOrderServer(svc, defaultCurrency))
 }

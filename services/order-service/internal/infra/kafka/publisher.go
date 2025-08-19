@@ -2,27 +2,26 @@ package kafka
 
 import (
 	"context"
-	"time"
 
 	events "proto-go/events"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	ckafka "github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type Producer struct {
-	p     *kafka.Producer
+	p     *ckafka.Producer
 	topic string
 }
 
 func NewProducer(bootstrapServers, topic string) (*Producer, error) {
-	conf := &kafka.ConfigMap{
+	conf := &ckafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
 		"client.id":         "order-service",
 		"acks":              "all",
 	}
-	p, err := kafka.NewProducer(conf)
+	p, err := ckafka.NewProducer(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -37,22 +36,29 @@ func (p *Producer) PublishOrderCreated(ctx context.Context, evt *events.OrderCre
 	if err != nil {
 		return err
 	}
-	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &p.topic, Partition: kafka.PartitionAny},
+	msg := &ckafka.Message{
+		TopicPartition: ckafka.TopicPartition{Topic: &p.topic, Partition: ckafka.PartitionAny},
 		Value:          bytes,
 	}
-	delivery := make(chan kafka.Event, 1)
-	defer close(delivery)
-	if err := p.p.Produce(msg, delivery); err != nil {
-		return err
-	}
+
+	// support external timeout/cancel via ctx
+	done := make(chan error, 1)
+	go func() {
+		delivery := make(chan ckafka.Event, 1)
+		defer close(delivery)
+		if err := p.p.Produce(msg, delivery); err != nil {
+			done <- err
+			return
+		}
+		e := <-delivery
+		m := e.(*ckafka.Message)
+		done <- m.TopicPartition.Error
+	}()
+
 	select {
-	case e := <-delivery:
-		m := e.(*kafka.Message)
-		return m.TopicPartition.Error
+	case err := <-done:
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(5 * time.Second):
-		return context.DeadlineExceeded
 	}
 }

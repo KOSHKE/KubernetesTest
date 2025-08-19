@@ -128,13 +128,23 @@ func mapOrderFromPB(o *orderpb.Order) *Order {
 	}
 	items := make([]OrderItem, 0, len(o.Items))
 	for _, it := range o.Items {
+		var unitAmount int64
+		var currency string
+		if it.Total != nil {
+			currency = it.Total.GetCurrency()
+			if it.Quantity > 0 {
+				unitAmount = it.Total.GetAmount() / int64(it.Quantity)
+			} else {
+				unitAmount = it.Total.GetAmount()
+			}
+		}
 		items = append(items, OrderItem{
 			ID:          it.Id,
 			ProductID:   it.ProductId,
 			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
-			Price:       types.Money{Amount: it.Price.GetAmount(), Currency: it.Price.GetCurrency()},
-			Total:       types.Money{Amount: it.Total.GetAmount(), Currency: it.Total.GetCurrency()},
+			Price:       types.Money{Amount: unitAmount, Currency: currency},
+			Total:       types.Money{Amount: it.Total.GetAmount(), Currency: currency},
 		})
 	}
 	return &Order{
@@ -144,8 +154,18 @@ func mapOrderFromPB(o *orderpb.Order) *Order {
 		Items:           items,
 		TotalAmount:     types.Money{Amount: o.TotalAmount.GetAmount(), Currency: o.TotalAmount.GetCurrency()},
 		ShippingAddress: o.ShippingAddress,
-		CreatedAt:       o.CreatedAt,
-		UpdatedAt:       o.UpdatedAt,
+		CreatedAt: func() string {
+			if o.CreatedAt != nil {
+				return o.CreatedAt.AsTime().Format(time.RFC3339)
+			}
+			return ""
+		}(),
+		UpdatedAt: func() string {
+			if o.UpdatedAt != nil {
+				return o.UpdatedAt.AsTime().Format(time.RFC3339)
+			}
+			return ""
+		}(),
 	}
 }
 
