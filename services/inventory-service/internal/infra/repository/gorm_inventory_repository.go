@@ -56,6 +56,21 @@ func (r *GormInventoryRepository) GetStock(ctx context.Context, productID string
 	return &st, nil
 }
 
+func (r *GormInventoryRepository) GetStocksByIDs(ctx context.Context, productIDs []string) (map[string]*models.Stock, error) {
+	result := make(map[string]*models.Stock, len(productIDs))
+	if len(productIDs) == 0 {
+		return result, nil
+	}
+	var stocks []models.Stock
+	if err := r.db.WithContext(ctx).Where("product_id IN ?", productIDs).Find(&stocks).Error; err != nil {
+		return nil, err
+	}
+	for i := range stocks {
+		result[stocks[i].ProductID] = &stocks[i]
+	}
+	return result, nil
+}
+
 func (r *GormInventoryRepository) Reserve(ctx context.Context, productID string, qty int32) error {
 	// Atomic update using a single SQL statement guarded by available quantity
 	res := r.db.WithContext(ctx).Model(&models.Stock{}).
@@ -83,6 +98,9 @@ func (r *GormInventoryRepository) Release(ctx context.Context, productID string,
 	if res.Error != nil {
 		return res.Error
 	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
 	return nil
 }
 
@@ -92,6 +110,9 @@ func (r *GormInventoryRepository) Commit(ctx context.Context, productID string, 
 		UpdateColumn("reserved_quantity", gorm.Expr("reserved_quantity - ?", qty))
 	if res.Error != nil {
 		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }

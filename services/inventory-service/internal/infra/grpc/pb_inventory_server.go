@@ -2,29 +2,60 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	appsvc "inventory-service/internal/app/services"
 	"inventory-service/internal/domain/models"
 	invpb "proto-go/inventory"
+
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 type PBInventoryServer struct {
 	invpb.UnimplementedInventoryServiceServer
 	svc *appsvc.InventoryService
+	log *zap.SugaredLogger
 }
 
-func NewPBInventoryServer(svc *appsvc.InventoryService) *PBInventoryServer {
-	return &PBInventoryServer{svc: svc}
+func NewPBInventoryServer(svc *appsvc.InventoryService, log *zap.SugaredLogger) *PBInventoryServer {
+	return &PBInventoryServer{svc: svc, log: log}
 }
 
 func (s *PBInventoryServer) GetProducts(ctx context.Context, req *invpb.GetProductsRequest) (*invpb.GetProductsResponse, error) {
-	products, total, err := s.svc.ListProducts(ctx, req.CategoryId, int(req.Page), int(req.Limit), req.Search)
+	page := int(req.Page)
+	if page <= 0 {
+		page = 1
+	}
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 20
+	}
+	products, total, err := s.svc.ListProducts(ctx, req.CategoryId, page, limit, req.Search)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to list products: %v", err)
 	}
 	out := make([]*invpb.Product, 0, len(products))
+	ids := make([]string, 0, len(products))
 	for _, p := range products {
-		q, _ := s.svc.GetStockQuantity(ctx, p.ID)
-		out = append(out, mapProductToPB(p, q))
+		ids = append(ids, p.ID)
+	}
+	stockMap := map[string]*models.Stock{}
+	if len(ids) > 0 {
+		if stocks, e := s.svc.GetStocksByIDs(ctx, ids); e == nil {
+			stockMap = stocks
+		} else {
+			s.log.Warnw("failed to get stocks", "error", e)
+		}
+	}
+	for _, p := range products {
+		if st, ok := stockMap[p.ID]; ok {
+			out = append(out, mapProductToPB(p, st.AvailableQuantity))
+			continue
+		}
+		// degrade to 0 if no stock or error during batch fetch
+		out = append(out, mapProductToPB(p, 0))
 	}
 	return &invpb.GetProductsResponse{Products: out, Total: int32(total)}, nil
 }
@@ -32,9 +63,16 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *invpb.GetProdu
 func (s *PBInventoryServer) GetProduct(ctx context.Context, req *invpb.GetProductRequest) (*invpb.GetProductResponse, error) {
 	p, err := s.svc.GetProduct(ctx, req.Id)
 	if err != nil {
-		return nil, err
+		code := codes.Internal
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			code = codes.NotFound
+		}
+		return nil, status.Errorf(code, "failed to get product: %v", err)
 	}
-	q, _ := s.svc.GetStockQuantity(ctx, p.ID)
+	q, err := s.svc.GetStockQuantity(ctx, p.ID)
+	if err != nil {
+		return &invpb.GetProductResponse{Product: mapProductToPB(p, 0)}, nil
+	}
 	return &invpb.GetProductResponse{Product: mapProductToPB(p, q)}, nil
 }
 
@@ -45,7 +83,7 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *invpb.CheckStoc
 	}
 	results, all, err := s.svc.CheckStock(ctx, items)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to check stock: %v", err)
 	}
 	out := make([]*invpb.StockCheckResult, 0, len(results))
 	for _, r := range results {
@@ -61,7 +99,7 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *invpb.Reserve
 	}
 	failed, err := s.svc.ReserveStock(ctx, req.OrderId, req.UserId, items)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to reserve stock: %v", err)
 	}
 	ok := len(failed) == 0
 	msg := "Reservation successful"
@@ -77,7 +115,7 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *invpb.Release
 		items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
 	}
 	if err := s.svc.ReleaseStock(ctx, req.OrderId, items); err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to release stock: %v", err)
 	}
 	return &invpb.ReleaseStockResponse{Success: true, Message: "Released"}, nil
 }

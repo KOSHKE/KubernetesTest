@@ -31,12 +31,12 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	// Connect DB
 	db, err := connectDB(cfg)
 	if err != nil {
-		log.Errorw("db connect failed", "error", err)
+		log.Errorw("failed to connect to db", "error", err)
 		return err
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Errorw("db pool obtain failed", "error", err)
+		log.Errorw("failed to obtain db pool", "error", err)
 		return err
 	}
 	defer sqlDB.Close()
@@ -45,7 +45,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	gormRepo := repo.NewGormInventoryRepository(db)
 	if getEnv("AUTO_MIGRATE", "") == "true" {
 		if err := gormRepo.AutoMigrate(); err != nil {
-			log.Errorw("automigrate failed", "error", err)
+			log.Errorw("failed to automigrate", "error", err)
 			return err
 		}
 		// Seed default catalog and stock: 3 of prod-1, 1 of prod-2 (Smart Watch), 2 of prod-3 (Mug)
@@ -67,7 +67,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		}
 	}
 
-	svc := appsvc.NewInventoryService(gormRepo)
+	svc := appsvc.NewInventoryService(gormRepo).WithReservationTTL(time.Duration(cfg.ReservationTTLSeconds) * time.Second)
 
 	// Kafka producer for inventory events (best-effort)
 	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
@@ -85,7 +85,10 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			for _, it := range evt.Items {
 				items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
 			}
-			_, _ = svc.ReserveStock(cctx, evt.OrderId, evt.UserId, items)
+			failed, rerr := svc.ReserveStock(cctx, evt.OrderId, evt.UserId, items)
+			if rerr != nil {
+				log.Errorw("failed to reserve stock", "orderId", evt.OrderId, "failedProducts", failed, "error", rerr)
+			}
 			return nil
 		})
 		if cons, err := con.NewConsumer(brokers, "inventory-service", handler); err == nil {
@@ -95,7 +98,9 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		}
 		// Consume payment outcomes to finalize or release reservations
 		if payCons, err := con.NewPaymentConsumer(brokers, "inventory-service", con.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
-			svc.FinalizeReservation(cctx, evt.OrderId, evt.Success)
+			if ferr := svc.FinalizeReservation(cctx, evt.OrderId, evt.Success); ferr != nil {
+				log.Errorw("failed to finalize reservation", "orderId", evt.OrderId, "success", evt.Success, "error", ferr)
+			}
 			return nil
 		})); err == nil {
 			defer payCons.Close()
@@ -105,14 +110,14 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	}
 
 	grpcServer := grpc.NewServer()
-	invpb.RegisterInventoryServiceServer(grpcServer, grpcsvr.NewPBInventoryServer(svc))
+	invpb.RegisterInventoryServiceServer(grpcServer, grpcsvr.NewPBInventoryServer(svc, log))
 
 	h := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, h)
 
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
-		log.Errorw("listen failed", "error", err)
+		log.Errorw("failed to listen", "error", err)
 		return err
 	}
 	log.Infow("inventory-service starting", "port", cfg.Port)
@@ -127,7 +132,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	case err := <-serveErr:
-		log.Errorw("serve failed", "error", err)
+		log.Errorw("failed to serve", "error", err)
 		return err
 	}
 }
