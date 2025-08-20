@@ -42,6 +42,7 @@ fmt: ## Run gofmt locally across all Go services (requires local Go toolchain)
 go-mod-all: ## Run go mod download && go mod tidy locally for all Go modules
 	@echo "Running go mod download && go mod tidy for all modules (locally)..."
 	@echo "(Ensure Go is installed and available in PATH)"
+	cd libs/kafka && go mod download && go mod tidy
 	cd services/api-gateway && go mod download && go mod tidy
 	cd services/user-service && go mod download && go mod tidy
 	cd services/order-service && go mod download && go mod tidy

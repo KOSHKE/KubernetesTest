@@ -1,7 +1,7 @@
 services:
-  # Infrastructure
   postgres:
     image: postgres:15.4
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -19,6 +19,7 @@ services:
 
   redis:
     image: redis:7.2-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -28,9 +29,9 @@ services:
       retries: 30
       start_period: 5s
 
-  # Kafka (KRaft) and UI
   kafka:
     image: bitnami/kafka:4.0.0
+    restart: unless-stopped
     ports:
       - "9092:9092"
     environment:
@@ -44,7 +45,7 @@ services:
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
       - KAFKA_KRAFT_CLUSTER_ID=${KAFKA_KRAFT_CLUSTER_ID}
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
     volumes:
       - kafka_data:/bitnami/kafka
@@ -55,8 +56,29 @@ services:
       retries: 60
       start_period: 10s
 
+  # One-shot сервис для декларативного провижена топиков (prod init)
+  topics-init:
+    image: bitnami/kafka:4.0.0
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKERS=${KAFKA_BOOTSTRAP_SERVERS}
+    entrypoint: ["/bin/bash","-lc"]
+    command: >
+      "
+      for i in {1..60}; do
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BROKERS --list && break || sleep 2;
+      done &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BROKERS --create --if-not-exists --topic orders.v1.order_created --partitions 1 --replication-factor 1 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BROKERS --create --if-not-exists --topic inventory.v1.stock_reserved --partitions 1 --replication-factor 1 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BROKERS --create --if-not-exists --topic inventory.v1.stock_reservation_failed --partitions 1 --replication-factor 1 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BROKERS --create --if-not-exists --topic payments.v1.payment_processed --partitions 1 --replication-factor 1
+      "
+    restart: "no"
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
+    restart: unless-stopped
     ports:
       - "8085:8080"
     environment:
@@ -65,11 +87,11 @@ services:
     depends_on:
       - kafka
 
-  # Go services with Air (hot reload)
   api-gateway:
     build:
       context: .
       dockerfile: ./services/api-gateway/Dockerfile
+    restart: unless-stopped
     working_dir: /app/services/api-gateway
     volumes:
       - .:/app
@@ -93,6 +115,7 @@ services:
     build:
       context: .
       dockerfile: ./services/user-service/Dockerfile
+    restart: unless-stopped
     working_dir: /app/services/user-service
     volumes:
       - .:/app
@@ -115,6 +138,7 @@ services:
     build:
       context: .
       dockerfile: ./services/order-service/Dockerfile
+    restart: unless-stopped
     working_dir: /app/services/order-service
     volumes:
       - .:/app
@@ -140,6 +164,7 @@ services:
     build:
       context: .
       dockerfile: ./services/inventory-service/Dockerfile
+    restart: unless-stopped
     working_dir: /app/services/inventory-service
     volumes:
       - .:/app
@@ -164,6 +189,7 @@ services:
     build:
       context: .
       dockerfile: ./services/payment-service/Dockerfile
+    restart: unless-stopped
     working_dir: /app/services/payment-service
     volumes:
       - .:/app
@@ -183,7 +209,6 @@ services:
       - redis
       - kafka
 
-  # Frontend (Vite dev server)
   frontend:
     image: node:22-alpine
     working_dir: /app
@@ -208,3 +233,5 @@ volumes:
   air_cache_order:
   air_cache_payment:
   air_cache_inventory:
+
+

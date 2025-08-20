@@ -11,6 +11,7 @@ RUN apk add --no-cache git \
 COPY services/api-gateway/go.mod services/api-gateway/go.sum ./
 # Copy proto-go module file for local replace to work during dependency download
 COPY proto-go/go.mod /app/proto-go/go.mod
+COPY libs/kafka/go.mod /app/libs/kafka/go.mod
 RUN go mod download
 
 # Copy the entire codebase
