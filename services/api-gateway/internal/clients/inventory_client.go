@@ -2,14 +2,14 @@ package clients
 
 import (
 	"context"
-	"time"
 
-	"api-gateway/internal/types"
+	"api-gateway/pkg/conversion"
+	"api-gateway/pkg/grpc"
+	"api-gateway/pkg/types"
 	invpb "proto-go/inventory"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
+
+// ---------------- Inventory Client Interface ----------------
 
 type InventoryClient interface {
 	Close() error
@@ -20,9 +20,11 @@ type InventoryClient interface {
 }
 
 type inventoryClient struct {
-	conn   *grpc.ClientConn
+	*grpc.BaseClient
 	client invpb.InventoryServiceClient
 }
+
+// ---------------- Inventory Models ----------------
 
 type Product struct {
 	ID            string      `json:"id"`
@@ -66,83 +68,88 @@ type StockCheckResult struct {
 	IsAvailable       bool   `json:"is_available"`
 }
 
-func NewInventoryClient(address string) (InventoryClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+// ---------------- Constructor ----------------
 
-	conn, err := grpc.DialContext(ctx, address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+func NewInventoryClient(address string) (InventoryClient, error) {
+	baseClient, err := grpc.NewBaseClient(address)
 	if err != nil {
 		return nil, err
 	}
-
-	return &inventoryClient{conn: conn, client: invpb.NewInventoryServiceClient(conn)}, nil
+	return &inventoryClient{
+		BaseClient: baseClient,
+		client:     invpb.NewInventoryServiceClient(baseClient.GetConn()),
+	}, nil
 }
 
-func (c *inventoryClient) Close() error { return c.conn.Close() }
+// ---------------- Inventory Methods ----------------
 
 func (c *inventoryClient) GetProducts(ctx context.Context, categoryID string, page, limit int32, search string) ([]*Product, int32, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetProducts(ctx, &invpb.GetProductsRequest{CategoryId: categoryID, Page: page, Limit: limit, Search: search})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*invpb.GetProductsResponse, error) {
+		return c.client.GetProducts(ctx, &invpb.GetProductsRequest{
+			CategoryId: categoryID,
+			Page:       page,
+			Limit:      limit,
+			Search:     search,
+		})
+	})
 	if err != nil {
 		return nil, 0, err
 	}
-	out := make([]*Product, 0, len(res.GetProducts()))
-	for _, p := range res.GetProducts() {
-		out = append(out, mapProductFromPB(p))
+
+	out := make([]*Product, len(resp.GetProducts()))
+	for i, p := range resp.GetProducts() {
+		out[i] = mapProductFromPB(p)
 	}
-	return out, res.GetTotal(), nil
+	return out, resp.GetTotal(), nil
 }
 
 func (c *inventoryClient) GetProduct(ctx context.Context, productID string) (*Product, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetProduct(ctx, &invpb.GetProductRequest{Id: productID})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*invpb.GetProductResponse, error) {
+		return c.client.GetProduct(ctx, &invpb.GetProductRequest{Id: productID})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return mapProductFromPB(res.GetProduct()), nil
+	return mapProductFromPB(resp.GetProduct()), nil
 }
 
 func (c *inventoryClient) GetCategories(ctx context.Context, activeOnly bool) ([]*Category, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetCategories(ctx, &invpb.GetCategoriesRequest{ActiveOnly: activeOnly})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*invpb.GetCategoriesResponse, error) {
+		return c.client.GetCategories(ctx, &invpb.GetCategoriesRequest{ActiveOnly: activeOnly})
+	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*Category, 0, len(res.GetCategories()))
-	for _, cat := range res.GetCategories() {
-		out = append(out, &Category{ID: cat.Id, Name: cat.Name, Description: cat.Description, IsActive: cat.IsActive})
+
+	out := make([]*Category, len(resp.GetCategories()))
+	for i, cat := range resp.GetCategories() {
+		out[i] = mapCategoryFromPB(cat)
 	}
 	return out, nil
 }
 
 func (c *inventoryClient) CheckStock(ctx context.Context, req *StockCheckRequest) (*StockCheckResponse, error) {
-	grpcItems := make([]*invpb.StockCheckItem, 0, len(req.Items))
-	for _, it := range req.Items {
-		grpcItems = append(grpcItems, &invpb.StockCheckItem{ProductId: it.ProductID, Quantity: it.Quantity})
+	grpcItems := make([]*invpb.StockCheckItem, len(req.Items))
+	for i, it := range req.Items {
+		grpcItems[i] = &invpb.StockCheckItem{ProductId: it.ProductID, Quantity: it.Quantity}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.CheckStock(ctx, &invpb.CheckStockRequest{Items: grpcItems})
+
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*invpb.CheckStockResponse, error) {
+		return c.client.CheckStock(ctx, &invpb.CheckStockRequest{Items: grpcItems})
+	})
 	if err != nil {
 		return nil, err
 	}
-	results := make([]StockCheckResult, 0, len(res.GetResults()))
-	for _, r := range res.GetResults() {
-		results = append(results, StockCheckResult{
-			ProductID:         r.ProductId,
-			RequestedQuantity: r.RequestedQuantity,
-			AvailableQuantity: r.AvailableQuantity,
-			IsAvailable:       r.IsAvailable,
-		})
+
+	results := make([]StockCheckResult, len(resp.GetResults()))
+	for i, r := range resp.GetResults() {
+		results[i] = mapStockCheckResultFromPB(r)
 	}
-	return &StockCheckResponse{Results: results, AllAvailable: res.GetAllAvailable()}, nil
+
+	return &StockCheckResponse{Results: results, AllAvailable: resp.GetAllAvailable()}, nil
 }
+
+// ---------------- Mapping Helpers ----------------
 
 func mapProductFromPB(p *invpb.Product) *Product {
 	if p == nil {
@@ -152,13 +159,31 @@ func mapProductFromPB(p *invpb.Product) *Product {
 		ID:            p.Id,
 		Name:          p.Name,
 		Description:   p.Description,
-		Price:         types.Money{Amount: p.Price.GetAmount(), Currency: p.Price.GetCurrency()},
+		Price:         conversion.MoneyFromPB(p.Price),
 		CategoryID:    p.CategoryId,
 		CategoryName:  p.CategoryName,
 		StockQuantity: p.StockQuantity,
 		ImageURL:      p.ImageUrl,
 		IsActive:      p.IsActive,
-		CreatedAt:     p.CreatedAt,
-		UpdatedAt:     p.UpdatedAt,
+		CreatedAt:     grpc.FormatTimestamp(p.CreatedAt),
+		UpdatedAt:     grpc.FormatTimestamp(p.UpdatedAt),
+	}
+}
+
+func mapCategoryFromPB(c *invpb.Category) *Category {
+	return &Category{
+		ID:          c.Id,
+		Name:        c.Name,
+		Description: c.Description,
+		IsActive:    c.IsActive,
+	}
+}
+
+func mapStockCheckResultFromPB(r *invpb.StockCheckResult) StockCheckResult {
+	return StockCheckResult{
+		ProductID:         r.ProductId,
+		RequestedQuantity: r.RequestedQuantity,
+		AvailableQuantity: r.AvailableQuantity,
+		IsAvailable:       r.IsAvailable,
 	}
 }

@@ -71,6 +71,10 @@ func (s *InventoryService) GetStocksByIDs(ctx context.Context, productIDs []stri
 	return s.repo.GetStocksByIDs(ctx, productIDs)
 }
 
+func (s *InventoryService) GetCategories(ctx context.Context, activeOnly bool) ([]*models.Category, error) {
+	return s.repo.GetCategories(ctx, activeOnly)
+}
+
 func (s *InventoryService) CheckStock(ctx context.Context, items []StockCheckItem) ([]StockCheckResult, bool, error) {
 	results := make([]StockCheckResult, 0, len(items))
 	allAvailable := true

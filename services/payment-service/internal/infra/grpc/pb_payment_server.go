@@ -2,12 +2,13 @@ package grpc
 
 import (
 	"context"
-	"time"
 
 	appsvc "payment-service/internal/app/services"
 	"payment-service/internal/domain/entities"
 	"payment-service/internal/domain/valueobjects"
 	pb "proto-go/payment"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBPaymentServer struct {
@@ -63,8 +64,8 @@ func toPBPayment(p *entities.Payment) *pb.Payment {
 		Status:        toPBStatus(p.Status),
 		Method:        toPBMethod(p.Method),
 		TransactionId: p.TransactionID,
-		CreatedAt:     p.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:     p.UpdatedAt.UTC().Format(time.RFC3339),
+		CreatedAt:     timestamppb.New(p.CreatedAt.UTC()),
+		UpdatedAt:     timestamppb.New(p.UpdatedAt.UTC()),
 	}
 }
 

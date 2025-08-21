@@ -4,6 +4,8 @@ package user;
 
 option go_package = "proto/user";
 
+import "google/protobuf/timestamp.proto";
+
 // User Service
 service UserService {
   rpc Register(RegisterRequest) returns (RegisterResponse);
@@ -19,8 +21,8 @@ message User {
   string first_name = 3;
   string last_name = 4;
   string phone = 5;
-  string created_at = 6;
-  string updated_at = 7;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
 }
 
 message RegisterRequest {

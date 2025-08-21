@@ -1,14 +1,14 @@
 package handlers
 
 import (
-	"net/http"
-
 	"api-gateway/internal/clients"
+	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
+	http.BaseHandler
 	userClient clients.UserClient
 }
 
@@ -17,72 +17,63 @@ func NewUserHandler(userClient clients.UserClient) *UserHandler {
 }
 
 func (h *UserHandler) Register(c *gin.Context) {
-	var req clients.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+	var req http.RegisterRequest
+	if !http.ValidateRequest(c, &req) {
 		return
 	}
-	if req.Email == "" || req.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email and password are required"})
-		return
+
+	if h.HandleUserClientOperation(c, func() error {
+		_, err := h.userClient.Register(c.Request.Context(), req.ToClientRequest())
+		return err
+	}, "register user") {
+		http.RespondCreated(c, gin.H{"message": "User registered successfully"}, "User registered successfully")
 	}
-	response, err := h.userClient.Register(c.Request.Context(), &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register user"})
-		return
-	}
-	c.JSON(http.StatusCreated, response)
 }
 
 func (h *UserHandler) Login(c *gin.Context) {
-	var req clients.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+	var req http.LoginRequest
+	if !http.ValidateRequest(c, &req) {
 		return
 	}
-	if req.Email == "" || req.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email and password are required"})
-		return
+
+	if h.HandleUserClientOperation(c, func() error {
+		_, err := h.userClient.Login(c.Request.Context(), req.ToClientRequest())
+		return err
+	}, "authenticate user") {
+		http.RespondSuccess(c, gin.H{"message": "Login successful"}, "Login successful")
 	}
-	response, err := h.userClient.Login(c.Request.Context(), &req)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
-		return
-	}
-	c.JSON(http.StatusOK, response)
 }
 
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	// No auth: demo-only
-	userID := c.Query("user_id")
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
+	userID, ok := http.RequireUserID(c)
+	if !ok {
+		return // Error response already sent by RequireUserID
 	}
-	user, err := h.userClient.GetUser(c.Request.Context(), userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user profile"})
-		return
+
+	if h.HandleUserClientOperation(c, func() error {
+		_, err := h.userClient.GetUser(c.Request.Context(), userID)
+		return err
+	}, "get user profile") {
+		http.RespondSuccess(c, gin.H{"message": "Profile retrieved successfully"}, "Profile retrieved successfully")
 	}
-	c.JSON(http.StatusOK, gin.H{"user": user})
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// No auth: demo-only
-	userID := c.Query("user_id")
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, ok := http.RequireUserID(c)
+	if !ok {
+		return // Error response already sent by RequireUserID
+	}
+	var req http.RegisterRequest
+	if !http.ValidateRequest(c, &req) {
 		return
 	}
-	var req clients.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
+
+	if h.HandleUserClientOperation(c, func() error {
+		_, err := h.userClient.UpdateUser(c.Request.Context(), userID, req.ToClientRequest())
+		return err
+	}, "update user profile") {
+		http.RespondSuccess(c, gin.H{"message": "Profile updated successfully"}, "Profile updated successfully")
 	}
-	user, err := h.userClient.UpdateUser(c.Request.Context(), userID, &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user profile"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"user": user, "message": "Profile updated successfully"})
 }

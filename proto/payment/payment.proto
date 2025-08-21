@@ -4,6 +4,8 @@ package payment;
 
 option go_package = "proto/payment";
 
+import "google/protobuf/timestamp.proto";
+
 // Value object for money in minor units
 message Money {
   int64 amount = 1;   // amount in minor units (e.g., cents)
@@ -26,8 +28,8 @@ message Payment {
   PaymentStatus status = 5;
   PaymentMethod method = 6;
   string transaction_id = 7;
-  string created_at = 8;
-  string updated_at = 9;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
 }
 
 enum PaymentStatus {

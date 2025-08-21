@@ -3,15 +3,12 @@ package clients
 import (
 	"context"
 	"fmt"
-	"time"
 
+	grpcutil "api-gateway/pkg/grpc"
 	userpb "proto-go/user"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Interface for DI
+// UserClient defines the interface for user-related operations.
 type UserClient interface {
 	Close() error
 	Register(ctx context.Context, req *RegisterRequest) (*AuthResponse, error)
@@ -21,10 +18,11 @@ type UserClient interface {
 }
 
 type userClient struct {
-	conn   *grpc.ClientConn
+	*grpcutil.BaseClient
 	client userpb.UserServiceClient
 }
 
+// User represents a user entity.
 type User struct {
 	ID        string `json:"id"`
 	Email     string `json:"email"`
@@ -35,6 +33,7 @@ type User struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// RegisterRequest contains information for registering a user.
 type RegisterRequest struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
@@ -43,80 +42,129 @@ type RegisterRequest struct {
 	Phone     string `json:"phone"`
 }
 
+// LoginRequest contains information for logging in a user.
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
+// AuthResponse contains authentication result.
 type AuthResponse struct {
 	User    *User  `json:"user"`
-	Token   string `json:"token"`
 	Message string `json:"message"`
 }
 
+// NewUserClient creates a new gRPC client for user service.
 func NewUserClient(address string) (UserClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	baseClient, err := grpcutil.NewBaseClient(address)
 	if err != nil {
 		return nil, err
 	}
-	return &userClient{conn: conn, client: userpb.NewUserServiceClient(conn)}, nil
+	return &userClient{
+		BaseClient: baseClient,
+		client:     userpb.NewUserServiceClient(baseClient.GetConn()),
+	}, nil
 }
 
-func (c *userClient) Close() error { return c.conn.Close() }
+// callGRPC wraps a gRPC call with timeout and validates the response containing a user.
+func (c *userClient) callGRPC(ctx context.Context, fn func(ctx context.Context) (any, error)) (*User, error) {
+	resp, err := grpcutil.WithTimeoutResult(ctx, fn)
+	if err != nil {
+		return nil, err
+	}
 
+	var user *userpb.User
+	switch v := resp.(type) {
+	case *userpb.RegisterResponse:
+		user = v.User
+	case *userpb.LoginResponse:
+		user = v.User
+	case *userpb.GetUserResponse:
+		user = v.User
+	case *userpb.UpdateUserResponse:
+		user = v.User
+	default:
+		return nil, fmt.Errorf("unsupported response type")
+	}
+
+	if user == nil {
+		return nil, fmt.Errorf("empty user in response")
+	}
+	return mapUserFromPB(user), nil
+}
+
+// Register registers a new user.
 func (c *userClient) Register(ctx context.Context, req *RegisterRequest) (*AuthResponse, error) {
 	if req.Email == "" || req.Password == "" {
 		return nil, fmt.Errorf("email and password are required")
 	}
-	resp, err := c.client.Register(ctx, &userpb.RegisterRequest{Email: req.Email, Password: req.Password, FirstName: req.FirstName, LastName: req.LastName, Phone: req.Phone})
+
+	user, err := c.callGRPC(ctx, func(ctx context.Context) (any, error) {
+		return c.client.Register(ctx, &userpb.RegisterRequest{
+			Email:     req.Email,
+			Password:  req.Password,
+			FirstName: req.FirstName,
+			LastName:  req.LastName,
+			Phone:     req.Phone,
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: "", Message: resp.Message}, nil
+
+	return &AuthResponse{User: user, Message: "registered successfully"}, nil
 }
 
+// Login authenticates a user.
 func (c *userClient) Login(ctx context.Context, req *LoginRequest) (*AuthResponse, error) {
 	if req.Email == "" || req.Password == "" {
 		return nil, fmt.Errorf("email and password are required")
 	}
-	resp, err := c.client.Login(ctx, &userpb.LoginRequest{Email: req.Email, Password: req.Password})
+
+	user, err := c.callGRPC(ctx, func(ctx context.Context) (any, error) {
+		return c.client.Login(ctx, &userpb.LoginRequest{
+			Email:    req.Email,
+			Password: req.Password,
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &AuthResponse{User: &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, Token: "", Message: resp.Message}, nil
+
+	return &AuthResponse{User: user, Message: "login successful"}, nil
 }
 
+// GetUser fetches a user by ID.
 func (c *userClient) GetUser(ctx context.Context, userID string) (*User, error) {
-	resp, err := c.client.GetUser(ctx, &userpb.GetUserRequest{Id: userID})
-	if err != nil {
-		return nil, err
-	}
-	return &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, nil
+	return c.callGRPC(ctx, func(ctx context.Context) (any, error) {
+		return c.client.GetUser(ctx, &userpb.GetUserRequest{Id: userID})
+	})
 }
 
+// UpdateUser updates user details.
 func (c *userClient) UpdateUser(ctx context.Context, userID string, req *RegisterRequest) (*User, error) {
-	resp, err := c.client.UpdateUser(ctx, &userpb.UpdateUserRequest{Id: userID, FirstName: req.FirstName, LastName: req.LastName, Phone: req.Phone})
-	if err != nil {
-		return nil, err
+	return c.callGRPC(ctx, func(ctx context.Context) (any, error) {
+		return c.client.UpdateUser(ctx, &userpb.UpdateUserRequest{
+			Id:        userID,
+			FirstName: req.FirstName,
+			LastName:  req.LastName,
+			Phone:     req.Phone,
+		})
+	})
+}
+
+// mapUserFromPB converts protobuf user to local User struct.
+func mapUserFromPB(u *userpb.User) *User {
+	if u == nil {
+		return nil
 	}
-	return &User{ID: resp.User.Id, Email: resp.User.Email, FirstName: resp.User.FirstName, LastName: resp.User.LastName, Phone: resp.User.Phone, CreatedAt: resp.User.CreatedAt, UpdatedAt: resp.User.UpdatedAt}, nil
-}
-
-// Helper function to generate mock JWT
-func generateMockJWT(userID, email string) string {
-	// Simple mock JWT format: header.payload.signature
-	return fmt.Sprintf("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.%s.mock-signature",
-		encodeBase64(fmt.Sprintf(`{"user_id":"%s","email":"%s","exp":%d}`,
-			userID, email, time.Now().Add(24*time.Hour).Unix())))
-}
-
-func encodeBase64(s string) string {
-	// Simple base64-like encoding for mock
-	return fmt.Sprintf("%x", s)
+	return &User{
+		ID:        u.Id,
+		Email:     u.Email,
+		FirstName: u.FirstName,
+		LastName:  u.LastName,
+		Phone:     u.Phone,
+		CreatedAt: grpcutil.FormatTimestamp(u.CreatedAt),
+		UpdatedAt: grpcutil.FormatTimestamp(u.UpdatedAt),
+	}
 }

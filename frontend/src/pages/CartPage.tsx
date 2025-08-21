@@ -34,7 +34,7 @@ const CartPage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [orderForm, setOrderForm] = useState<OrderForm>({
     shipping_address: '',
-    payment_method: 'CREDIT_CARD',
+    payment_method: 'credit_card', 
     payment_details: {
       card_number: '',
       card_holder: '',
@@ -124,6 +124,7 @@ const CartPage: React.FC = () => {
 
     try {
       const orderData: CreateOrderRequest = {
+        user_id: 'dev-user-1', // Temporary user_id for development
         items: cartItems.map(item => ({
           product_id: item.product_id,
           quantity: item.quantity,
@@ -139,7 +140,11 @@ const CartPage: React.FC = () => {
         },
       };
 
-      await ordersAPI.createOrder(orderData);
+            try {
+        const response = await ordersAPI.createOrder(orderData);
+      } catch (error) {
+        throw error;
+      }
       
       // Clear cart
       localStorage.removeItem('cart');

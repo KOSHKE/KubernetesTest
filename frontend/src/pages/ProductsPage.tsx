@@ -22,61 +22,59 @@ import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 
 const ProductsPage: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
 
   useEffect(() => {
     loadCategories();
   }, []);
 
-  const { isFetching } = useQuery({
+  const { data: productsData, isFetching, error: queryError } = useQuery({
     queryKey: ['products', selectedCategory],
     queryFn: async () => {
       const params: { category_id?: string } = {};
       if (selectedCategory) params.category_id = selectedCategory;
-      const response = await productsAPI.getProducts(params as any);
-      const fetched = (response.data.products || []) as Product[];
-      console.debug('Loaded products:', fetched);
-      setAllProducts(fetched);
-      setLoading(false);
-      return fetched;
+      try {
+        const response = await productsAPI.getProducts(params as any);
+        const fetched = (response.data.data.products || []) as Product[];
+        return fetched;
+      } catch (error) {
+        throw error;
+      }
     },
+    enabled: true,
+    retry: 1,
+    retryDelay: 1000,
   });
 
-  useEffect(() => {
+  // Filter products by search term
+  const filteredProducts = React.useMemo(() => {
+    if (!productsData) {
+      return [];
+    }
     const normalize = (value: unknown) => (value ?? '').toString().toLowerCase();
-    const query = normalize(debouncedSearchTerm);
-    const filtered = query
-      ? allProducts.filter((p) => {
-          const name = normalize(p.name);
-          const description = normalize((p as any).description);
-          return name.includes(query) || description.includes(query);
-        })
-      : allProducts;
-    setProducts(filtered);
-  }, [debouncedSearchTerm, allProducts]);
+    const query = normalize(searchTerm);
+    if (!query) {
+      return productsData;
+    }
+    const filtered = productsData.filter((p: Product) => {
+      const name = normalize(p.name);
+      const description = normalize((p as any).description);
+      return name.includes(query) || description.includes(query);
+    });
+    return filtered;
+  }, [productsData, searchTerm]);
 
-  // Debounce ввода поиска (300 мс)
-  useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
-    return () => clearTimeout(handle);
-  }, [searchTerm]);
 
-  const loadProducts = async () => {};
 
   const loadCategories = async () => {
     try {
       const response = await productsAPI.getCategories();
-      setCategories((response.data.categories || []) as Category[]);
+      setCategories((response.data.data.categories || []) as Category[]);
     } catch (err) {
-      console.error('Failed to load categories');
+      // Don't throw error - let products load anyway
     }
   };
 
@@ -112,7 +110,7 @@ const ProductsPage: React.FC = () => {
     <>
     <Container sx={{ mt: 2 }}>
       <PageHeader title="Products" />
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {queryError && <Alert severity="error" sx={{ mb: 2 }}>{queryError.message}</Alert>}
 
       <Card sx={{ mb: 2 }}>
         <CardContent>
@@ -145,7 +143,7 @@ const ProductsPage: React.FC = () => {
       </Card>
 
       <Grid container spacing={2}>
-        {loading || isFetching ? (
+        {isFetching ? (
           Array.from({ length: 8 }).map((_, i) => (
             <Grid key={i} item xs={12} sm={6} md={4} lg={3}>
               <Card>
@@ -160,12 +158,12 @@ const ProductsPage: React.FC = () => {
               </Card>
             </Grid>
           ))
-        ) : products.length === 0 ? (
+        ) : (!filteredProducts || filteredProducts.length === 0) ? (
           <Grid item xs={12}>
             <EmptyState title="No products found" description="Try changing filters or search query" />
           </Grid>
         ) : (
-          products.map(product => (
+          filteredProducts.map((product: Product) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
               <Card>
                 {product.image_url ? (

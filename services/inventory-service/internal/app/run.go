@@ -48,6 +48,15 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			log.Errorw("failed to automigrate", "error", err)
 			return err
 		}
+		// Seed default categories first
+		seedCategories := []*models.Category{
+			{ID: "cat-1", Name: "Electronics", Description: "Electronic devices and gadgets", IsActive: true},
+			{ID: "cat-2", Name: "Home & Kitchen", Description: "Home and kitchen accessories", IsActive: true},
+		}
+		for _, c := range seedCategories {
+			_ = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(c).Error
+		}
+
 		// Seed default catalog and stock: 3 of prod-1, 1 of prod-2 (Smart Watch), 2 of prod-3 (Mug)
 		seedProducts := []*models.Product{
 			{ID: "prod-1", Name: "Wireless Headphones", Description: "High-quality wireless headphones with noise cancellation", PriceMinor: 9999, Currency: "USD", CategoryID: "cat-1", CategoryName: "Electronics", ImageURL: "/images/headphones.jpg", IsActive: true},

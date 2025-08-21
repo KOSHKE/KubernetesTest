@@ -2,27 +2,28 @@ package clients
 
 import (
 	"context"
-	"time"
 
-	"api-gateway/internal/types"
+	"api-gateway/pkg/grpc"
+	"api-gateway/pkg/types"
 	orderpb "proto-go/order"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
+
+// ---------------- Order Client Interface ----------------
 
 type OrderClient interface {
 	Close() error
 	CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error)
 	GetOrder(ctx context.Context, orderID, userID string) (*Order, error)
 	GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error)
-	CancelOrder(ctx context.Context, orderID, userID string) (*Order, error)
+
 }
 
 type orderClient struct {
-	conn   *grpc.ClientConn
+	*grpc.BaseClient
 	client orderpb.OrderServiceClient
 }
+
+// ---------------- Order Models ----------------
 
 type Order struct {
 	ID              string      `json:"id"`
@@ -56,116 +57,114 @@ type OrderItemRequest struct {
 	Quantity  int32  `json:"quantity"`
 }
 
-func NewOrderClient(address string) (OrderClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+// ---------------- Constructor ----------------
 
-	conn, err := grpc.DialContext(ctx, address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+func NewOrderClient(address string) (OrderClient, error) {
+	baseClient, err := grpc.NewBaseClient(address)
 	if err != nil {
 		return nil, err
 	}
-	return &orderClient{conn: conn, client: orderpb.NewOrderServiceClient(conn)}, nil
+	return &orderClient{
+		BaseClient: baseClient,
+		client:     orderpb.NewOrderServiceClient(baseClient.GetConn()),
+	}, nil
 }
 
-func (c *orderClient) Close() error { return c.conn.Close() }
+// ---------------- Order Methods ----------------
 
 func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error) {
-	items := make([]*orderpb.OrderItemRequest, 0, len(req.Items))
-	for _, it := range req.Items {
-		items = append(items, &orderpb.OrderItemRequest{ProductId: it.ProductID, Quantity: it.Quantity})
+	items := make([]*orderpb.OrderItemRequest, len(req.Items))
+	for i, it := range req.Items {
+		items[i] = &orderpb.OrderItemRequest{ProductId: it.ProductID, Quantity: it.Quantity}
 	}
-	grpcReq := &orderpb.CreateOrderRequest{UserId: req.UserID, Items: items, ShippingAddress: req.ShippingAddress}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.CreateOrder(ctx, grpcReq)
+	grpcReq := &orderpb.CreateOrderRequest{
+		UserId:          req.UserID,
+		Items:           items,
+		ShippingAddress: req.ShippingAddress,
+	}
+
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.CreateOrderResponse, error) {
+		return c.client.CreateOrder(ctx, grpcReq)
+	})
 	if err != nil {
 		return nil, err
 	}
-	return mapOrderFromPB(res.GetOrder()), nil
+	return mapOrderFromPB(resp.GetOrder()), nil
 }
 
 func (c *orderClient) GetOrder(ctx context.Context, orderID, userID string) (*Order, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetOrder(ctx, &orderpb.GetOrderRequest{Id: orderID, UserId: userID})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.GetOrderResponse, error) {
+		return c.client.GetOrder(ctx, &orderpb.GetOrderRequest{Id: orderID, UserId: userID})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return mapOrderFromPB(res.GetOrder()), nil
+	return mapOrderFromPB(resp.GetOrder()), nil
 }
 
 func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetUserOrders(ctx, &orderpb.GetUserOrdersRequest{UserId: userID, Page: page, Limit: limit})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.GetUserOrdersResponse, error) {
+		return c.client.GetUserOrders(ctx, &orderpb.GetUserOrdersRequest{
+			UserId: userID, Page: page, Limit: limit,
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*Order, 0, len(res.GetOrders()))
-	for _, o := range res.GetOrders() {
-		out = append(out, mapOrderFromPB(o))
+
+	out := make([]*Order, len(resp.GetOrders()))
+	for i, o := range resp.GetOrders() {
+		out[i] = mapOrderFromPB(o)
 	}
 	return out, nil
 }
 
-func (c *orderClient) CancelOrder(ctx context.Context, orderID, userID string) (*Order, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.CancelOrder(ctx, &orderpb.CancelOrderRequest{Id: orderID, UserId: userID})
-	if err != nil {
-		return nil, err
+
+
+// ---------------- Mapping Helpers ----------------
+
+func mapMoneyFromPB(m *orderpb.Money) types.Money {
+	if m == nil {
+		return types.Money{}
 	}
-	return mapOrderFromPB(res.GetOrder()), nil
+	return types.Money{Amount: m.GetAmount(), Currency: m.GetCurrency()}
 }
 
-// Mapping helpers from PB -> HTTP types
+func mapOrderItemFromPB(it *orderpb.OrderItem) OrderItem {
+	if it == nil {
+		return OrderItem{}
+	}
+	var unitAmount int64
+	if it.Total != nil && it.Quantity > 0 {
+		unitAmount = it.Total.GetAmount() / int64(it.Quantity)
+	}
+	return OrderItem{
+		ID:          it.Id,
+		ProductID:   it.ProductId,
+		ProductName: it.ProductName,
+		Quantity:    it.Quantity,
+		Price:       types.Money{Amount: unitAmount, Currency: it.Total.GetCurrency()},
+		Total:       mapMoneyFromPB(it.Total),
+	}
+}
+
 func mapOrderFromPB(o *orderpb.Order) *Order {
 	if o == nil {
 		return nil
 	}
-	items := make([]OrderItem, 0, len(o.Items))
-	for _, it := range o.Items {
-		var unitAmount int64
-		var currency string
-		if it.Total != nil {
-			currency = it.Total.GetCurrency()
-			if it.Quantity > 0 {
-				unitAmount = it.Total.GetAmount() / int64(it.Quantity)
-			} else {
-				unitAmount = it.Total.GetAmount()
-			}
-		}
-		items = append(items, OrderItem{
-			ID:          it.Id,
-			ProductID:   it.ProductId,
-			ProductName: it.ProductName,
-			Quantity:    it.Quantity,
-			Price:       types.Money{Amount: unitAmount, Currency: currency},
-			Total:       types.Money{Amount: it.Total.GetAmount(), Currency: currency},
-		})
+	items := make([]OrderItem, len(o.Items))
+	for i, it := range o.Items {
+		items[i] = mapOrderItemFromPB(it)
 	}
 	return &Order{
 		ID:              o.Id,
 		UserID:          o.UserId,
 		Status:          mapStatusFromPB(o.Status),
 		Items:           items,
-		TotalAmount:     types.Money{Amount: o.TotalAmount.GetAmount(), Currency: o.TotalAmount.GetCurrency()},
+		TotalAmount:     mapMoneyFromPB(o.TotalAmount),
 		ShippingAddress: o.ShippingAddress,
-		CreatedAt: func() string {
-			if o.CreatedAt != nil {
-				return o.CreatedAt.AsTime().Format(time.RFC3339)
-			}
-			return ""
-		}(),
-		UpdatedAt: func() string {
-			if o.UpdatedAt != nil {
-				return o.UpdatedAt.AsTime().Format(time.RFC3339)
-			}
-			return ""
-		}(),
+		CreatedAt:       grpc.FormatTimestamp(o.CreatedAt),
+		UpdatedAt:       grpc.FormatTimestamp(o.UpdatedAt),
 	}
 }
 
@@ -184,6 +183,6 @@ func mapStatusFromPB(s orderpb.OrderStatus) string {
 	case orderpb.OrderStatus_CANCELLED:
 		return "CANCELLED"
 	default:
-		return "PENDING"
+		return "UNKNOWN"
 	}
 }

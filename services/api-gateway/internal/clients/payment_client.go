@@ -2,13 +2,10 @@ package clients
 
 import (
 	"context"
-	"time"
 
-	"api-gateway/internal/types"
+	"api-gateway/pkg/grpc"
+	"api-gateway/pkg/types"
 	paymentpb "proto-go/payment"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type PaymentClient interface {
@@ -19,7 +16,7 @@ type PaymentClient interface {
 }
 
 type paymentClient struct {
-	conn   *grpc.ClientConn
+	*grpc.BaseClient
 	client paymentpb.PaymentServiceClient
 }
 
@@ -58,52 +55,70 @@ type PaymentResponse struct {
 }
 
 func NewPaymentClient(address string) (PaymentClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	baseClient, err := grpc.NewBaseClient(address)
 	if err != nil {
 		return nil, err
 	}
-
-	return &paymentClient{conn: conn, client: paymentpb.NewPaymentServiceClient(conn)}, nil
+	return &paymentClient{
+		BaseClient: baseClient,
+		client:     paymentpb.NewPaymentServiceClient(baseClient.GetConn()),
+	}, nil
 }
 
-func (c *paymentClient) Close() error { return c.conn.Close() }
-
 func (c *paymentClient) ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*PaymentResponse, error) {
-	method := mapMethodToEnum(req.Method)
-	grpcReq := &paymentpb.ProcessPaymentRequest{OrderId: req.OrderID, UserId: req.UserID, Amount: &paymentpb.Money{Amount: req.Amount.Amount, Currency: req.Amount.Currency}, Method: method, Details: &paymentpb.PaymentDetails{CardNumber: req.Details.CardNumber, CardHolder: req.Details.CardHolder, ExpiryMonth: req.Details.ExpiryMonth, ExpiryYear: req.Details.ExpiryYear, Cvv: req.Details.CVV}}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.ProcessPayment(ctx, grpcReq)
+	grpcReq := &paymentpb.ProcessPaymentRequest{
+		OrderId: req.OrderID,
+		UserId:  req.UserID,
+		Amount:  &paymentpb.Money{Amount: req.Amount.Amount, Currency: req.Amount.Currency},
+		Method:  mapMethodToEnum(req.Method),
+		Details: &paymentpb.PaymentDetails{
+			CardNumber:  req.Details.CardNumber,
+			CardHolder:  req.Details.CardHolder,
+			ExpiryMonth: req.Details.ExpiryMonth,
+			ExpiryYear:  req.Details.ExpiryYear,
+			Cvv:         req.Details.CVV,
+		},
+	}
+
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*paymentpb.ProcessPaymentResponse, error) {
+		return c.client.ProcessPayment(ctx, grpcReq)
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &PaymentResponse{Payment: mapPaymentFromPB(res.Payment), Success: res.Success, Message: res.Message}, nil
+	return &PaymentResponse{
+		Payment: mapPaymentFromPB(resp.Payment),
+		Success: resp.Success,
+		Message: resp.Message,
+	}, nil
 }
 
 func (c *paymentClient) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.GetPayment(ctx, &paymentpb.GetPaymentRequest{Id: paymentID})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*paymentpb.GetPaymentResponse, error) {
+		return c.client.GetPayment(ctx, &paymentpb.GetPaymentRequest{Id: paymentID})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return mapPaymentFromPB(res.Payment), nil
+	return mapPaymentFromPB(resp.Payment), nil
 }
 
 func (c *paymentClient) RefundPayment(ctx context.Context, paymentID string, amount types.Money, reason string) (*PaymentResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	res, err := c.client.RefundPayment(ctx, &paymentpb.RefundPaymentRequest{PaymentId: paymentID, Amount: &paymentpb.Money{Amount: amount.Amount, Currency: amount.Currency}, Reason: reason})
+	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*paymentpb.RefundPaymentResponse, error) {
+		return c.client.RefundPayment(ctx, &paymentpb.RefundPaymentRequest{
+			PaymentId: paymentID,
+			Amount:    &paymentpb.Money{Amount: amount.Amount, Currency: amount.Currency},
+			Reason:    reason,
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &PaymentResponse{Payment: mapPaymentFromPB(res.Payment), Success: res.Success, Message: res.Message}, nil
+	return &PaymentResponse{
+		Payment: mapPaymentFromPB(resp.Payment),
+		Success: resp.Success,
+		Message: resp.Message,
+	}, nil
 }
 
 func mapMethodToEnum(method string) paymentpb.PaymentMethod {
@@ -118,21 +133,6 @@ func mapMethodToEnum(method string) paymentpb.PaymentMethod {
 		return paymentpb.PaymentMethod_BANK_TRANSFER
 	default:
 		return paymentpb.PaymentMethod_CREDIT_CARD
-	}
-}
-
-func mapStatusFromEnum(status paymentpb.PaymentStatus) string {
-	switch status {
-	case paymentpb.PaymentStatus_PAYMENT_COMPLETED:
-		return "COMPLETED"
-	case paymentpb.PaymentStatus_PAYMENT_FAILED:
-		return "FAILED"
-	case paymentpb.PaymentStatus_PAYMENT_REFUNDED:
-		return "REFUNDED"
-	case paymentpb.PaymentStatus_PAYMENT_PROCESSING:
-		return "PROCESSING"
-	default:
-		return "PENDING"
 	}
 }
 
@@ -151,9 +151,38 @@ func mapMethodFromEnum(method paymentpb.PaymentMethod) string {
 	}
 }
 
+func mapStatusFromEnum(status paymentpb.PaymentStatus) string {
+	switch status {
+	case paymentpb.PaymentStatus_PAYMENT_COMPLETED:
+		return "COMPLETED"
+	case paymentpb.PaymentStatus_PAYMENT_FAILED:
+		return "FAILED"
+	case paymentpb.PaymentStatus_PAYMENT_REFUNDED:
+		return "REFUNDED"
+	case paymentpb.PaymentStatus_PAYMENT_PROCESSING:
+		return "PROCESSING"
+	default:
+		return "PENDING"
+	}
+}
+
 func mapPaymentFromPB(p *paymentpb.Payment) *Payment {
 	if p == nil {
 		return nil
 	}
-	return &Payment{ID: p.Id, OrderID: p.OrderId, UserID: p.UserId, Amount: types.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency}, Status: mapStatusFromEnum(p.Status), Method: mapMethodFromEnum(p.Method), TransactionID: p.TransactionId, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+	amt := types.Money{}
+	if p.Amount != nil {
+		amt = types.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency}
+	}
+	return &Payment{
+		ID:            p.Id,
+		OrderID:       p.OrderId,
+		UserID:        p.UserId,
+		Amount:        amt,
+		Status:        mapStatusFromEnum(p.Status),
+		Method:        mapMethodFromEnum(p.Method),
+		TransactionID: p.TransactionId,
+		CreatedAt:     grpc.FormatTimestamp(p.CreatedAt),
+		UpdatedAt:     grpc.FormatTimestamp(p.UpdatedAt),
+	}
 }

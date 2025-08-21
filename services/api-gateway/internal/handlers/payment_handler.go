@@ -1,15 +1,14 @@
 package handlers
 
 import (
-	"net/http"
-
 	"api-gateway/internal/clients"
-	"api-gateway/internal/types"
+	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type PaymentHandler struct {
+	http.BaseHandler
 	paymentClient clients.PaymentClient
 }
 
@@ -19,72 +18,70 @@ func NewPaymentHandler(paymentClient clients.PaymentClient) *PaymentHandler {
 
 // ProcessPayment handles payment processing requests
 func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
-	var req clients.ProcessPaymentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+	var req http.ProcessPaymentRequest
+	if !http.ValidateRequest(c, &req) {
 		return
 	}
-	// Basic validation
-	if req.OrderID == "" || req.UserID == "" || req.Amount.Amount <= 0 || req.Amount.Currency == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required fields"})
+
+	// Validate that user_id in request matches query parameter for security
+	queryUserID := c.Query("user_id")
+	if queryUserID == "" {
+		http.RespondBadRequest(c, "user_id query parameter is required for payment operations")
 		return
 	}
-	if req.Details.CardNumber == "" || req.Details.CardHolder == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Card details required"})
+	if queryUserID != req.UserID {
+		http.RespondBadRequest(c, "user_id in request body must match user_id in query parameters")
 		return
 	}
-	response, err := h.paymentClient.ProcessPayment(c.Request.Context(), &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Payment processing failed"})
-		return
+
+	if h.HandlePaymentClientOperation(c, func() error {
+		response, err := h.paymentClient.ProcessPayment(c.Request.Context(), req.ToClientRequest())
+		if err != nil {
+			return err
+		}
+		if !response.Success {
+			http.RespondError(c, 402, "Payment failed")
+			return nil // Not an error, just business logic
+		}
+		return nil
+	}, "process payment") {
+		http.RespondSuccess(c, gin.H{"message": "Payment processed successfully"}, "Payment processed successfully")
 	}
-	if !response.Success {
-		c.JSON(http.StatusPaymentRequired, response)
-		return
-	}
-	c.JSON(http.StatusOK, response)
 }
 
 // GetPayment retrieves payment information
 func (h *PaymentHandler) GetPayment(c *gin.Context) {
-	paymentID := c.Param("id")
-	if paymentID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Payment ID required"})
-		return
+	paymentID, ok := h.RequireParam(c, "id")
+	if !ok {
+		return // Error response already sent by RequireParam
 	}
-	payment, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Payment not found"})
-		return
+
+	if h.HandlePaymentClientOperation(c, func() error {
+		_, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
+		return err
+	}, "get payment") {
+		http.RespondSuccess(c, gin.H{"message": "Payment retrieved successfully"}, "Payment retrieved successfully")
 	}
-	c.JSON(http.StatusOK, gin.H{"payment": payment})
 }
 
 // RefundPayment processes payment refunds
 func (h *PaymentHandler) RefundPayment(c *gin.Context) {
-	paymentID := c.Param("id")
-	if paymentID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Payment ID required"})
+	paymentID, ok := h.RequireParam(c, "id")
+	if !ok {
+		return // Error response already sent by RequireParam
+	}
+
+	var req http.RefundRequest
+	if !h.ValidateRequest(c, &req) {
 		return
 	}
-	var req struct {
-		Amount types.Money `json:"amount" binding:"required"`
-		Reason string      `json:"reason" binding:"required"`
+
+	if h.HandlePaymentClientOperation(c, func() error {
+		_, err := h.paymentClient.RefundPayment(c.Request.Context(), paymentID, req.Amount, req.Reason)
+		return err
+	}, "process refund") {
+		http.RespondSuccess(c, gin.H{"message": "Refund processed successfully"}, "Refund processed successfully")
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid refund request"})
-		return
-	}
-	if req.Amount.Amount <= 0 || req.Amount.Currency == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid amount"})
-		return
-	}
-	response, err := h.paymentClient.RefundPayment(c.Request.Context(), paymentID, req.Amount, req.Reason)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Refund processing failed"})
-		return
-	}
-	c.JSON(http.StatusOK, response)
 }
 
 // GetPaymentMethods returns available payment methods (mock data)
@@ -94,7 +91,7 @@ func (h *PaymentHandler) GetPaymentMethods(c *gin.Context) {
 		{"id": "debit_card", "name": "Debit Card", "description": "Pay directly from your bank account", "enabled": true},
 		{"id": "paypal", "name": "PayPal", "description": "Pay with your PayPal account", "enabled": false},
 	}
-	c.JSON(http.StatusOK, gin.H{"methods": methods, "message": "Mock payment methods - for demo purposes only"})
+	http.RespondSuccess(c, gin.H{"methods": methods}, "Mock payment methods - for demo purposes only")
 }
 
 // GetTestCards returns test card numbers for demo
@@ -106,5 +103,5 @@ func (h *PaymentHandler) GetTestCards(c *gin.Context) {
 		{"number": "4000000000000119", "description": "Processing error", "type": "visa"},
 		{"number": "4000000000000341", "description": "Expired card", "type": "visa"},
 	}
-	c.JSON(http.StatusOK, gin.H{"test_cards": testCards, "message": "Test card numbers for demo - DO NOT USE IN PRODUCTION", "note": "Use any future expiry date and any 3-digit CVV"})
+	http.RespondSuccess(c, gin.H{"test_cards": testCards}, "Test card numbers for demo - DO NOT USE IN PRODUCTION")
 }

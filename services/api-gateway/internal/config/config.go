@@ -6,10 +6,8 @@ import (
 
 type Config struct {
 	Port                string
-	JWKSURL             string
-	JWTIssuer           string
-	JWTAudience         string
 	RedisURL            string
+	FrontendOrigins     string
 	UserServiceURL      string
 	OrderServiceURL     string
 	InventoryServiceURL string
@@ -19,10 +17,8 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:                getEnv("PORT", "8080"),
-		JWKSURL:             getEnv("JWKS_URL", "http://user-service:8081/.well-known/jwks.json"),
-		JWTIssuer:           getEnv("JWT_ISSUER", "user-service"),
-		JWTAudience:         getEnv("JWT_AUDIENCE", "api-gateway"),
 		RedisURL:            getEnv("REDIS_URL", "redis:6379"),
+		FrontendOrigins:     getEnv("FRONTEND_ORIGINS", "http://localhost:3001"),
 		UserServiceURL:      getEnv("USER_SERVICE_URL", "localhost:50051"),
 		OrderServiceURL:     getEnv("ORDER_SERVICE_URL", "localhost:50052"),
 		InventoryServiceURL: getEnv("INVENTORY_SERVICE_URL", "localhost:50053"),

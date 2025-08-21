@@ -1,15 +1,14 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
-
 	"api-gateway/internal/clients"
+	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type InventoryHandler struct {
+	http.BaseHandler
 	inventoryClient clients.InventoryClient
 }
 
@@ -20,46 +19,35 @@ func NewInventoryHandler(inventoryClient clients.InventoryClient) *InventoryHand
 func (h *InventoryHandler) GetProducts(c *gin.Context) {
 	categoryID := c.Query("category_id")
 	search := c.Query("search")
-	page := int32(1)
-	limit := int32(20)
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = int32(p)
-		}
-	}
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = int32(l)
-		}
-	}
+	page, limit := http.GetPageLimit(c, 1, 20, 100)
 	products, total, err := h.inventoryClient.GetProducts(c.Request.Context(), categoryID, page, limit, search)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get products"})
+		http.HandleInventoryClientError(c, err, "get products")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"products": products, "page": page, "limit": limit, "total": total})
+	http.RespondSuccess(c, gin.H{"products": products, "page": page, "limit": limit, "total": total}, "Products retrieved successfully")
 }
 
 func (h *InventoryHandler) GetProduct(c *gin.Context) {
 	productID := c.Param("id")
 	if productID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Product ID is required"})
+		http.RespondBadRequest(c, "Product ID is required")
 		return
 	}
 	product, err := h.inventoryClient.GetProduct(c.Request.Context(), productID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		http.HandleInventoryClientError(c, err, "get product")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"product": product})
+	http.RespondSuccess(c, gin.H{"product": product}, "Product retrieved successfully")
 }
 
 func (h *InventoryHandler) GetCategories(c *gin.Context) {
 	activeOnly := c.Query("active_only") == "true"
 	categories, err := h.inventoryClient.GetCategories(c.Request.Context(), activeOnly)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get categories"})
+		http.HandleInventoryClientError(c, err, "get categories")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"categories": categories})
+	http.RespondSuccess(c, gin.H{"categories": categories}, "Categories retrieved successfully")
 }

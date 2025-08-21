@@ -117,7 +117,19 @@ func (r *GormInventoryRepository) Commit(ctx context.Context, productID string, 
 	return nil
 }
 
+func (r *GormInventoryRepository) GetCategories(ctx context.Context, activeOnly bool) ([]*models.Category, error) {
+	var categories []*models.Category
+	q := r.db.WithContext(ctx).Model(&models.Category{})
+	if activeOnly {
+		q = q.Where("is_active = ?", true)
+	}
+	if err := q.Order("name ASC").Find(&categories).Error; err != nil {
+		return nil, err
+	}
+	return categories, nil
+}
+
 // AutoMigrate creates tables
 func (r *GormInventoryRepository) AutoMigrate() error {
-	return r.db.AutoMigrate(&models.Product{}, &models.Stock{})
+	return r.db.AutoMigrate(&models.Product{}, &models.Stock{}, &models.Category{})
 }

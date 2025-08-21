@@ -64,7 +64,6 @@ export interface Order {
 
 export interface AuthResponse {
   user: User;
-  token: string;
   message: string;
 }
 
@@ -104,6 +103,7 @@ export interface PaymentDetails {
 }
 
 export interface CreateOrderRequest {
+  user_id: string; // Required user_id for order creation
   items: { product_id: string; quantity: number }[];
   shipping_address: string;
   payment_method: string;

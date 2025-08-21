@@ -134,3 +134,22 @@ func mapProductToPB(p *models.Product, stockQty int32) *invpb.Product {
 		IsActive:      p.IsActive,
 	}
 }
+
+func (s *PBInventoryServer) GetCategories(ctx context.Context, req *invpb.GetCategoriesRequest) (*invpb.GetCategoriesResponse, error) {
+	categories, err := s.svc.GetCategories(ctx, req.ActiveOnly)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get categories: %v", err)
+	}
+	
+	out := make([]*invpb.Category, 0, len(categories))
+	for _, c := range categories {
+		out = append(out, &invpb.Category{
+			Id:          c.ID,
+			Name:        c.Name,
+			Description: c.Description,
+			IsActive:    c.IsActive,
+		})
+	}
+	
+	return &invpb.GetCategoriesResponse{Categories: out}, nil
+}

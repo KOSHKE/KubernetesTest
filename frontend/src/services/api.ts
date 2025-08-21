@@ -24,10 +24,23 @@ export const productsAPI = {
 
 // Orders API (temporarily public in dev-noauth)
 export const ordersAPI = {
-  createOrder: (orderData: CreateOrderRequest) => api.post('/orders', orderData, { withCredentials: false }),
-  getOrders: (params: Record<string, unknown> = {}) => api.get('/orders', { params, withCredentials: false }),
-  getOrder: (id: string) => api.get(`/orders/${id}`, { withCredentials: false }),
-  cancelOrder: (id: string) => api.put(`/orders/${id}/cancel`, undefined, { withCredentials: false }),
+  createOrder: (orderData: CreateOrderRequest) => {
+    // user_id is included in the request body
+    return api.post('/orders', orderData, { withCredentials: false });
+  },
+  getOrders: (params: Record<string, unknown> = {}) => {
+    // Add user_id if not provided
+    const finalParams = { ...params };
+    if (!finalParams.user_id) {
+      finalParams.user_id = 'dev-user-1'; // Temporary user_id for development
+    }
+    return api.get('/orders', { params: finalParams, withCredentials: false });
+  },
+  getOrder: (id: string) => {
+    const params = { user_id: 'dev-user-1' }; // Temporary user_id for development
+    return api.get(`/orders/${id}`, { params, withCredentials: false });
+  },
+
 };
 
 export default api;

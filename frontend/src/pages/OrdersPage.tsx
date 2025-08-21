@@ -13,10 +13,7 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import StatusChip from '../components/ui/StatusChip';
 import Stack from '@mui/material/Stack';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
+
 import Snackbar from '@mui/material/Snackbar';
 import Skeleton from '@mui/material/Skeleton';
 import PageHeader from '../components/ui/PageHeader';
@@ -26,7 +23,7 @@ const OrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [confirmId, setConfirmId] = useState<string | null>(null);
+
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const location = useLocation();
@@ -42,7 +39,7 @@ const OrdersPage: React.FC = () => {
     if (st?.orderPlaced) {
       setSnackbarMessage('Order placed successfully');
       setSnackbarOpen(true);
-      // очистить state, чтобы уведомление не повторялось
+      // clear state to prevent notification from repeating
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [location.state]);
@@ -58,7 +55,15 @@ const OrdersPage: React.FC = () => {
         setOrders([]);
         return;
       }
-      setOrders((response.data?.orders ?? []) as Order[]);
+      const orders = (response.data.data?.orders ?? []) as Order[];
+      console.log('🔍 Orders loaded:', orders);
+      orders.forEach((order, index) => {
+        console.log(`🔍 Order ${index}: ID=${order.id}, Items count=${order.items?.length || 0}`);
+        order.items?.forEach((item, itemIndex) => {
+          console.log(`🔍   Item ${itemIndex}: ${item.product_name} x${item.quantity}`);
+        });
+      });
+      setOrders(orders);
     } catch (err) {
       // Treat 404 as a valid empty state instead of an error
       if (isAxiosError(err) && err.response?.status === 404) {
@@ -71,16 +76,7 @@ const OrdersPage: React.FC = () => {
     }
   };
 
-  const cancelOrder = async (orderId: string) => {
-    try {
-      await ordersAPI.cancelOrder(orderId);
-      await loadOrders();
-      setSnackbarMessage('Order cancelled successfully');
-      setSnackbarOpen(true);
-    } catch (err) {
-      setError('Failed to cancel order');
-    }
-  };
+
 
   const handleSnackbarClose = () => setSnackbarOpen(false);
 
@@ -127,9 +123,7 @@ const OrdersPage: React.FC = () => {
                     </div>
                     <div style={{ textAlign: 'right' as const }}>
                       <Typography variant="h6">{formatMoneyMinor((order as any).total_amount?.amount, (order as any).total_amount?.currency)}</Typography>
-                      {order.status === 'PENDING' && (
-                        <Button color="error" sx={{ mt: 1 }} onClick={() => setConfirmId(order.id)}>Cancel Order</Button>
-                      )}
+                      
                     </div>
                   </Stack>
                   <Typography variant="subtitle1" sx={{ mb: 1 }}>Items:</Typography>
@@ -153,16 +147,7 @@ const OrdersPage: React.FC = () => {
         </Grid>
       )}
 
-      <Dialog open={!!confirmId} onClose={() => setConfirmId(null)}>
-        <DialogTitle>Cancel order?</DialogTitle>
-        <DialogContent>
-          <Typography>Are you sure you want to cancel this order?</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmId(null)}>No</Button>
-          <Button color="error" onClick={() => { if (confirmId) cancelOrder(confirmId); setConfirmId(null); }}>Yes, cancel</Button>
-        </DialogActions>
-      </Dialog>
+      
 
       <Snackbar open={snackbarOpen} autoHideDuration={3000} onClose={handleSnackbarClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
         <Alert onClose={handleSnackbarClose} severity="success" variant="filled" sx={{ width: '100%' }}>

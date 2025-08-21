@@ -4,6 +4,8 @@ import (
 	"context"
 	userpb "proto-go/user"
 	"user-service/internal/app/services"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBUserServer struct {
@@ -33,8 +35,8 @@ func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest
 			FirstName: resp.User.FirstName(),
 			LastName:  resp.User.LastName(),
 			Phone:     resp.User.Phone(),
-			CreatedAt: resp.User.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt: resp.User.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: timestamppb.New(resp.User.CreatedAt()),
+			UpdatedAt: timestamppb.New(resp.User.UpdatedAt()),
 		},
 		Message: "User registered successfully",
 	}, nil
@@ -52,8 +54,8 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 			FirstName: resp.User.FirstName(),
 			LastName:  resp.User.LastName(),
 			Phone:     resp.User.Phone(),
-			CreatedAt: resp.User.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt: resp.User.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: timestamppb.New(resp.User.CreatedAt()),
+			UpdatedAt: timestamppb.New(resp.User.UpdatedAt()),
 		},
 		Message: "Login successful",
 	}, nil
@@ -71,8 +73,8 @@ func (s *PBUserServer) GetUser(ctx context.Context, req *userpb.GetUserRequest) 
 			FirstName: u.FirstName(),
 			LastName:  u.LastName(),
 			Phone:     u.Phone(),
-			CreatedAt: u.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt: u.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: timestamppb.New(u.CreatedAt()),
+			UpdatedAt: timestamppb.New(u.UpdatedAt()),
 		},
 	}, nil
 }
@@ -89,8 +91,8 @@ func (s *PBUserServer) UpdateUser(ctx context.Context, req *userpb.UpdateUserReq
 			FirstName: u.FirstName(),
 			LastName:  u.LastName(),
 			Phone:     u.Phone(),
-			CreatedAt: u.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt: u.UpdatedAt().Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: timestamppb.New(u.CreatedAt()),
+			UpdatedAt: timestamppb.New(u.UpdatedAt()),
 		},
 		Message: "Profile updated",
 	}, nil

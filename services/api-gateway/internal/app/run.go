@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"api-gateway/internal/clients"
+	"api-gateway/internal/config"
 	"api-gateway/internal/handlers"
 
 	cors "github.com/gin-contrib/cors"
@@ -15,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
+func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 	sugar := logger.Sugar()
 
 	userClient, err := clients.NewUserClient(cfg.UserServiceURL)
@@ -23,25 +24,25 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		sugar.Errorw("user client connect failed", "error", err)
 		return err
 	}
-	defer userClient.Close()
+	defer func() { _ = userClient.Close() }()
 	orderClient, err := clients.NewOrderClient(cfg.OrderServiceURL)
 	if err != nil {
 		sugar.Errorw("order client connect failed", "error", err)
 		return err
 	}
-	defer orderClient.Close()
+	defer func() { _ = orderClient.Close() }()
 	inventoryClient, err := clients.NewInventoryClient(cfg.InventoryServiceURL)
 	if err != nil {
 		sugar.Errorw("inventory client connect failed", "error", err)
 		return err
 	}
-	defer inventoryClient.Close()
+	defer func() { _ = inventoryClient.Close() }()
 	paymentClient, err := clients.NewPaymentClient(cfg.PaymentServiceURL)
 	if err != nil {
 		sugar.Errorw("payment client connect failed", "error", err)
 		return err
 	}
-	defer paymentClient.Close()
+	defer func() { _ = paymentClient.Close() }()
 
 	userHandler := handlers.NewUserHandler(userClient)
 	orderHandler := handlers.NewOrderHandler(orderClient, inventoryClient, paymentClient)
@@ -49,11 +50,30 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	paymentHandler := handlers.NewPaymentHandler(paymentClient)
 
 	router := gin.Default()
-	router.Use(cors.Default())
+	// Strict CORS for prod via env list
+	allowed := func() []string {
+		var o []string
+		for _, s := range strings.Split(cfg.FrontendOrigins, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				o = append(o, s)
+			}
+		}
+		return o
+	}()
+	sugar.Infow("CORS configuration", "allowed_origins", allowed)
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     allowed,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour, // Cache preflight requests for 12 hours
+	}))
 
+	// Set trusted proxies for development (can be overridden via TRUSTED_PROXIES env var)
 	trusted := os.Getenv("TRUSTED_PROXIES")
 	if trusted == "" {
-		trusted = "127.0.0.1,172.16.0.0/12"
+		// In development, trust localhost and common dev IPs
+		trusted = "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8"
 	}
 	var proxyList []string
 	for _, p := range strings.Split(trusted, ",") {
@@ -61,6 +81,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			proxyList = append(proxyList, p)
 		}
 	}
+	sugar.Infow("Trusted proxies configuration", "proxies", proxyList)
 	if err := router.SetTrustedProxies(proxyList); err != nil {
 		sugar.Errorw("set proxies failed", "error", err)
 		return err
@@ -88,7 +109,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			orders.POST("", orderHandler.CreateOrder)
 			orders.GET("", orderHandler.GetUserOrders)
 			orders.GET("/:id", orderHandler.GetOrder)
-			orders.PUT("/:id/cancel", orderHandler.CancelOrder)
+		
 		}
 		api.GET("/payments/methods", paymentHandler.GetPaymentMethods)
 		api.GET("/payments/test-cards", paymentHandler.GetTestCards)
@@ -114,7 +135,11 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 		return nil
 	case err := <-serveErr:
-		if err != nil && err != http.ErrServerClosed {
+		if err == http.ErrServerClosed {
+			sugar.Infow("server closed via graceful shutdown")
+			return nil
+		}
+		if err != nil {
 			sugar.Errorw("http serve failed", "error", err)
 			return err
 		}

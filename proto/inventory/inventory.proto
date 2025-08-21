@@ -4,6 +4,8 @@ package inventory;
 
 option go_package = "proto/inventory";
 
+import "google/protobuf/timestamp.proto";
+
 message Money {
   int64 amount = 1;    // minor units
   string currency = 2; // ISO 4217
@@ -30,8 +32,8 @@ message Product {
   int32 stock_quantity = 7;
   string image_url = 8;
   bool is_active = 9;
-  string created_at = 10;
-  string updated_at = 11;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
 }
 
 message Category {

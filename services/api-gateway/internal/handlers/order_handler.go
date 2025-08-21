@@ -1,15 +1,14 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
-
 	"api-gateway/internal/clients"
+	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type OrderHandler struct {
+	http.BaseHandler
 	orderClient     clients.OrderClient
 	inventoryClient clients.InventoryClient
 	paymentClient   clients.PaymentClient
@@ -20,108 +19,67 @@ func NewOrderHandler(orderClient clients.OrderClient, inventoryClient clients.In
 }
 
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
-	userID := c.Query("user_id")
-	if userID == "" {
-		userID = "demo-user"
-	}
-	var req struct {
-		Items           []clients.OrderItemRequest `json:"items"`
-		ShippingAddress string                     `json:"shipping_address"`
-		PaymentDetails  clients.PaymentDetails     `json:"payment_details"`
-		PaymentMethod   string                     `json:"payment_method"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+	var req http.CreateOrderRequest
+	if !http.ValidateRequest(c, &req) {
 		return
 	}
-	if len(req.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Order must contain at least one item"})
+
+	// Check stock availability
+	var stockResponse *clients.StockCheckResponse
+	if !h.HandleInventoryClientOperation(c, func() error {
+		var err error
+		stockResponse, err = h.inventoryClient.CheckStock(c.Request.Context(), req.ToStockCheckRequest())
+		return err
+	}, "check stock availability") {
 		return
 	}
-	if req.ShippingAddress == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Shipping address is required"})
-		return
-	}
-	stockReq := &clients.StockCheckRequest{Items: make([]clients.StockCheckItem, len(req.Items))}
-	for i, item := range req.Items {
-		stockReq.Items[i] = clients.StockCheckItem{ProductID: item.ProductID, Quantity: item.Quantity}
-	}
-	stockResponse, err := h.inventoryClient.CheckStock(c.Request.Context(), stockReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check stock availability"})
-		return
-	}
+
 	if !stockResponse.AllAvailable {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Some items are not available in requested quantities", "details": stockResponse.Results})
+		http.RespondBadRequest(c, "Some items are not available in requested quantities")
 		return
 	}
-	orderReq := &clients.CreateOrderRequest{UserID: userID, Items: req.Items, ShippingAddress: req.ShippingAddress}
-	order, err := h.orderClient.CreateOrder(c.Request.Context(), orderReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
-		return
+
+	// Create order
+	if h.HandleOrderClientOperation(c, func() error {
+		_, err := h.orderClient.CreateOrder(c.Request.Context(), req.ToClientRequest())
+		return err
+	}, "create order") {
+		http.RespondCreated(c, gin.H{"message": "Order created. Proceed to payment."}, "Order created. Proceed to payment.")
 	}
-	// Defer payment to a separate explicit call from the client.
-	c.JSON(http.StatusCreated, gin.H{"order": order, "message": "Order created. Proceed to payment."})
 }
 
 func (h *OrderHandler) GetUserOrders(c *gin.Context) {
-	userID := c.Query("user_id")
-	if userID == "" {
-		userID = "demo-user"
+	userID, ok := http.RequireUserID(c)
+	if !ok {
+		return // Error response already sent by RequireUserID
 	}
-	page := int32(1)
-	limit := int32(10)
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = int32(p)
-		}
+
+	page, limit := http.GetPageLimit(c, 1, 10, 100)
+	var orders []*clients.Order
+	if h.HandleOrderClientOperation(c, func() error {
+		var err error
+		orders, err = h.orderClient.GetUserOrders(c.Request.Context(), userID, page, limit)
+		return err
+	}, "get user orders") {
+		http.RespondSuccess(c, gin.H{"orders": orders, "page": page, "limit": limit, "total": len(orders)}, "Orders retrieved successfully")
 	}
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = int32(l)
-		}
-	}
-	orders, err := h.orderClient.GetUserOrders(c.Request.Context(), userID, page, limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user orders"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"orders": orders, "page": page, "limit": limit, "total": len(orders)})
 }
 
 func (h *OrderHandler) GetOrder(c *gin.Context) {
-	userID := c.Query("user_id")
-	if userID == "" {
-		userID = "demo-user"
+	userID, ok := h.RequireUserID(c)
+	if !ok {
+		return // Error response already sent by RequireUserID
 	}
-	orderID := c.Param("id")
-	if orderID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
-		return
-	}
-	order, err := h.orderClient.GetOrder(c.Request.Context(), orderID, userID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"order": order})
-}
 
-func (h *OrderHandler) CancelOrder(c *gin.Context) {
-	userID := c.Query("user_id")
-	if userID == "" {
-		userID = "demo-user"
+	orderID, ok := h.RequireParam(c, "id")
+	if !ok {
+		return // Error response already sent by RequireParam
 	}
-	orderID := c.Param("id")
-	if orderID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
-		return
+
+	if h.HandleOrderClientOperation(c, func() error {
+		_, err := h.orderClient.GetOrder(c.Request.Context(), orderID, userID)
+		return err
+	}, "get order") {
+		http.RespondSuccess(c, gin.H{"message": "Order retrieved successfully"}, "Order retrieved successfully")
 	}
-	order, err := h.orderClient.CancelOrder(c.Request.Context(), orderID, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel order"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"order": order, "message": "Order cancelled successfully"})
 }
