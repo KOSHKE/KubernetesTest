@@ -51,6 +51,7 @@ func (OrderItem) TableName() string { return "order_items" }
 // Domain methods for Order Aggregate
 
 // AddItem adds item to order
+// AddItem adds item to order
 func (o *Order) AddItem(productID, productName string, quantity int32, price int64, currency string) error {
 	if o.Status == OrderStatusCancelled {
 		return errors.New("cannot add items to cancelled order")
@@ -67,7 +68,17 @@ func (o *Order) AddItem(productID, productName string, quantity int32, price int
 	if o.Currency != currency {
 		return errors.New("mixed currencies are not supported in a single order")
 	}
-	item := OrderItem{ID: generateOrderItemID(), OrderID: o.ID, ProductID: productID, ProductName: productName, Quantity: quantity, Price: price, Total: int64(quantity) * price, Currency: currency}
+
+	item := OrderItem{
+		ID:          generateOrderItemID(o.ID, productID),
+		OrderID:     o.ID,
+		ProductID:   productID,
+		ProductName: productName,
+		Quantity:    quantity,
+		Price:       price,
+		Total:       int64(quantity) * price,
+		Currency:    currency,
+	}
 	o.Items = append(o.Items, item)
 	o.recalculateTotal()
 	return nil
@@ -168,4 +179,6 @@ func (o *Order) BeforeCreate(tx *gorm.DB) error {
 func (o *Order) BeforeUpdate(tx *gorm.DB) error { o.recalculateTotal(); return nil }
 
 // Helper functions
-func generateOrderItemID() string { return "item-" + time.Now().Format("20060102150405") }
+func generateOrderItemID(orderID, productID string) string {
+	return orderID + "-" + productID
+}

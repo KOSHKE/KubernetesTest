@@ -38,7 +38,8 @@ message OrderItem {
   string product_id = 2;
   string product_name = 3;
   int32 quantity = 4;
-  Money total = 6;
+  Money price = 5;     
+  Money total = 6;    
 }
 
 enum OrderStatus {

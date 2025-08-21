@@ -15,7 +15,6 @@ type OrderClient interface {
 	CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error)
 	GetOrder(ctx context.Context, orderID, userID string) (*Order, error)
 	GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error)
-
 }
 
 type orderClient struct {
@@ -119,8 +118,6 @@ func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page, li
 	return out, nil
 }
 
-
-
 // ---------------- Mapping Helpers ----------------
 
 func mapMoneyFromPB(m *orderpb.Money) types.Money {
@@ -134,16 +131,12 @@ func mapOrderItemFromPB(it *orderpb.OrderItem) OrderItem {
 	if it == nil {
 		return OrderItem{}
 	}
-	var unitAmount int64
-	if it.Total != nil && it.Quantity > 0 {
-		unitAmount = it.Total.GetAmount() / int64(it.Quantity)
-	}
 	return OrderItem{
 		ID:          it.Id,
 		ProductID:   it.ProductId,
 		ProductName: it.ProductName,
 		Quantity:    it.Quantity,
-		Price:       types.Money{Amount: unitAmount, Currency: it.Total.GetCurrency()},
+		Price:       mapMoneyFromPB(it.Price),
 		Total:       mapMoneyFromPB(it.Total),
 	}
 }

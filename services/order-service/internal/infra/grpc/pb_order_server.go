@@ -125,6 +125,7 @@ func mapOrderToPB(o *models.Order) *orderpb.Order {
 			ProductId:   it.ProductID,
 			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
+			Price:       &orderpb.Money{Amount: it.Price, Currency: it.Currency},
 			Total:       &orderpb.Money{Amount: it.Total, Currency: it.Currency},
 		})
 	}
