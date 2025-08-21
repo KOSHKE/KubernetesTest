@@ -240,8 +240,8 @@ type OrderItem struct {
 	ProductId     string                 `protobuf:"bytes,2,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
 	ProductName   string                 `protobuf:"bytes,3,opt,name=product_name,json=productName,proto3" json:"product_name,omitempty"`
 	Quantity      int32                  `protobuf:"varint,4,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	Price         *Money                 `protobuf:"bytes,5,opt,name=price,proto3" json:"price,omitempty"` // Unit price per item
-	Total         *Money                 `protobuf:"bytes,6,opt,name=total,proto3" json:"total,omitempty"` // Total price for this item (price * quantity)
+	Price         *Money                 `protobuf:"bytes,5,opt,name=price,proto3" json:"price,omitempty"`
+	Total         *Money                 `protobuf:"bytes,6,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
