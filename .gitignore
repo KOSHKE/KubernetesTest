@@ -49,3 +49,11 @@ Thumbs.db
 *.swp
 *.swo
 
+# Generated protobuf files
+proto-go/**/*.pb.go
+proto-go/**/*_grpc.pb.go
+proto-go/**/*.pb.gw.go
+
+# Keep go.mod and go.sum
+!proto-go/go.mod
+!proto-go/go.sum
