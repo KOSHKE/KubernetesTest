@@ -215,30 +215,95 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2 }}>Checkout</Typography>
               {!isAuthenticated && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Please sign in to complete your order
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>Sign in to complete your order</strong>
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    You can add items to cart and browse products without an account, but you'll need to sign in to provide shipping and payment details.
+                  </Typography>
                 </Alert>
               )}
               <form onSubmit={handleSubmit(onSubmit)}>
-                <TextField id="shipping_address" label="Shipping Address" {...rhfRegister('shipping_address')} error={!!errors.shipping_address} helperText={errors.shipping_address?.message} fullWidth multiline rows={3} sx={{ mb: 2 }} />
-                <TextField id="card_holder" label="Card Holder Name" {...rhfRegister('card_holder')} error={!!errors.card_holder} helperText={errors.card_holder?.message} fullWidth sx={{ mb: 2 }} />
-                <TextField id="card_number" label="Card Number" {...rhfRegister('card_number')} error={!!errors.card_number} helperText={errors.card_number?.message} placeholder="1234 5678 9012 3456" fullWidth sx={{ mb: 2 }} />
+                <TextField 
+                  id="shipping_address" 
+                  label="Shipping Address" 
+                  {...rhfRegister('shipping_address')} 
+                  error={!!errors.shipping_address} 
+                  helperText={errors.shipping_address?.message} 
+                  fullWidth 
+                  multiline 
+                  rows={3} 
+                  sx={{ mb: 2 }} 
+                  disabled={!isAuthenticated}
+                  placeholder={!isAuthenticated ? "Sign in to enter address" : ""}
+                />
+                <TextField 
+                  id="card_holder" 
+                  label="Card Holder Name" 
+                  {...rhfRegister('card_holder')} 
+                  error={!!errors.card_holder} 
+                  helperText={errors.card_holder?.message} 
+                  fullWidth 
+                  sx={{ mb: 2 }} 
+                  disabled={!isAuthenticated}
+                  placeholder={!isAuthenticated ? "Sign in to enter card details" : ""}
+                />
+                <TextField 
+                  id="card_number" 
+                  label="Card Number" 
+                  {...rhfRegister('card_number')} 
+                  error={!!errors.card_number} 
+                  helperText={errors.card_number?.message} 
+                  placeholder="1234 5678 9012 3456" 
+                  fullWidth 
+                  sx={{ mb: 2 }} 
+                  disabled={!isAuthenticated}
+                />
                 <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-                  <TextField id="expiry_month" label="Month" {...rhfRegister('expiry_month')} error={!!errors.expiry_month} helperText={errors.expiry_month?.message} placeholder="MM" fullWidth />
-                  <TextField id="expiry_year" label="Year" {...rhfRegister('expiry_year')} error={!!errors.expiry_year} helperText={errors.expiry_year?.message} placeholder="YY" fullWidth />
-                  <TextField id="cvv" label="CVV" {...rhfRegister('cvv')} error={!!errors.cvv} helperText={errors.cvv?.message} placeholder="123" fullWidth />
+                  <TextField 
+                    id="expiry_month" 
+                    label="Month" 
+                    {...rhfRegister('expiry_month')} 
+                    error={!!errors.expiry_month} 
+                    helperText={errors.expiry_month?.message} 
+                    placeholder="MM" 
+                    fullWidth 
+                    disabled={!isAuthenticated}
+                  />
+                  <TextField 
+                    id="expiry_year" 
+                    label="Year" 
+                    {...rhfRegister('expiry_year')} 
+                    error={!!errors.expiry_year} 
+                    helperText={errors.expiry_year?.message} 
+                    placeholder="YY" 
+                    fullWidth 
+                    disabled={!isAuthenticated}
+                  />
+                  <TextField 
+                    id="cvv" 
+                    label="CVV" 
+                    {...rhfRegister('cvv')} 
+                    error={!!errors.cvv} 
+                    helperText={errors.cvv?.message} 
+                    placeholder="123" 
+                    fullWidth 
+                    disabled={!isAuthenticated}
+                  />
                 </Stack>
                 {isAuthenticated ? (
                   <Button type="submit" variant="contained" fullWidth disabled={loading}>
                     {loading ? 'Placing Order...' : `Place Order - $${getTotalAmount()}`}
                   </Button>
                 ) : (
-                  <div className="space-y-2">
+                  <Stack spacing={2}>
                     <Button 
                       type="button" 
                       variant="contained" 
                       fullWidth 
                       onClick={() => navigate('/login', { state: { from: '/cart' } })}
+                      sx={{ py: 1.5 }}
                     >
                       Sign In to Complete Order
                     </Button>
@@ -247,10 +312,11 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
                       variant="outlined" 
                       fullWidth 
                       onClick={() => navigate('/register')}
+                      sx={{ py: 1.5 }}
                     >
                       Create New Account
                     </Button>
-                  </div>
+                  </Stack>
                 )}
               </form>
             </CardContent>

@@ -6,7 +6,6 @@ import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
-import CardMedia from '@mui/material/CardMedia';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -20,12 +19,13 @@ import Stack from '@mui/material/Stack';
 import Skeleton from '@mui/material/Skeleton';
 import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
+import ProductCard from '../components/ProductCard';
 
 interface ProductsPageProps {
-  isAuthenticated: boolean;
+  // No props needed anymore
 }
 
-const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
+const ProductsPage: React.FC<ProductsPageProps> = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -116,10 +116,22 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
       <PageHeader title="Products" />
       {queryError && <Alert severity="error" sx={{ mb: 2 }}>{queryError.message}</Alert>}
 
-      <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
-            <FormControl sx={{ minWidth: 200 }}>
+      <Card sx={{ mb: 4, borderRadius: 3, boxShadow: 2 }}>
+        <CardContent sx={{ p: 3 }}>
+          <Stack 
+            direction={{ xs: 'column', sm: 'row' }} 
+            spacing={3} 
+            alignItems="center"
+            sx={{ 
+              '& .MuiFormControl-root': { 
+                minWidth: { xs: '100%', sm: 200 },
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                }
+              }
+            }}
+          >
+            <FormControl>
               <InputLabel id="category-label">Category</InputLabel>
               <Select
                 labelId="category-label"
@@ -127,6 +139,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
                 label="Category"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
+                sx={{ borderRadius: 2 }}
               >
                 <MenuItem value="">All Categories</MenuItem>
                 {categories.map(category => (
@@ -140,24 +153,29 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               fullWidth
-              label="Search"
+              label="Search Products"
+              sx={{ 
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                }
+              }}
             />
           </Stack>
         </CardContent>
       </Card>
 
-      <Grid container spacing={2}>
+      <Grid container spacing={3}>
         {isFetching ? (
           Array.from({ length: 8 }).map((_, i) => (
-            <Grid key={i} item xs={12} sm={6} md={4} lg={3}>
-              <Card>
-                <Skeleton variant="rectangular" height={180} />
-                <CardContent>
-                  <Skeleton width="60%" />
-                  <Skeleton width="100%" />
-                  <Skeleton width="40%" />
-                  <Skeleton width="50%" />
-                  <Skeleton width="100%" height={36} />
+            <Grid key={i} item xs={12} sm={6} md={4} lg={3} xl={2}>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Skeleton variant="rectangular" height={140} />
+                <CardContent sx={{ flexGrow: 1, p: 1 }}>
+                  <Skeleton width="90%" height={20} sx={{ mb: 0 }} />
+                  <Skeleton width="60%" height={16} sx={{ mb: 0.5 }} />
+                  <Skeleton width="40%" height={20} sx={{ mb: 0.5 }} />
+                  <Skeleton width="50%" height={14} sx={{ mb: 0.5 }} />
+                  <Skeleton width="100%" height={26} />
                 </CardContent>
               </Card>
             </Grid>
@@ -168,26 +186,11 @@ const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
           </Grid>
         ) : (
           filteredProducts.map((product: Product) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={product.id}>
-              <Card>
-                {product.image_url ? (
-                  <CardMedia component="img" height="180" image={product.image_url} alt={product.name} />
-                ) : null}
-                <CardContent>
-                  <Typography variant="h6">{product.name}</Typography>
-                  <Typography color="text.secondary" sx={{ mb: 1 }}>{(product as any).description}</Typography>
-                  <Typography fontWeight={700} sx={{ mb: 1 }}>{formatMoney((product as any).price as any)}</Typography>
-                  <Typography color="text.secondary" sx={{ mb: 2 }}>Stock: {product.stock_quantity}</Typography>
-                  <Button 
-                    variant="contained" 
-                    fullWidth 
-                    onClick={() => addToCart(product)} 
-                    disabled={product.stock_quantity === 0}
-                  >
-                    {product.stock_quantity === 0 ? 'Out of Stock' : 'Add to Cart'}
-                  </Button>
-                </CardContent>
-              </Card>
+            <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={product.id}>
+              <ProductCard 
+                product={product} 
+                onAddToCart={addToCart} 
+              />
             </Grid>
           ))
         )}

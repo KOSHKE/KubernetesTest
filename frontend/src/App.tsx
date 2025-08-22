@@ -8,6 +8,7 @@ import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import UnauthorizedPage from './components/UnauthorizedPage';
 import { authService } from './services/auth';
 
 function App() {
@@ -63,9 +64,7 @@ function App() {
             <Route 
               path="/products" 
               element={
-                <ProductsPage 
-                  isAuthenticated={isAuthenticated}
-                />
+                <ProductsPage />
               } 
             />
             <Route 
@@ -84,23 +83,7 @@ function App() {
                     isAuthenticated={isAuthenticated}
                   />
                 ) : (
-                  <div className="text-center py-8">
-                    <p className="text-lg mb-4">Please sign in to view your orders</p>
-                    <div className="space-x-4">
-                      <a
-                        href="/login"
-                        className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
-                      >
-                        Sign In
-                      </a>
-                      <a
-                        href="/register"
-                        className="bg-green-600 text-white px-6 py-2 rounded hover:bg-blue-700"
-                      >
-                        Register
-                      </a>
-                    </div>
-                  </div>
+                  <UnauthorizedPage />
                 )
               } 
             />
