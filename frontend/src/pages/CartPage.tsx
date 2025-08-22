@@ -24,11 +24,15 @@ type OrderForm = {
   payment_details: PaymentDetails;
 };
 
+interface CartPageProps {
+  isAuthenticated: boolean;
+}
+
 function formatMinor(amountMinor: number, currency?: string): string {
   return formatMoneyMinor(amountMinor, currency);
 }
 
-const CartPage: React.FC = () => {
+const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -98,27 +102,26 @@ const CartPage: React.FC = () => {
 
   const schema = z.object({
     shipping_address: z.string().min(5, 'Enter full address'),
-    card_holder: z.string().min(2, 'Enter name'),
-    card_number: z.string().min(12, 'Card number too short'),
-    expiry_month: z.string().min(2, 'MM'),
-    expiry_year: z.string().min(2, 'YY'),
-    cvv: z.string().min(3, 'CVV'),
+    card_holder: z.string().min(2, 'Enter card holder name'),
+    card_number: z.string().min(13, 'Enter valid card number'),
+    expiry_month: z.string().regex(/^(0[1-9]|1[0-2])$/, 'Enter valid month (01-12)'),
+    expiry_year: z.string().regex(/^(20[2-9][0-9]|2[1-9][0-9][0-9])$/, 'Enter valid year'),
+    cvv: z.string().regex(/^[0-9]{3,4}$/, 'Enter valid CVV'),
   });
+
   type FormValues = z.infer<typeof schema>;
+
   const { register: rhfRegister, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    mode: 'onChange',
-    defaultValues: {
-      shipping_address: '',
-      card_holder: '',
-      card_number: '',
-      expiry_month: '',
-      expiry_year: '',
-      cvv: '',
-    },
   });
 
   const onSubmit = async (data: FormValues) => {
+    // Check authentication before proceeding
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: '/cart' } });
+      return;
+    }
+
     setError('');
     setLoading(true);
 
@@ -140,7 +143,7 @@ const CartPage: React.FC = () => {
         },
       };
 
-            try {
+      try {
         const response = await ordersAPI.createOrder(orderData);
       } catch (error) {
         throw error;
@@ -211,6 +214,11 @@ const CartPage: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2 }}>Checkout</Typography>
+              {!isAuthenticated && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Please sign in to complete your order
+                </Alert>
+              )}
               <form onSubmit={handleSubmit(onSubmit)}>
                 <TextField id="shipping_address" label="Shipping Address" {...rhfRegister('shipping_address')} error={!!errors.shipping_address} helperText={errors.shipping_address?.message} fullWidth multiline rows={3} sx={{ mb: 2 }} />
                 <TextField id="card_holder" label="Card Holder Name" {...rhfRegister('card_holder')} error={!!errors.card_holder} helperText={errors.card_holder?.message} fullWidth sx={{ mb: 2 }} />
@@ -220,9 +228,30 @@ const CartPage: React.FC = () => {
                   <TextField id="expiry_year" label="Year" {...rhfRegister('expiry_year')} error={!!errors.expiry_year} helperText={errors.expiry_year?.message} placeholder="YY" fullWidth />
                   <TextField id="cvv" label="CVV" {...rhfRegister('cvv')} error={!!errors.cvv} helperText={errors.cvv?.message} placeholder="123" fullWidth />
                 </Stack>
-                <Button type="submit" variant="contained" fullWidth disabled={loading}>
-                  {loading ? 'Placing Order...' : `Place Order - $${getTotalAmount()}`}
-                </Button>
+                {isAuthenticated ? (
+                  <Button type="submit" variant="contained" fullWidth disabled={loading}>
+                    {loading ? 'Placing Order...' : `Place Order - $${getTotalAmount()}`}
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <Button 
+                      type="button" 
+                      variant="contained" 
+                      fullWidth 
+                      onClick={() => navigate('/login', { state: { from: '/cart' } })}
+                    >
+                      Sign In to Complete Order
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outlined" 
+                      fullWidth 
+                      onClick={() => navigate('/register')}
+                    >
+                      Create New Account
+                    </Button>
+                  </div>
+                )}
               </form>
             </CardContent>
           </Card>

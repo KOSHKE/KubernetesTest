@@ -81,6 +81,8 @@ services:
       - ORDER_SERVICE_URL=${ORDER_SERVICE_URL}
       - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL}
       - PAYMENT_SERVICE_URL=${PAYMENT_SERVICE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
     ports:
       - "8080:8080"
     depends_on:
@@ -98,13 +100,17 @@ services:
       - .:/app
       - air_cache_user:/root/.cache
     environment:
-      - HTTP_PORT=${USER_SERVICE_HTTP_PORT}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL}
+      - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL}
+      - AUTO_MIGRATE=true
     ports:
       - "50051:50051"
     depends_on:

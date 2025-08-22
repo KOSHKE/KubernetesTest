@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"api-gateway/internal/clients"
+	"api-gateway/internal/middleware"
 	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,10 +20,19 @@ func NewOrderHandler(orderClient clients.OrderClient, inventoryClient clients.In
 }
 
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
+	}
+
 	var req http.CreateOrderRequest
 	if !http.ValidateRequest(c, &req) {
 		return
 	}
+
+	// Set user ID from JWT context
+	req.UserID = userID
 
 	// Check stock availability
 	var stockResponse *clients.StockCheckResponse
@@ -49,9 +59,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetUserOrders(c *gin.Context) {
-	userID, ok := http.RequireUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
-		return // Error response already sent by RequireUserID
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
 	}
 
 	page, limit := http.GetPageLimit(c, 1, 10, 100)
@@ -66,9 +77,10 @@ func (h *OrderHandler) GetUserOrders(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetOrder(c *gin.Context) {
-	userID, ok := h.RequireUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
-		return // Error response already sent by RequireUserID
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
 	}
 
 	orderID, ok := h.RequireParam(c, "id")

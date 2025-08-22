@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"api-gateway/internal/clients"
+	"api-gateway/internal/middleware"
 	"api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,21 +19,19 @@ func NewPaymentHandler(paymentClient clients.PaymentClient) *PaymentHandler {
 
 // ProcessPayment handles payment processing requests
 func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
+	}
+
 	var req http.ProcessPaymentRequest
 	if !http.ValidateRequest(c, &req) {
 		return
 	}
 
-	// Validate that user_id in request matches query parameter for security
-	queryUserID := c.Query("user_id")
-	if queryUserID == "" {
-		http.RespondBadRequest(c, "user_id query parameter is required for payment operations")
-		return
-	}
-	if queryUserID != req.UserID {
-		http.RespondBadRequest(c, "user_id in request body must match user_id in query parameters")
-		return
-	}
+	// Set user ID from JWT context
+	req.UserID = userID
 
 	if h.HandlePaymentClientOperation(c, func() error {
 		response, err := h.paymentClient.ProcessPayment(c.Request.Context(), req.ToClientRequest())
@@ -51,14 +50,31 @@ func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 
 // GetPayment retrieves payment information
 func (h *PaymentHandler) GetPayment(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
+	}
+
 	paymentID, ok := h.RequireParam(c, "id")
 	if !ok {
 		return // Error response already sent by RequireParam
 	}
 
 	if h.HandlePaymentClientOperation(c, func() error {
-		_, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
-		return err
+		// Get payment and verify it belongs to the authenticated user
+		payment, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
+		if err != nil {
+			return err
+		}
+		
+		// Check if payment belongs to the authenticated user
+		if payment.UserID != userID {
+			http.RespondForbidden(c, "Access denied: payment does not belong to user")
+			return nil
+		}
+		
+		return nil
 	}, "get payment") {
 		http.RespondSuccess(c, gin.H{"message": "Payment retrieved successfully"}, "Payment retrieved successfully")
 	}
@@ -66,6 +82,12 @@ func (h *PaymentHandler) GetPayment(c *gin.Context) {
 
 // RefundPayment processes payment refunds
 func (h *PaymentHandler) RefundPayment(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
+	}
+
 	paymentID, ok := h.RequireParam(c, "id")
 	if !ok {
 		return // Error response already sent by RequireParam
@@ -77,7 +99,20 @@ func (h *PaymentHandler) RefundPayment(c *gin.Context) {
 	}
 
 	if h.HandlePaymentClientOperation(c, func() error {
-		_, err := h.paymentClient.RefundPayment(c.Request.Context(), paymentID, req.Amount, req.Reason)
+		// Get payment first to verify ownership
+		payment, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
+		if err != nil {
+			return err
+		}
+		
+		// Check if payment belongs to the authenticated user
+		if payment.UserID != userID {
+			http.RespondForbidden(c, "Access denied: payment does not belong to user")
+			return nil
+		}
+		
+		// Process refund
+		_, err = h.paymentClient.RefundPayment(c.Request.Context(), paymentID, req.Amount, req.Reason)
 		return err
 	}, "process refund") {
 		http.RespondSuccess(c, gin.H{"message": "Refund processed successfully"}, "Refund processed successfully")

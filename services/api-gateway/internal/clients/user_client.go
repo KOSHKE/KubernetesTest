@@ -15,6 +15,8 @@ type UserClient interface {
 	Login(ctx context.Context, req *LoginRequest) (*AuthResponse, error)
 	GetUser(ctx context.Context, userID string) (*User, error)
 	UpdateUser(ctx context.Context, userID string, req *RegisterRequest) (*User, error)
+	RefreshToken(ctx context.Context, refreshToken string) (string, error)
+	Logout(ctx context.Context, refreshToken string) error
 }
 
 type userClient struct {
@@ -50,8 +52,11 @@ type LoginRequest struct {
 
 // AuthResponse contains authentication result.
 type AuthResponse struct {
-	User    *User  `json:"user"`
-	Message string `json:"message"`
+	User         *User  `json:"user"`
+	Message      string `json:"message"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int64  `json:"expires_in,omitempty"`
 }
 
 // NewUserClient creates a new gRPC client for user service.
@@ -121,7 +126,8 @@ func (c *userClient) Login(ctx context.Context, req *LoginRequest) (*AuthRespons
 		return nil, fmt.Errorf("email and password are required")
 	}
 
-	user, err := c.callGRPC(ctx, func(ctx context.Context) (any, error) {
+	// Call gRPC directly to get full response with tokens
+	resp, err := grpcutil.WithTimeoutResult(ctx, func(ctx context.Context) (any, error) {
 		return c.client.Login(ctx, &userpb.LoginRequest{
 			Email:    req.Email,
 			Password: req.Password,
@@ -131,7 +137,22 @@ func (c *userClient) Login(ctx context.Context, req *LoginRequest) (*AuthRespons
 		return nil, err
 	}
 
-	return &AuthResponse{User: user, Message: "login successful"}, nil
+	// Extract login response
+	loginResp, ok := resp.(*userpb.LoginResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type: %T", resp)
+	}
+
+	// Map user from protobuf
+	user := mapUserFromPB(loginResp.User)
+
+	return &AuthResponse{
+		User:         user,
+		Message:      "login successful",
+		AccessToken:  loginResp.AccessToken,
+		RefreshToken: loginResp.RefreshToken,
+		ExpiresIn:    loginResp.ExpiresIn,
+	}, nil
 }
 
 // GetUser fetches a user by ID.
@@ -167,4 +188,33 @@ func mapUserFromPB(u *userpb.User) *User {
 		CreatedAt: grpcutil.FormatTimestamp(u.CreatedAt),
 		UpdatedAt: grpcutil.FormatTimestamp(u.UpdatedAt),
 	}
+}
+
+// RefreshToken refreshes access token using refresh token
+func (c *userClient) RefreshToken(ctx context.Context, refreshToken string) (string, error) {
+	resp, err := grpcutil.WithTimeoutResult(ctx, func(ctx context.Context) (any, error) {
+		return c.client.RefreshToken(ctx, &userpb.RefreshTokenRequest{
+			RefreshToken: refreshToken,
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+
+	refreshResp, ok := resp.(*userpb.RefreshTokenResponse)
+	if !ok {
+		return "", fmt.Errorf("unsupported response type")
+	}
+
+	return refreshResp.AccessToken, nil
+}
+
+// Logout revokes refresh token
+func (c *userClient) Logout(ctx context.Context, refreshToken string) error {
+	_, err := grpcutil.WithTimeoutResult(ctx, func(ctx context.Context) (any, error) {
+		return c.client.Logout(ctx, &userpb.LogoutRequest{
+			RefreshToken: refreshToken,
+		})
+	})
+	return err
 }

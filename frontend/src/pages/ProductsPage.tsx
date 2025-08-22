@@ -21,7 +21,11 @@ import Skeleton from '@mui/material/Skeleton';
 import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 
-const ProductsPage: React.FC = () => {
+interface ProductsPageProps {
+  isAuthenticated: boolean;
+}
+
+const ProductsPage: React.FC<ProductsPageProps> = ({ isAuthenticated }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');

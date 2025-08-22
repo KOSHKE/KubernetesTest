@@ -10,6 +10,7 @@ import (
 	"api-gateway/internal/clients"
 	"api-gateway/internal/config"
 	"api-gateway/internal/handlers"
+	"api-gateway/internal/middleware"
 
 	cors "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -91,34 +92,50 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 
 	api := router.Group("/api/v1")
 	{
-		users := api.Group("/users")
+		// Auth routes (no middleware)
+		auth := api.Group("/auth")
 		{
-			users.POST("/register", userHandler.Register)
-			users.POST("/login", userHandler.Login)
-			users.GET("/profile", userHandler.GetProfile)
-			users.PUT("/profile", userHandler.UpdateProfile)
+			auth.POST("/register", userHandler.Register)
+			auth.POST("/login", userHandler.Login)
+			auth.POST("/refresh", userHandler.RefreshToken)
+			auth.POST("/logout", userHandler.Logout)
 		}
+
+		// Protected routes (with auth middleware)
+		protected := api.Group("")
+		protected.Use(middleware.AuthMiddleware(cfg))
+		{
+			users := protected.Group("/users")
+			{
+				users.GET("/profile", userHandler.GetProfile)
+				users.PUT("/profile", userHandler.UpdateProfile)
+			}
+
+			orders := protected.Group("/orders")
+			{
+				orders.POST("", orderHandler.CreateOrder)
+				orders.GET("", orderHandler.GetUserOrders)
+				orders.GET("/:id", orderHandler.GetOrder)
+			}
+
+			payments := protected.Group("/payments")
+			{
+				payments.POST("", paymentHandler.ProcessPayment)
+				payments.GET("/:id", paymentHandler.GetPayment)
+				payments.POST("/:id/refund", paymentHandler.RefundPayment)
+			}
+		}
+
+		// Public routes (no auth required)
 		inventory := api.Group("/inventory")
 		{
 			inventory.GET("/products", inventoryHandler.GetProducts)
 			inventory.GET("/products/:id", inventoryHandler.GetProduct)
 			inventory.GET("/categories", inventoryHandler.GetCategories)
 		}
-		orders := api.Group("/orders")
-		{
-			orders.POST("", orderHandler.CreateOrder)
-			orders.GET("", orderHandler.GetUserOrders)
-			orders.GET("/:id", orderHandler.GetOrder)
-		
-		}
+
 		api.GET("/payments/methods", paymentHandler.GetPaymentMethods)
 		api.GET("/payments/test-cards", paymentHandler.GetTestCards)
-		payments := api.Group("/payments")
-		{
-			payments.POST("", paymentHandler.ProcessPayment)
-			payments.GET("/:id", paymentHandler.GetPayment)
-			payments.POST("/:id/refund", paymentHandler.RefundPayment)
-		}
 	}
 
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: router}

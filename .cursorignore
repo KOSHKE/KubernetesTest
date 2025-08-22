@@ -38,8 +38,8 @@ out/
 **/coverage*/
 
 # Env/secrets (avoid indexing)
-.env
-.env.*
+#.env
+#.env.*
 
 # Docker local artifacts
 **/.docker-cache/

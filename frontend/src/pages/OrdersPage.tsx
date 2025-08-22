@@ -19,7 +19,11 @@ import Skeleton from '@mui/material/Skeleton';
 import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 
-const OrdersPage: React.FC = () => {
+interface OrdersPageProps {
+  isAuthenticated: boolean;
+}
+
+const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

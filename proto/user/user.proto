@@ -12,6 +12,8 @@ service UserService {
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
   rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
 
 // Messages
@@ -46,6 +48,9 @@ message LoginRequest {
 message LoginResponse {
   User user = 1;
   string message = 2;
+  string access_token = 3;
+  string refresh_token = 4;
+  int64 expires_in = 5;
 }
 
 message GetUserRequest {
@@ -66,6 +71,23 @@ message UpdateUserRequest {
 message UpdateUserResponse {
   User user = 1;
   string message = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  int64 expires_in = 2;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {
+  string message = 1;
 }
 
 

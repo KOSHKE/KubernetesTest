@@ -1,135 +1,170 @@
-# Project Rules for KubernetesTest (Cursor IDE)
+# Kubernetes Test Project
 
-This directory is the single source of truth for project rules used by Cursor. It encodes project architecture, coding conventions, operational practices, and guardrails to keep changes consistent, minimal (YAGNI), and production-ready.
+## Project Overview
 
-## Overview
-- Monorepo with Go microservices and a React (TypeScript) frontend.
-- Services: `api-gateway`, `user-service`, `order-service`, `inventory-service`, `payment-service`.
-- Infrastructure: PostgreSQL, Redis, Kafka (KRaft), Kafka UI, Docker Compose for dev, Buf for protobuf.
-- Communication: gRPC for request/response, Kafka for domain events.
+This project represents a microservices architecture for an order management system using Kubernetes, Docker, Go, and React.
 
-## Design Principles
-- Follow SOLID and clean architecture with hexagonal/DDD layering:
-  - `internal/domain`: entities, value objects, domain errors
-  - `internal/app`: application services and orchestration
-  - `internal/ports`: interfaces (inbound/outbound)
-  - `internal/infra`: adapters (DB, gRPC, Kafka, cache, clock, idgen)
-- YAGNI: implement the smallest change to satisfy current requirements; avoid speculative abstraction.
-- Comments must be in English. Keep them concise and explain “why”, not “how”.
-- Avoid magic numbers. Inject timeouts/pool sizes via config/env.
-- Deterministic builds: pin Docker images to major.minor (avoid `latest`).
+## Architecture
 
-## Languages & Code Style
-### Go
-- Use `gofmt` and idiomatic naming. Exported APIs must have explicit types; avoid `any` and unsafe casts.
-- Control flow: prefer guard clauses/early returns. Avoid deep nesting (>2–3 levels).
-- Errors:
-  - Use domain-specific errors for business conditions (see `internal/domain/errors`).
-  - Wrap errors with context: `fmt.Errorf("context: %w", err)`.
-  - Don’t catch errors without meaningful handling; log with structured context.
-- Concurrency:
-  - Use worker pools with bounded buffers and `context.Context` cancellation.
-  - Close channels and `WaitGroup` on shutdown paths.
-- Logging:
-  - Use `zap` (`SugaredLogger` interface: `Infow`, `Warnw`, `Errorw`).
-  - Include keys like `topic`, `partition`, `offset`, `orderID`, etc.
+### Services
 
-### TypeScript (frontend)
-- Strict typing; avoid `any`.
-- Keep components small and pure; colocate state.
-- Money/currency: operate in minor units; render via helpers in `frontend/src/utils`.
+1. **API Gateway** - Single entry point for all requests
+2. **User Service** - User management and authentication
+3. **Order Service** - Order management
+4. **Inventory Service** - Product and inventory management
+5. **Payment Service** - Payment processing
 
-## gRPC
-- Services expose gRPC servers under `internal/infra/grpc` and are wired in `internal/app/run.go`.
-- Always register health service (`grpc_health_v1`), and use `GracefulStop` on shutdown.
-- Clients must use context deadlines/timeouts sourced from config.
+### Infrastructure
 
-## Protobuf & Events
-- Source protos in `proto/`; generated Go in `proto-go/` (Buf via Docker).
-- Generate stubs with `make proto` (uses Buf Docker image).
-- Event schemas under `proto/events/*` must:
-  - Use versioned topics: `<boundedContext>.v<major>.<event_name>` (e.g., `orders.v1.order_created`).
-  - Include `occurred_at` RFC3339 when applicable.
-  - Express money as `int64` minor units and ISO 4217 `currency`.
-- Breaking changes: bump topic version; keep old consumers during migrations.
+- **PostgreSQL** - Main database
+- **Redis** - Cache and refresh token storage
+- **Kafka** - Asynchronous communication between services
+- **Frontend** - React application with TypeScript
 
-## Kafka (Messaging)
-- Use the shared library `libs/kafka` for all Kafka integrations. Do not implement local base consumers/publishers in services.
-- Publishers (`libs/kafka`):
-  - One producer per process; shared delivery channel; background goroutine logs success/error.
-  - `Publish` is non-blocking; delivery is handled in background. For strict delivery semantics, add a dedicated `PublishSync(ctx)` if needed.
-  - Close order: `Flush(timeout)` → `close(delivery)` → `Producer.Close()` to avoid losing delivery events and to terminate goroutine cleanly.
-  - Attach logger via `WithLogger`.
-- Consumers (`libs/kafka`):
-  - `RunValueLoop` (value-only) и `RunMetaLoop` (с метаданными). Оба используют worker pool (4) и буфер (128).
-  - Optional per-message timeout via `WithHandleTimeout(d)`; cancel called immediately after handler returns.
-  - Non-blocking enqueue to worker channel; on overflow, log a warning and drop message (`dropping message due to full buffer`).
-  - Always `defer Close()` inside run methods; subscribe to explicit topics; log read errors with context.
-- Topics are provisioned declaratively by a one-shot init job in Compose; do not rely on auto-create.
+## JWT Authentication
 
-## Databases & Caching
-- Use GORM repositories in `internal/infra/repository` behind `internal/ports/repository` interfaces.
-- Auto-migrations gated by env (e.g., `AUTO_MIGRATE=true`).
-- No hard-coded DSNs; build DSN from config/env. Ping connections on startup.
-- Redis for simple caching; namespace keys per service.
+### Implemented Components
 
-## Configuration
-- Centralize env parsing in `internal/app/config.go` per service.
-- Inject through env:
-  - Ports, DB config, Redis URL
-  - Kafka brokers and consumer settings (e.g., auto-offset-reset)
-  - External service URLs and per-call timeouts
-  - Worker pool sizes/timeouts where applicable
+#### 1. Authentication Libraries
 
-## API Gateway
-- HTTP facade to gRPC services. Keep handlers thin; delegate to gRPC clients.
-- Enforce CORS via env-configured origins. Use structured logging.
+- **`libs/jwt/`** - JWT token management (generation, validation, refresh)
+- **`libs/redis/`** - Storage and management of refresh tokens in Redis
 
-## Frontend
-- Call API only via the gateway. Base URL from `VITE_API_URL`.
-- Keep types in `frontend/src/types`; formatting/help in `frontend/src/utils`.
+#### 2. User Service
 
-## Operational Practices
-- Docker-only development. Use Compose with bind mounts and hot reload (Air for Go, Vite for FE).
-- Make targets:
-  - `make dev-up` / `make dev-rebuild` / `make dev-down`
-  - `make proto` for protobuf generation
-- Prefer Docker-based tooling; avoid host-specific tooling steps.
-- Health checks: expose and wire `depends_on` with health/ready conditions in Compose.
+- **JWT Manager** - Generation of access and refresh tokens
+- **Redis Client** - Storage of refresh tokens with revocation capability
+- **Auth Service** - Interface for authentication
+- **Updated methods**:
+  - `LoginUser` - returns token pair
+  - `RefreshToken` - refreshes access token
+  - `Logout` - revokes refresh token
 
-## Security & Reliability
-- Principle of least privilege for services and data access.
-- Secure by design: validate inputs at boundaries (HTTP/gRPC), and sanitize logs.
-- Avoid leaking secrets in logs; read secrets via env only.
-- Use timeouts and circuit-breaker-like patterns via context and retries where appropriate.
+#### 3. API Gateway
 
-## Version Control & Reviews
-- Branches: `feat/<area>-<desc>`, `fix/<area>-<desc>`, `chore/<area>-<desc>`.
-- Conventional Commit messages.
-- Small PRs with clear descriptions and checklists. At least one review before merge.
+- **Auth Middleware** - JWT token validation for protected routes
+- **Updated routes**:
+  - `/api/v1/auth/*` - public authentication routes
+  - `/api/v1/users/*`, `/api/v1/orders/*`, `/api/v1/payments/*` - protected routes
+  - `/api/v1/inventory/*` - public product routes
 
-## Testing
-- Unit-test application services and domain logic; mock ports and adapters.
-- Kafka handlers tested as pure functions with fixtures; avoid spinning brokers in unit tests.
+#### 4. Frontend
 
-## Conventions Specific to This Repo
-- Payment status messages: default to "Payment failed" on unsuccessful outcomes; override with success message otherwise.
-- Prefer domain-specific errors for business branching instead of generic `errors.Is` across layers.
-- Keep Kafka consumer/producer implementations unified across services (naming, logging, buffering, lifecycle).
-- Pin Docker images (e.g., `postgres:15.4`, `redis:7.2-alpine`, avoid `latest`).
+- **Auth Service** - Token management in localStorage
+- **Login Component** - Login form
+- **Automatic token refresh** - Axios interceptor for automatic access token refresh
+- **Protected routes** - Redirect to login for unauthenticated users
 
-## Adding a New Feature (Checklist)
-1) Domain first: entities/value objects and domain errors.
-2) Define/extend ports; keep application services thin.
-3) Implement infra adapters (DB, gRPC, Kafka) behind ports using existing base patterns.
-4) New event? Add proto in `proto/events`, run `make proto`, provision a versioned topic.
-5) Wire dependencies in `internal/app/run.go`: config, health, graceful shutdown.
-6) Keep edits minimal and localized (YAGNI). Avoid broad refactors unless necessary.
+### Configuration
 
-## AI Guardrails
-- Do not change indentation style or whitespace conventions of existing files.
-- Do not add new external dependencies without strong justification.
-- Avoid cross-cutting refactors unless explicitly requested.
-- Keep public APIs stable; prefer incremental edits.
-- All code comments in English.
-- Use Docker-based commands and Make targets; do not assume local toolchains.
+#### Environment Variables
+
+```bash
+# JWT Configuration
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production
+ACCESS_TOKEN_TTL=15m
+REFRESH_TOKEN_TTL=168h
+
+# Redis
+REDIS_URL=redis:6379
+```
+
+#### Docker Compose
+
+Updated to support JWT environment variables in user-service and api-gateway.
+
+### Security
+
+- **Access tokens** - short-lived (15 minutes)
+- **Refresh tokens** - long-lived (7 days)
+- **Redis storage** - ability to revoke tokens
+- **Automatic refresh** - transparent token refresh on frontend
+- **Protected routes** - all order and payment operations require authentication
+
+### API Endpoints
+
+#### Public Routes
+- `POST /api/v1/auth/register` - Registration
+- `POST /api/v1/auth/login` - Login
+- `POST /api/v1/auth/refresh` - Token refresh
+- `POST /api/v1/auth/logout` - Logout
+- `GET /api/v1/inventory/*` - Product browsing
+
+#### Protected Routes
+- `GET /api/v1/users/profile` - User profile
+- `PUT /api/v1/users/profile` - Profile update
+- `POST /api/v1/orders` - Create order
+- `GET /api/v1/orders` - User orders list
+- `GET /api/v1/orders/:id` - Order details
+- `POST /api/v1/payments` - Process payment
+- `GET /api/v1/payments/:id` - Payment details
+- `POST /api/v1/payments/:id/refund` - Payment refund
+
+## Project Launch
+
+### Requirements
+
+- Docker and Docker Compose
+- Node.js 18+ (for frontend)
+
+### Commands
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Stop
+docker-compose down
+
+# View logs
+docker-compose logs -f [service-name]
+```
+
+### Service Access
+
+- **Frontend**: http://localhost:3001
+- **API Gateway**: http://localhost:8080
+- **Kafka UI**: http://localhost:8085
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+## Development
+
+### Project Structure
+
+```
+├── services/           # Microservices
+│   ├── api-gateway/   # API Gateway
+│   ├── user-service/  # User service
+│   ├── order-service/ # Order service
+│   ├── inventory-service/ # Inventory service
+│   └── payment-service/   # Payment service
+├── libs/              # Common libraries
+│   ├── jwt/          # JWT authentication
+│   ├── redis/        # Redis client
+│   └── kafka/        # Kafka clients
+├── frontend/          # React application
+└── proto/            # Protobuf definitions
+```
+
+### Adding New Services
+
+1. Create service in `services/` folder
+2. Add to `docker-compose.yml`
+3. Update API Gateway if necessary
+4. Add environment variables
+
+## Monitoring and Logging
+
+- **Zap** - structured logging in Go services
+- **Health checks** - service health verification
+- **Kafka UI** - Kafka message monitoring
+
+## Production Security
+
+- Change JWT secret keys
+- Configure HTTPS
+- Add rate limiting
+- Configure security monitoring
+- Use Kubernetes secrets for sensitive data

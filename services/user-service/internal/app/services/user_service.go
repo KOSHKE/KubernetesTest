@@ -3,15 +3,20 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"user-service/internal/domain/entities"
 	"user-service/internal/domain/valueobjects"
+	"user-service/internal/ports/auth"
 	"user-service/internal/ports/repository"
+	"proto-go/user"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type UserService struct {
-	userRepo repository.UserRepository
+	userRepo    repository.UserRepository
+	authService auth.AuthService
 }
 
 type RegisterUserRequest struct {
@@ -27,15 +32,14 @@ type LoginRequest struct {
 	Password string
 }
 
-type AuthResponse struct {
-	User *entities.User
+func NewUserService(userRepo repository.UserRepository, authService auth.AuthService) *UserService {
+	return &UserService{
+		userRepo:    userRepo,
+		authService: authService,
+	}
 }
 
-func NewUserService(userRepo repository.UserRepository) *UserService {
-	return &UserService{userRepo: userRepo}
-}
-
-func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest) (*AuthResponse, error) {
+func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest) (*user.User, error) {
 	// Check if user exists
 	emailVO, err := valueobjects.NewEmail(req.Email)
 	if err != nil {
@@ -56,55 +60,109 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 	}
 	// Generate a simple ID (can be replaced with UUID)
 	id := "user-" + time.Now().Format("20060102150405")
-	user := entities.NewUser(id, emailVO, passwordVO, req.FirstName, req.LastName, req.Phone)
+	userEntity := entities.NewUser(id, emailVO, passwordVO, req.FirstName, req.LastName, req.Phone)
 
 	// Save to database
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	if err := s.userRepo.Create(ctx, userEntity); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return &AuthResponse{User: user}, nil
+	// Convert domain user to protobuf user
+	pbUser := &user.User{
+		Id:        userEntity.ID(),
+		Email:     userEntity.Email().Value(),
+		FirstName: userEntity.FirstName(),
+		LastName:  userEntity.LastName(),
+		Phone:     userEntity.Phone(),
+		CreatedAt: timestamppb.New(userEntity.CreatedAt()),
+		UpdatedAt: timestamppb.New(userEntity.UpdatedAt()),
+	}
+
+	return pbUser, nil
 }
 
-func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*AuthResponse, error) {
+func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*user.LoginResponse, error) {
 	// Find user by email
 	emailVO, err := valueobjects.NewEmail(req.Email)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, fmt.Errorf("invalid email: %w", err)
 	}
-	user, err := s.userRepo.GetByEmail(ctx, emailVO)
+	userEntity, err := s.userRepo.GetByEmail(ctx, emailVO)
 	if err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
 	// Check password
-	if !user.ValidatePassword(req.Password) {
+	if !userEntity.ValidatePassword(req.Password) {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	return &AuthResponse{User: user}, nil
+	// Generate JWT tokens
+	log.Printf("DEBUG: About to generate JWT tokens for user %s", userEntity.ID())
+	tokenPair, err := s.authService.GenerateTokenPair(userEntity.ID(), userEntity.Email().Value())
+	if err != nil {
+		log.Printf("ERROR: Failed to generate JWT tokens: %v", err)
+		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+	}
+	log.Printf("DEBUG: JWT tokens generated successfully: access_token=%s, refresh_token=%s, expires_in=%d",
+		tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
+
+	// Store refresh token in Redis
+	if err := s.authService.StoreRefreshToken(ctx, tokenPair.RefreshToken, userEntity.ID()); err != nil {
+		log.Printf("ERROR: Failed to store refresh token in Redis: %v", err)
+		return nil, fmt.Errorf("failed to store refresh token: %w", err)
+	}
+	log.Printf("DEBUG: Refresh token stored in Redis successfully")
+
+	// Convert domain user to protobuf user
+	pbUser := &user.User{
+		Id:        userEntity.ID(),
+		Email:     userEntity.Email().Value(),
+		FirstName: userEntity.FirstName(),
+		LastName:  userEntity.LastName(),
+		Phone:     userEntity.Phone(),
+		CreatedAt: timestamppb.New(userEntity.CreatedAt()),
+		UpdatedAt: timestamppb.New(userEntity.UpdatedAt()),
+	}
+
+	return &user.LoginResponse{
+		User:         pbUser,
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		ExpiresIn:    tokenPair.ExpiresIn,
+	}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*entities.User, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	userEntity, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
-	return user, nil
+	return userEntity, nil
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, userID string, firstName, lastName, phone string) (*entities.User, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
+	userEntity, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
 	// Use Domain method
-	user.UpdateProfile(firstName, lastName, phone)
+	userEntity.UpdateProfile(firstName, lastName, phone)
 
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	if err := s.userRepo.Update(ctx, userEntity); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
-	return user, nil
+	return userEntity, nil
+}
+
+// RefreshToken generates new access token using refresh token
+func (s *UserService) RefreshToken(ctx context.Context, refreshToken string) (string, error) {
+	return s.authService.RefreshAccessToken(refreshToken)
+}
+
+// Logout revokes refresh token
+func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
+	return s.authService.RevokeRefreshToken(ctx, refreshToken)
 }

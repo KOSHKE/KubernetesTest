@@ -13,7 +13,7 @@ type RegisterRequest struct {
 	Password  string `json:"password" binding:"required,min=6" msg:"Password must be at least 6 characters long"`
 	FirstName string `json:"first_name" binding:"required,min=2,max=50" msg:"First name must be between 2 and 50 characters"`
 	LastName  string `json:"last_name" binding:"required,min=2,max=50" msg:"Last name must be between 2 and 50 characters"`
-	Phone     string `json:"phone" binding:"omitempty,len=10" msg:"Phone number must be exactly 10 digits"`
+	Phone     string `json:"phone" binding:"omitempty" msg:"Phone number is optional"`
 }
 
 // ToClientRequest converts RegisterRequest to clients.RegisterRequest

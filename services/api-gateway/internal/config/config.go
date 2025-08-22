@@ -12,6 +12,8 @@ type Config struct {
 	OrderServiceURL     string
 	InventoryServiceURL string
 	PaymentServiceURL   string
+	JWTSecret           string
+	JWTRefreshSecret    string
 }
 
 func Load() *Config {
@@ -23,6 +25,8 @@ func Load() *Config {
 		OrderServiceURL:     getEnv("ORDER_SERVICE_URL", "localhost:50052"),
 		InventoryServiceURL: getEnv("INVENTORY_SERVICE_URL", "localhost:50053"),
 		PaymentServiceURL:   getEnv("PAYMENT_SERVICE_URL", "localhost:50054"),
+		JWTSecret:           getEnv("JWT_SECRET", "your-secret-key"),
+		JWTRefreshSecret:    getEnv("JWT_REFRESH_SECRET", "your-refresh-secret-key"),
 	}
 }
 

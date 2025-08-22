@@ -7,7 +7,12 @@ import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Link from '@mui/material/Link';
 
-const Header = () => {
+interface HeaderProps {
+  onLogout: () => void;
+  isAuthenticated: boolean;
+}
+
+const Header: React.FC<HeaderProps> = ({ onLogout, isAuthenticated }) => {
   return (
     <AppBar position="static" color="inherit" elevation={1} sx={{ mb: 3 }}>
       <Toolbar>
@@ -20,6 +25,14 @@ const Header = () => {
           <Button component={RouterLink} to="/products" color="primary">Products</Button>
           <Button component={RouterLink} to="/cart">Cart</Button>
           <Button component={RouterLink} to="/orders">Orders</Button>
+          {isAuthenticated ? (
+            <Button onClick={onLogout} color="secondary">Logout</Button>
+          ) : (
+            <>
+              <Button component={RouterLink} to="/login" color="primary" variant="outlined">Sign In</Button>
+              <Button component={RouterLink} to="/register" color="primary" variant="contained">Register</Button>
+            </>
+          )}
         </Stack>
       </Toolbar>
     </AppBar>

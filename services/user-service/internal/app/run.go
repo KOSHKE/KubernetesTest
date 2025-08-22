@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"user-service/internal/app/services"
+	"user-service/internal/infra/auth"
 	grpcsvc "user-service/internal/infra/grpc"
 	"user-service/internal/infra/repository"
 
@@ -43,7 +44,24 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			return err
 		}
 	}
-	userService := services.NewUserService(userRepo)
+
+	// Initialize JWT auth service
+	authConfig := &auth.Config{
+		AccessTokenSecret:  cfg.JWTSecret,
+		RefreshTokenSecret: cfg.JWTRefreshSecret,
+		AccessTokenTTL:     cfg.AccessTokenTTL,
+		RefreshTokenTTL:    cfg.RefreshTokenTTL,
+		RedisURL:           cfg.RedisURL,
+	}
+
+	authService, err := auth.NewJWTAuthService(authConfig, userRepo)
+	if err != nil {
+		log.Errorw("failed to initialize auth service", "error", err)
+		return err
+	}
+	defer authService.Close()
+
+	userService := services.NewUserService(userRepo, authService)
 
 	// gRPC server
 	server := gogrpc.NewServer()

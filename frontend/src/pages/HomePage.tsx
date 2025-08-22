@@ -8,7 +8,11 @@ import CardContent from '@mui/material/CardContent';
 import Grid from '@mui/material/Grid';
 import Box from '@mui/material/Box';
 
-const HomePage = () => {
+interface HomePageProps {
+  isAuthenticated: boolean;
+}
+
+const HomePage: React.FC<HomePageProps> = ({ isAuthenticated }) => {
   return (
     <Container>
       <Box sx={{
@@ -26,9 +30,20 @@ const HomePage = () => {
         <Button component={RouterLink} to="/products" variant="contained" sx={{ mr: 1 }}>
           Browse Products
         </Button>
-        <Button component={RouterLink} to="/orders" variant="outlined">
-          View Orders
-        </Button>
+        {isAuthenticated ? (
+          <Button component={RouterLink} to="/orders" variant="outlined">
+            View Orders
+          </Button>
+        ) : (
+          <>
+            <Button component={RouterLink} to="/login" variant="outlined" sx={{ mr: 1 }}>
+              Sign In
+            </Button>
+            <Button component={RouterLink} to="/register" variant="contained">
+              Register
+            </Button>
+          </>
+        )}
       </Box>
 
       <Typography variant="h5" sx={{ mt: 6, mb: 2 }}>Architecture Features</Typography>

@@ -12,6 +12,20 @@ const api = axios.create({
   withCredentials: false,
 });
 
+// Add request interceptor to include auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Products API (public endpoints: no credentials needed)
 export const productsAPI = {
   getProducts: (params: { category_id?: string; search?: string } = {}) =>
@@ -22,25 +36,29 @@ export const productsAPI = {
     api.get('/inventory/categories?active_only=true', { withCredentials: false }),
 };
 
-// Orders API (temporarily public in dev-noauth)
+// Orders API (requires authentication)
 export const ordersAPI = {
   createOrder: (orderData: CreateOrderRequest) => {
-    // user_id is included in the request body
-    return api.post('/orders', orderData, { withCredentials: false });
+    return api.post('/orders', orderData);
   },
   getOrders: (params: Record<string, unknown> = {}) => {
-    // Add user_id if not provided
-    const finalParams = { ...params };
-    if (!finalParams.user_id) {
-      finalParams.user_id = 'dev-user-1'; // Temporary user_id for development
-    }
-    return api.get('/orders', { params: finalParams, withCredentials: false });
+    return api.get('/orders', { params });
   },
   getOrder: (id: string) => {
-    const params = { user_id: 'dev-user-1' }; // Temporary user_id for development
-    return api.get(`/orders/${id}`, { params, withCredentials: false });
+    return api.get(`/orders/${id}`);
   },
+};
 
+// Auth API
+export const authAPI = {
+  login: (credentials: { email: string; password: string }) =>
+    api.post('/auth/login', credentials),
+  register: (userData: { email: string; password: string; first_name: string; last_name: string; phone: string }) =>
+    api.post('/auth/register', userData),
+  refreshToken: (refreshToken: string) =>
+    api.post('/auth/refresh', { refresh_token: refreshToken }),
+  logout: (refreshToken: string) =>
+    api.post('/auth/logout', { refresh_token: refreshToken }),
 };
 
 export default api;

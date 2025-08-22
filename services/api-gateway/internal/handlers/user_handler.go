@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"api-gateway/internal/clients"
+	"api-gateway/internal/middleware"
 	"api-gateway/pkg/http"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,18 +39,44 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	if h.HandleUserClientOperation(c, func() error {
-		_, err := h.userClient.Login(c.Request.Context(), req.ToClientRequest())
-		return err
+		response, err := h.userClient.Login(c.Request.Context(), req.ToClientRequest())
+		if err != nil {
+			return err
+		}
+
+		// Debug logging
+		log.Printf("DEBUG: API Gateway: User service response - User: %+v", response.User)
+		log.Printf("DEBUG: API Gateway: User service response - AccessToken: %s", response.AccessToken)
+		log.Printf("DEBUG: API Gateway: User service response - RefreshToken: %s", response.RefreshToken)
+		log.Printf("DEBUG: API Gateway: User service response - ExpiresIn: %d", response.ExpiresIn)
+
+		// Return tokens in response
+		c.JSON(200, gin.H{
+			"message": "Login successful",
+			"data": gin.H{
+				"user": gin.H{
+					"id":         response.User.ID,
+					"email":      response.User.Email,
+					"first_name": response.User.FirstName,
+					"last_name":  response.User.LastName,
+				},
+				"access_token":  response.AccessToken,
+				"refresh_token": response.RefreshToken,
+				"expires_in":    response.ExpiresIn,
+			},
+		})
+		return nil
 	}, "authenticate user") {
-		http.RespondSuccess(c, gin.H{"message": "Login successful"}, "Login successful")
+		// Response already sent above
 	}
 }
 
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	// No auth: demo-only
-	userID, ok := http.RequireUserID(c)
+	// Get user ID from JWT context
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
-		return // Error response already sent by RequireUserID
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
 	}
 
 	if h.HandleUserClientOperation(c, func() error {
@@ -60,10 +88,11 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	// No auth: demo-only
-	userID, ok := http.RequireUserID(c)
+	// Get user ID from JWT context
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
-		return // Error response already sent by RequireUserID
+		http.RespondUnauthorized(c, "User not authenticated")
+		return
 	}
 	var req http.RegisterRequest
 	if !http.ValidateRequest(c, &req) {
@@ -75,5 +104,49 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return err
 	}, "update user profile") {
 		http.RespondSuccess(c, gin.H{"message": "Profile updated successfully"}, "Profile updated successfully")
+	}
+}
+
+func (h *UserHandler) RefreshToken(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refresh_token" binding:"required"`
+	}
+	if !http.ValidateRequest(c, &req) {
+		return
+	}
+
+	if h.HandleUserClientOperation(c, func() error {
+		accessToken, err := h.userClient.RefreshToken(c.Request.Context(), req.RefreshToken)
+		if err != nil {
+			return err
+		}
+
+		// Return new access token
+		c.JSON(200, gin.H{
+			"message": "Token refreshed successfully",
+			"data": gin.H{
+				"access_token": accessToken,
+				"expires_in":   900, // 15 minutes in seconds
+			},
+		})
+		return nil
+	}, "refresh token") {
+		// Response already sent above
+	}
+}
+
+func (h *UserHandler) Logout(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refresh_token" binding:"required"`
+	}
+	if !http.ValidateRequest(c, &req) {
+		return
+	}
+
+	if h.HandleUserClientOperation(c, func() error {
+		err := h.userClient.Logout(c.Request.Context(), req.RefreshToken)
+		return err
+	}, "logout user") {
+		http.RespondSuccess(c, gin.H{"message": "Logout successful"}, "Logout successful")
 	}
 }

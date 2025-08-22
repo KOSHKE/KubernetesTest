@@ -51,6 +51,11 @@ func RespondUnauthorized(c *gin.Context, message string) {
 	RespondError(c, http.StatusUnauthorized, message)
 }
 
+// RespondForbidden sends a forbidden error response
+func RespondForbidden(c *gin.Context, message string) {
+	RespondError(c, http.StatusForbidden, message)
+}
+
 // RespondNotFound sends a not found error response
 func RespondNotFound(c *gin.Context, message string) {
 	RespondError(c, http.StatusNotFound, message)

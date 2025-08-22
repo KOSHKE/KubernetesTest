@@ -5,6 +5,8 @@ import (
 	userpb "proto-go/user"
 	"user-service/internal/app/services"
 
+	"log"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,13 +32,13 @@ func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest
 	}
 	return &userpb.RegisterResponse{
 		User: &userpb.User{
-			Id:        resp.User.ID(),
-			Email:     resp.User.Email().Value(),
-			FirstName: resp.User.FirstName(),
-			LastName:  resp.User.LastName(),
-			Phone:     resp.User.Phone(),
-			CreatedAt: timestamppb.New(resp.User.CreatedAt()),
-			UpdatedAt: timestamppb.New(resp.User.UpdatedAt()),
+			Id:        resp.Id,
+			Email:     resp.Email,
+			FirstName: resp.FirstName,
+			LastName:  resp.LastName,
+			Phone:     resp.Phone,
+			CreatedAt: resp.CreatedAt,
+			UpdatedAt: resp.UpdatedAt,
 		},
 		Message: "User registered successfully",
 	}, nil
@@ -47,17 +49,27 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 	if err != nil {
 		return nil, err
 	}
+
+	// Debug logging
+	log.Printf("DEBUG: gRPC server: Service response - User: %+v", resp.User)
+	log.Printf("DEBUG: gRPC server: Service response - AccessToken: %s", resp.AccessToken)
+	log.Printf("DEBUG: gRPC server: Service response - RefreshToken: %s", resp.RefreshToken)
+	log.Printf("DEBUG: gRPC server: Service response - ExpiresIn: %d", resp.ExpiresIn)
+
 	return &userpb.LoginResponse{
 		User: &userpb.User{
-			Id:        resp.User.ID(),
-			Email:     resp.User.Email().Value(),
-			FirstName: resp.User.FirstName(),
-			LastName:  resp.User.LastName(),
-			Phone:     resp.User.Phone(),
-			CreatedAt: timestamppb.New(resp.User.CreatedAt()),
-			UpdatedAt: timestamppb.New(resp.User.UpdatedAt()),
+			Id:        resp.User.Id,
+			Email:     resp.User.Email,
+			FirstName: resp.User.FirstName,
+			LastName:  resp.User.LastName,
+			Phone:     resp.User.Phone,
+			CreatedAt: resp.User.CreatedAt,
+			UpdatedAt: resp.User.UpdatedAt,
 		},
-		Message: "Login successful",
+		Message:      "Login successful",
+		AccessToken:  resp.AccessToken,
+		RefreshToken: resp.RefreshToken,
+		ExpiresIn:    resp.ExpiresIn,
 	}, nil
 }
 
@@ -95,5 +107,26 @@ func (s *PBUserServer) UpdateUser(ctx context.Context, req *userpb.UpdateUserReq
 			UpdatedAt: timestamppb.New(u.UpdatedAt()),
 		},
 		Message: "Profile updated",
+	}, nil
+}
+
+func (s *PBUserServer) RefreshToken(ctx context.Context, req *userpb.RefreshTokenRequest) (*userpb.RefreshTokenResponse, error) {
+	accessToken, err := s.svc.RefreshToken(ctx, req.RefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	return &userpb.RefreshTokenResponse{
+		AccessToken: accessToken,
+		ExpiresIn:   900, // 15 minutes in seconds
+	}, nil
+}
+
+func (s *PBUserServer) Logout(ctx context.Context, req *userpb.LogoutRequest) (*userpb.LogoutResponse, error) {
+	err := s.svc.Logout(ctx, req.RefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	return &userpb.LogoutResponse{
+		Message: "Logout successful",
 	}, nil
 }
