@@ -57,3 +57,4 @@ proto-go/**/*.pb.gw.go
 # Keep proto-go directory structure and essential files
 !proto-go/
 !proto-go/**/
+!proto-go/**/.gitkeep
