@@ -8,7 +8,7 @@ require (
 	google.golang.org/protobuf v1.34.2
 	gorm.io/driver/postgres v1.5.9
 	gorm.io/gorm v1.25.12
-	kubernetetest/libs/kafka v0.0.0
+	kubernetetest/pkg/kafka v0.0.0
 	proto-go v0.0.0
 )
 
@@ -31,4 +31,4 @@ require (
 
 replace proto-go => ../../proto-go
 
-replace kubernetetest/libs/kafka => ../../libs/kafka
+replace kubernetetest/pkg/kafka => ../../pkg/kafka

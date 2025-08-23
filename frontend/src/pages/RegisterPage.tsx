@@ -82,39 +82,35 @@ const RegisterPage: React.FC = () => {
           </Box>
 
           <form onSubmit={handleSubmit}>
-            <Stack spacing={3}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    id="firstName"
-                    name="first_name"
-                    label="First Name"
-                    type="text"
-                    required
-                    fullWidth
-                    value={formData.first_name}
-                    onChange={handleChange}
-                    placeholder="Enter your first name"
-                    variant="outlined"
-                    size="medium"
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    id="lastName"
-                    name="last_name"
-                    label="Last Name"
-                    type="text"
-                    required
-                    fullWidth
-                    value={formData.last_name}
-                    onChange={handleChange}
-                    placeholder="Enter your last name"
-                    variant="outlined"
-                    size="medium"
-                  />
-                </Grid>
-              </Grid>
+            <Stack spacing={3} sx={{ alignItems: 'flex-start' }}>
+                             <Stack direction="row" spacing={2} sx={{ width: '100%' }}>
+                 <TextField
+                   id="firstName"
+                   name="first_name"
+                   label="First Name"
+                   type="text"
+                   required
+                   sx={{ flex: 1 }}
+                   value={formData.first_name}
+                   onChange={handleChange}
+                   placeholder="Enter your first name"
+                   variant="outlined"
+                   size="medium"
+                 />
+                 <TextField
+                   id="lastName"
+                   name="last_name"
+                   label="Last Name"
+                   type="text"
+                   required
+                   sx={{ flex: 1 }}
+                   value={formData.last_name}
+                   onChange={handleChange}
+                   placeholder="Enter your last name"
+                   variant="outlined"
+                   size="medium"
+                 />
+               </Stack>
 
               <TextField
                 id="email"
@@ -131,19 +127,18 @@ const RegisterPage: React.FC = () => {
                 size="medium"
               />
 
-              <TextField
-                id="phone"
-                name="phone"
-                label="Phone Number (Optional)"
-                type="tel"
-                fullWidth
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="Enter your phone number"
-                variant="outlined"
-                size="medium"
-                helperText="Only digits and + symbol allowed"
-              />
+                             <TextField
+                 id="phone"
+                 name="phone"
+                 label="Phone Number (Optional)"
+                 type="tel"
+                 fullWidth
+                 value={formData.phone}
+                 onChange={handleChange}
+                 placeholder="Enter your phone number"
+                 variant="outlined"
+                 size="medium"
+               />
               
               <TextField
                 id="password"
@@ -202,19 +197,7 @@ const RegisterPage: React.FC = () => {
             </Typography>
           </Box>
 
-          <Box sx={{ mt: 2, textAlign: 'center' }}>
-            <Link
-              component="button"
-              variant="body2"
-              onClick={() => navigate('/')}
-              sx={{ 
-                textDecoration: 'none',
-                color: 'text.secondary'
-              }}
-            >
-              ← Back to Home
-            </Link>
-          </Box>
+          
         </CardContent>
       </Card>
     </Container>

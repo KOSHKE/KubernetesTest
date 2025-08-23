@@ -10,7 +10,7 @@ RUN apk add --no-cache git \
 # Copy dependency files first to leverage Docker layer caching
 COPY services/user-service/go.mod services/user-service/go.sum ./
 COPY proto-go/ /app/proto-go/
-COPY libs/ /app/libs/
+COPY pkg/ /app/pkg/
 RUN go mod download
 
 # Copy the entire codebase

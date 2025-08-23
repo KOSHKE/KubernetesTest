@@ -3,7 +3,7 @@ package publisher
 import (
 	"context"
 
-	shared "kubernetetest/libs/kafka"
+	shared "kubernetetest/pkg/kafka"
 
 	"google.golang.org/protobuf/proto"
 

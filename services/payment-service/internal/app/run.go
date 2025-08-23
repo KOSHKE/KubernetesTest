@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	pub "kubernetetest/libs/kafka"
+	pub "kubernetetest/pkg/kafka"
 	app "payment-service/internal/app/services"
 	"payment-service/internal/domain/entities"
 	derrors "payment-service/internal/domain/errors"

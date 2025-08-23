@@ -34,7 +34,7 @@ require (
 )
 
 replace (
-	jwt => ../../libs/jwt
+	jwt => ../../pkg/jwt
 	proto-go => ../../proto-go
-	redis => ../../libs/redis
+	redis => ../../pkg/redis
 )

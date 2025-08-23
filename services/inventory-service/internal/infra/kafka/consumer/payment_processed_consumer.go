@@ -3,7 +3,7 @@ package consumer
 import (
 	"context"
 
-	shared "kubernetetest/libs/kafka"
+	shared "kubernetetest/pkg/kafka"
 
 	events "proto-go/events"
 

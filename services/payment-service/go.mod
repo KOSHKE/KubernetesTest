@@ -8,7 +8,7 @@ require (
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
-	kubernetetest/libs/kafka v0.0.0
+	kubernetetest/pkg/kafka v0.0.0
 	proto-go v0.0.0
 )
 
@@ -24,4 +24,4 @@ require (
 
 replace proto-go => ../../proto-go
 
-replace kubernetetest/libs/kafka => ../../libs/kafka
+replace kubernetetest/pkg/kafka => ../../pkg/kafka

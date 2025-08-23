@@ -30,19 +30,10 @@ const HomePage: React.FC<HomePageProps> = ({ isAuthenticated }) => {
         <Button component={RouterLink} to="/products" variant="contained" sx={{ mr: 1 }}>
           Browse Products
         </Button>
-        {isAuthenticated ? (
+        {isAuthenticated && (
           <Button component={RouterLink} to="/orders" variant="outlined">
             View Orders
           </Button>
-        ) : (
-          <>
-            <Button component={RouterLink} to="/login" variant="outlined" sx={{ mr: 1 }}>
-              Sign In
-            </Button>
-            <Button component={RouterLink} to="/register" variant="contained">
-              Register
-            </Button>
-          </>
         )}
       </Box>
 
@@ -52,6 +43,7 @@ const HomePage: React.FC<HomePageProps> = ({ isAuthenticated }) => {
           { title: '🏗️ Microservices', desc: 'Domain-driven design with separate services for users, orders, inventory, and payments' },
           { title: '🚀 Kubernetes', desc: 'Container orchestration with deployments, services, and ingress controllers' },
           { title: '⚡ gRPC', desc: 'High-performance inter-service communication with protocol buffers' },
+          { title: '🔐 JWT Authentication', desc: 'Secure JWT-based authentication with access and refresh tokens' },
           { title: '🛒 Ordering', desc: 'Cart, checkout, and order lifecycle demo' },
         ].map((item) => (
           <Grid item xs={12} md={6} lg={3} key={item.title}>

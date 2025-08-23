@@ -102,22 +102,7 @@ const UnauthorizedView: React.FC<UnauthorizedViewProps> = ({
             )}
           </Stack>
 
-          {/* Back to Home */}
-          <Box>
-            <Button
-              variant="text"
-              onClick={() => navigate('/')}
-              sx={{ 
-                textDecoration: 'none',
-                color: 'text.secondary',
-                '&:hover': {
-                  color: 'primary.main'
-                }
-              }}
-            >
-              ← Back to Home
-            </Button>
-          </Box>
+
         </CardContent>
       </Card>
     </Container>
