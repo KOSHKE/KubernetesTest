@@ -54,6 +54,6 @@ proto-go/**/*.pb.go
 proto-go/**/*_grpc.pb.go
 proto-go/**/*.pb.gw.go
 
-# Keep go.mod and go.sum
-!proto-go/go.mod
-!proto-go/go.sum
+# Keep proto-go directory structure and essential files
+!proto-go/
+!proto-go/**/
