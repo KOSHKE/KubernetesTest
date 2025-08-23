@@ -8,7 +8,7 @@ import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import UnauthorizedPage from './components/UnauthorizedPage';
+import UnauthorizedView from './components/UnauthorizedView';
 import { authService } from './services/auth';
 
 function App() {
@@ -83,7 +83,7 @@ function App() {
                     isAuthenticated={isAuthenticated}
                   />
                 ) : (
-                  <UnauthorizedPage />
+                  <UnauthorizedView />
                 )
               } 
             />

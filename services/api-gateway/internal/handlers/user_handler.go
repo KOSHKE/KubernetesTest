@@ -4,7 +4,6 @@ import (
 	"api-gateway/internal/clients"
 	"api-gateway/internal/middleware"
 	"api-gateway/pkg/http"
-	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,10 +44,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 		}
 
 		// Debug logging
-		log.Printf("DEBUG: API Gateway: User service response - User: %+v", response.User)
-		log.Printf("DEBUG: API Gateway: User service response - AccessToken: %s", response.AccessToken)
-		log.Printf("DEBUG: API Gateway: User service response - RefreshToken: %s", response.RefreshToken)
-		log.Printf("DEBUG: API Gateway: User service response - ExpiresIn: %d", response.ExpiresIn)
 
 		// Return tokens in response
 		c.JSON(200, gin.H{

@@ -83,12 +83,7 @@ class AuthService {
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
       const response = await api.post('/auth/login', credentials);
-      console.log('Login API response:', response.data);
-      
       const { data } = response.data;
-      console.log('Login data:', data);
-      console.log('Access token:', data.access_token);
-      console.log('Refresh token:', data.refresh_token);
       
       // Store tokens
       this.setTokens(data.access_token, data.refresh_token);
@@ -98,7 +93,6 @@ class AuthService {
       
       return data;
     } catch (error) {
-      console.error('Login error:', error);
       throw new Error('Login failed');
     }
   }
@@ -165,7 +159,6 @@ class AuthService {
         });
       } catch (error) {
         // Continue with logout even if API call fails
-        console.warn('Logout API call failed:', error);
       }
     }
 

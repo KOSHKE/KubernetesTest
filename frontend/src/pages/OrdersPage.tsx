@@ -60,13 +60,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated }) => {
         return;
       }
       const orders = (response.data.data?.orders ?? []) as Order[];
-      console.log('🔍 Orders loaded:', orders);
-      orders.forEach((order, index) => {
-        console.log(`🔍 Order ${index}: ID=${order.id}, Items count=${order.items?.length || 0}`);
-        order.items?.forEach((item, itemIndex) => {
-          console.log(`🔍   Item ${itemIndex}: ${item.product_name} x${item.quantity}`);
+              orders.forEach((order, index) => {
+          order.items?.forEach((item, itemIndex) => {
+            // Process order items
+          });
         });
-      });
       setOrders(orders);
     } catch (err) {
       // Treat 404 as a valid empty state instead of an error

@@ -5,8 +5,6 @@ import (
 	userpb "proto-go/user"
 	"user-service/internal/app/services"
 
-	"log"
-
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -51,10 +49,7 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 	}
 
 	// Debug logging
-	log.Printf("DEBUG: gRPC server: Service response - User: %+v", resp.User)
-	log.Printf("DEBUG: gRPC server: Service response - AccessToken: %s", resp.AccessToken)
-	log.Printf("DEBUG: gRPC server: Service response - RefreshToken: %s", resp.RefreshToken)
-	log.Printf("DEBUG: gRPC server: Service response - ExpiresIn: %d", resp.ExpiresIn)
+	
 
 	return &userpb.LoginResponse{
 		User: &userpb.User{

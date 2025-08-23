@@ -3,14 +3,14 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
+	"proto-go/user"
 	"user-service/internal/domain/entities"
 	"user-service/internal/domain/valueobjects"
 	"user-service/internal/ports/auth"
 	"user-service/internal/ports/repository"
-	"proto-go/user"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -98,21 +98,15 @@ func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*user.L
 	}
 
 	// Generate JWT tokens
-	log.Printf("DEBUG: About to generate JWT tokens for user %s", userEntity.ID())
 	tokenPair, err := s.authService.GenerateTokenPair(userEntity.ID(), userEntity.Email().Value())
 	if err != nil {
-		log.Printf("ERROR: Failed to generate JWT tokens: %v", err)
 		return nil, fmt.Errorf("failed to generate tokens: %w", err)
 	}
-	log.Printf("DEBUG: JWT tokens generated successfully: access_token=%s, refresh_token=%s, expires_in=%d",
-		tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
 
 	// Store refresh token in Redis
 	if err := s.authService.StoreRefreshToken(ctx, tokenPair.RefreshToken, userEntity.ID()); err != nil {
-		log.Printf("ERROR: Failed to store refresh token in Redis: %v", err)
 		return nil, fmt.Errorf("failed to store refresh token: %w", err)
 	}
-	log.Printf("DEBUG: Refresh token stored in Redis successfully")
 
 	// Convert domain user to protobuf user
 	pbUser := &user.User{

@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -32,11 +31,6 @@ type Config struct {
 
 // NewJWTAuthService creates new JWT authentication service
 func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWTAuthService, error) {
-	log.Printf("DEBUG: JWT service: Initializing with Redis URL: %s", config.RedisURL)
-	log.Printf("DEBUG: JWT service: Config - AccessTokenSecret: %s, RefreshTokenSecret: %s",
-		config.AccessTokenSecret[:10]+"...", config.RefreshTokenSecret[:10]+"...")
-	log.Printf("DEBUG: JWT service: Config - AccessTokenTTL: %v, RefreshTokenTTL: %v",
-		config.AccessTokenTTL, config.RefreshTokenTTL)
 
 	// Parse Redis URL
 	redisAddr := config.RedisURL
@@ -59,18 +53,13 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWT
 		}
 	}
 
-	log.Printf("DEBUG: JWT service: Parsed Redis address: %s, password: %s, DB: %d", redisAddr, redisPassword, redisDB)
-
 	// Create Redis client
 	redisClient := redis.NewClient(redisAddr, redisPassword, redisDB)
 
 	// Test Redis connection
-	log.Printf("DEBUG: JWT service: Testing Redis connection...")
 	if err := redisClient.Ping(context.Background()); err != nil {
-		log.Printf("ERROR: JWT service: Failed to connect to Redis: %v", err)
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
-	log.Printf("DEBUG: JWT service: Redis connection successful")
 
 	// Create JWT manager
 	jwtConfig := &jwt.Config{
@@ -80,7 +69,6 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWT
 		RefreshTokenTTL:    config.RefreshTokenTTL,
 	}
 	jwtManager := jwt.NewManager(jwtConfig)
-	log.Printf("DEBUG: JWT service: JWT manager created successfully")
 
 	return &JWTAuthService{
 		jwtManager:  jwtManager,
@@ -92,20 +80,11 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWT
 
 // GenerateTokenPair generates new access and refresh token pair
 func (s *JWTAuthService) GenerateTokenPair(userID, email string) (*auth.TokenPair, error) {
-	log.Printf("DEBUG: JWT service: About to generate token pair for user %s with email %s", userID, email)
-	log.Printf("DEBUG: JWT service: Config - AccessTokenSecret: %s, RefreshTokenSecret: %s",
-		s.config.AccessTokenSecret[:10]+"...", s.config.RefreshTokenSecret[:10]+"...")
-	log.Printf("DEBUG: JWT service: Config - AccessTokenTTL: %v, RefreshTokenTTL: %v",
-		s.config.AccessTokenTTL, s.config.RefreshTokenTTL)
 
 	tokenPair, err := s.jwtManager.GenerateTokenPair(userID, email)
 	if err != nil {
-		log.Printf("ERROR: JWT service: Failed to generate token pair: %v", err)
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
-
-	log.Printf("DEBUG: JWT service: Token pair generated successfully: access_token=%s, refresh_token=%s, expires_in=%d",
-		tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
 
 	return &auth.TokenPair{
 		AccessToken:  tokenPair.AccessToken,
