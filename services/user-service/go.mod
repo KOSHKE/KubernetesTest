@@ -11,7 +11,7 @@ require (
 	gorm.io/gorm v1.25.12
 	jwt v0.0.0
 	proto-go v0.0.0
-	redis v0.0.0
+	redisclient v0.0.0
 )
 
 require (
@@ -24,7 +24,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/redis/go-redis/v9 v9.3.1 // indirect
+	github.com/redis/go-redis/v9 v9.12.1 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
@@ -36,5 +36,5 @@ require (
 replace (
 	jwt => ../../pkg/jwt
 	proto-go => ../../proto-go
-	redis => ../../pkg/redis
+	redisclient => ../../pkg/redisclient
 )

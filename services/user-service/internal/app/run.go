@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	"redisclient"
 	"user-service/internal/app/services"
 	"user-service/internal/infra/auth"
 	grpcsvc "user-service/internal/infra/grpc"
@@ -54,7 +55,10 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		RedisURL:           cfg.RedisURL,
 	}
 
-	authService, err := auth.NewJWTAuthService(authConfig, userRepo)
+	// Use existing logger for Redis operations
+	redisLogger := redisclient.NewSugaredLoggerAdapter(log)
+
+	authService, err := auth.NewJWTAuthService(authConfig, userRepo, redisLogger)
 	if err != nil {
 		log.Errorw("failed to initialize auth service", "error", err)
 		return err

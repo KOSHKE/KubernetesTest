@@ -7,17 +7,18 @@ import (
 	"time"
 
 	"jwt"
-	"redis"
+	"redisclient"
 	"user-service/internal/ports/auth"
 	"user-service/internal/ports/repository"
 )
 
 // JWTAuthService implements auth.AuthService interface
 type JWTAuthService struct {
-	jwtManager  *jwt.Manager
-	redisClient *redis.Client
-	userRepo    repository.UserRepository
-	config      *Config
+	jwtManager *jwt.Manager
+	client     *redisclient.Client
+	userRepo   repository.UserRepository
+	config     *Config
+	logger     redisclient.Logger
 }
 
 // Config holds JWT authentication configuration
@@ -30,7 +31,7 @@ type Config struct {
 }
 
 // NewJWTAuthService creates new JWT authentication service
-func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWTAuthService, error) {
+func NewJWTAuthService(config *Config, userRepo repository.UserRepository, logger redisclient.Logger) (*JWTAuthService, error) {
 
 	// Parse Redis URL
 	redisAddr := config.RedisURL
@@ -53,11 +54,11 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWT
 		}
 	}
 
-	// Create Redis client
-	redisClient := redis.NewClient(redisAddr, redisPassword, redisDB)
+	// Create optimized Redis client
+	client := redisclient.New(redisAddr, redisPassword, redisDB, logger)
 
 	// Test Redis connection
-	if err := redisClient.Ping(context.Background()); err != nil {
+	if err := client.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
@@ -71,18 +72,19 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository) (*JWT
 	jwtManager := jwt.NewManager(jwtConfig)
 
 	return &JWTAuthService{
-		jwtManager:  jwtManager,
-		redisClient: redisClient,
-		userRepo:    userRepo,
-		config:      config,
+		jwtManager: jwtManager,
+		client:     client,
+		userRepo:   userRepo,
+		config:     config,
+		logger:     logger,
 	}, nil
 }
 
 // GenerateTokenPair generates new access and refresh token pair
 func (s *JWTAuthService) GenerateTokenPair(userID, email string) (*auth.TokenPair, error) {
-
 	tokenPair, err := s.jwtManager.GenerateTokenPair(userID, email)
 	if err != nil {
+		s.logger.Error("failed to generate token pair", "error", err, "user_id", userID)
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
 
@@ -95,13 +97,19 @@ func (s *JWTAuthService) GenerateTokenPair(userID, email string) (*auth.TokenPai
 
 // StoreRefreshToken stores refresh token in Redis
 func (s *JWTAuthService) StoreRefreshToken(ctx context.Context, refreshToken, userID string) error {
-	return s.redisClient.StoreRefreshToken(ctx, refreshToken, userID, s.config.RefreshTokenTTL)
+	err := s.client.StoreToken(ctx, refreshToken, userID, s.config.RefreshTokenTTL)
+	if err != nil {
+		s.logger.Error("failed to store refresh token", "error", err, "user_id", userID)
+		return err
+	}
+	return nil
 }
 
 // ValidateAccessToken validates access token and returns claims
 func (s *JWTAuthService) ValidateAccessToken(tokenString string) (map[string]interface{}, error) {
 	claims, err := s.jwtManager.ValidateAccessToken(tokenString)
 	if err != nil {
+		s.logger.Error("failed to validate access token", "error", err)
 		return nil, fmt.Errorf("failed to validate access token: %w", err)
 	}
 
@@ -117,11 +125,13 @@ func (s *JWTAuthService) ValidateAccessToken(tokenString string) (map[string]int
 func (s *JWTAuthService) ValidateRefreshToken(tokenString string) (map[string]interface{}, error) {
 	claims, err := s.jwtManager.ValidateRefreshToken(tokenString)
 	if err != nil {
+		s.logger.Error("failed to validate refresh token", "error", err)
 		return nil, fmt.Errorf("failed to validate refresh token: %w", err)
 	}
 
 	// Check if token exists in Redis
-	if !s.redisClient.IsRefreshTokenValid(context.Background(), tokenString) {
+	if !s.client.IsTokenValid(context.Background(), tokenString) {
+		s.logger.Warn("refresh token has been revoked", "user_id", claims.UserID)
 		return nil, fmt.Errorf("refresh token has been revoked")
 	}
 
@@ -162,15 +172,15 @@ func (s *JWTAuthService) RefreshAccessToken(refreshToken string) (string, error)
 
 // RevokeRefreshToken removes refresh token from Redis
 func (s *JWTAuthService) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
-	return s.redisClient.RevokeRefreshToken(ctx, refreshToken)
+	return s.client.RevokeToken(ctx, refreshToken)
 }
 
 // RevokeAllUserTokens removes all refresh tokens for a specific user
 func (s *JWTAuthService) RevokeAllUserTokens(ctx context.Context, userID string) error {
-	return s.redisClient.RevokeAllUserTokens(ctx, userID)
+	return s.client.RevokeAllUserTokens(ctx, userID)
 }
 
 // Close closes Redis connection
 func (s *JWTAuthService) Close() error {
-	return s.redisClient.Close()
+	return s.client.Close()
 }

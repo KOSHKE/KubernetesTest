@@ -17,7 +17,7 @@ This project represents a microservices architecture for an order management sys
 ### Infrastructure
 
 - **PostgreSQL** - Main database
-- **Redis** - Cache and refresh token storage
+- **Redis** - Cache and refresh token storage with SOLID architecture
 - **Kafka** - Asynchronous communication between services
 - **Frontend** - React application with TypeScript
 
@@ -27,8 +27,8 @@ This project represents a microservices architecture for an order management sys
 
 #### 1. Authentication Libraries
 
-- **`libs/jwt/`** - JWT token management (generation, validation, refresh)
-- **`libs/redis/`** - Storage and management of refresh tokens in Redis
+- **`pkg/jwt/`** - JWT token management (generation, validation, refresh)
+- **`pkg/redisclient/`** - Storage and management of refresh tokens in Redis
 
 #### 2. User Service
 
@@ -81,6 +81,94 @@ Updated to support JWT environment variables in user-service and api-gateway.
 - **Redis storage** - ability to revoke tokens
 - **Automatic refresh** - transparent token refresh on frontend
 - **Protected routes** - all order and payment operations require authentication
+
+## Redis Architecture
+
+### SOLID Principles Implementation
+
+#### Single Responsibility Principle
+- **`Client`** - базовое подключение к Redis
+- **`TokenStorage`** - управление JWT токенами
+- **`Cache`** - общие операции кэширования
+- **`List`** - операции со списками
+
+#### Interface Segregation Principle
+```go
+// Используйте только нужные интерфейсы
+tokenStorage := redisclient.NewTokenStorage(client)
+cache := redisclient.NewCache(client)
+list := redisclient.NewList(client)
+```
+
+#### Dependency Inversion Principle
+- Все операции через интерфейсы
+- Легкое тестирование с моками
+- Гибкая замена реализаций
+
+### Performance Optimizations
+
+#### Efficient Token Revocation
+- **Было**: Сканирование всех ключей `refresh_token:*`
+- **Стало**: Индекс пользователя `user_tokens:{userID}` + pipeline операции
+
+#### Connection Pooling
+- Настраиваемый размер пула
+- Минимальные и максимальные соединения
+- Retry логика с таймаутами
+
+#### Unified Logging
+- **Интеграция с существующим логгером** - используйте ваш Zap логгер
+- **Консистентность логов** - одинаковый формат во всех компонентах
+- **Correlation ID** - отслеживание запросов через сервисы
+- **Структурированное логирование** - JSON формат для анализа
+
+### Usage Examples
+
+#### Basic Client
+```go
+client := redisclient.NewSimpleClient("localhost:6379", "", 0)
+defer client.Close()
+```
+
+#### Advanced Configuration
+```go
+cfg := &redisclient.Config{
+    PoolSize:     20,
+    MinIdleConns: 10,
+    MaxRetries:   5,
+    DialTimeout:  10 * time.Second,
+}
+client := redisclient.NewClient(cfg)
+```
+
+#### Token Operations
+```go
+tokenStorage := redisclient.NewTokenStorage(client)
+err := tokenStorage.StoreRefreshToken(ctx, token, userID, expiration)
+```
+
+#### Cache Operations
+```go
+cache := redisclient.NewCache(client)
+err := cache.Set(ctx, "key", value, time.Hour)
+```
+
+#### Logging Integration
+```go
+// Используйте ваш существующий логгер
+import "go.uber.org/zap"
+
+logger := zap.NewProduction() // ваш существующий логгер
+
+// Создайте Redis клиент с логгером
+redisClient := redisclient.NewClientWithLogger(
+    "localhost:6379", "", 0,
+    redisclient.NewZapLoggerAdapter(logger),
+)
+
+// Теперь все Redis операции логируются через ваш логгер
+tokenStorage := redisclient.NewTokenStorage(redisClient)
+```
 
 ### API Endpoints
 
@@ -140,9 +228,9 @@ docker-compose logs -f [service-name]
 │   ├── order-service/ # Order service
 │   ├── inventory-service/ # Inventory service
 │   └── payment-service/   # Payment service
-├── libs/              # Common libraries
+├── pkg/               # Common packages
 │   ├── jwt/          # JWT authentication
-│   ├── redis/        # Redis client
+│   ├── redisclient/  # Redis client with SOLID architecture
 │   └── kafka/        # Kafka clients
 ├── frontend/          # React application
 └── proto/            # Protobuf definitions
