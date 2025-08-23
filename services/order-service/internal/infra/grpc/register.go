@@ -1,8 +1,8 @@
 package grpc
 
 import (
-	appsvc "order-service/internal/app/services"
-	orderpb "order-service/internal/pb/order"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/app/services"
+	orderpb "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/pb/order"
 
 	gogrpc "google.golang.org/grpc"
 )

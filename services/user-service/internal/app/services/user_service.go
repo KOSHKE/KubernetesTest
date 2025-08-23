@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"proto-go/user"
-	"user-service/internal/domain/entities"
-	"user-service/internal/domain/valueobjects"
-	"user-service/internal/ports/auth"
-	"user-service/internal/ports/repository"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/user"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/entities"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/auth"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/repository"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

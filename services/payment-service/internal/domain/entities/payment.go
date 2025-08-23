@@ -1,7 +1,7 @@
 package entities
 
 import (
-	"payment-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 	"time"
 )
 

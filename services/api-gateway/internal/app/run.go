@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"api-gateway/internal/clients"
-	"api-gateway/internal/config"
-	"api-gateway/internal/handlers"
-	"api-gateway/internal/middleware"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/config"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/handlers"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/middleware"
 
 	cors "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

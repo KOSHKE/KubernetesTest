@@ -3,9 +3,9 @@ package grpc
 import (
 	"context"
 	"errors"
-	appsvc "inventory-service/internal/app/services"
-	"inventory-service/internal/domain/models"
-	invpb "proto-go/inventory"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/domain/models"
+	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"

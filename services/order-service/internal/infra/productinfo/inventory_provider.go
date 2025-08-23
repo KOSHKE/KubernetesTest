@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"order-service/internal/ports/productinfo"
-	invpb "proto-go/inventory"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/productinfo"
+	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
 )
 
 // InventoryProvider implements productinfo.Provider using inventory-service gRPC client.

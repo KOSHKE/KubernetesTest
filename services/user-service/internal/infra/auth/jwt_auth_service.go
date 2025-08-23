@@ -6,10 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"jwt"
-	"redisclient"
-	"user-service/internal/ports/auth"
-	"user-service/internal/ports/repository"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/auth"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/repository"
+
+	"github.com/kubernetestest/ecommerce-platform/pkg/jwt"
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/pkg/redisclient"
 )
 
 // JWTAuthService implements auth.AuthService interface
@@ -18,7 +20,7 @@ type JWTAuthService struct {
 	client     *redisclient.Client
 	userRepo   repository.UserRepository
 	config     *Config
-	logger     redisclient.Logger
+	logger     logger.Logger
 }
 
 // Config holds JWT authentication configuration
@@ -31,7 +33,7 @@ type Config struct {
 }
 
 // NewJWTAuthService creates new JWT authentication service
-func NewJWTAuthService(config *Config, userRepo repository.UserRepository, logger redisclient.Logger) (*JWTAuthService, error) {
+func NewJWTAuthService(config *Config, userRepo repository.UserRepository, logger logger.Logger) (*JWTAuthService, error) {
 
 	// Parse Redis URL
 	redisAddr := config.RedisURL

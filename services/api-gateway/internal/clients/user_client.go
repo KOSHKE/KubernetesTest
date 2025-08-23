@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	grpcutil "api-gateway/pkg/grpc"
-	userpb "proto-go/user"
+	grpcutil "github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
+	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
 )
 
 // UserClient defines the interface for user-related operations.

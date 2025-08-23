@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	domainerrors "order-service/internal/domain/errors"
-	"order-service/internal/domain/models"
+	domainerrors "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/errors"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

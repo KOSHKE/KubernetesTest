@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"inventory-service/internal/domain/models"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/domain/models"
 
 	"gorm.io/gorm"
 )

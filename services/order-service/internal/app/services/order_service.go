@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	derrors "order-service/internal/domain/errors"
-	"order-service/internal/domain/models"
-	"order-service/internal/ports/clock"
-	"order-service/internal/ports/productinfo"
-	"order-service/internal/ports/publisher"
-	"order-service/internal/ports/repository"
+	derrors "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/errors"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/clock"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/productinfo"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/publisher"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/repository"
 
-	events "proto-go/events"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 
 	"go.uber.org/zap"
 )

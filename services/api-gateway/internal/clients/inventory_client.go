@@ -3,10 +3,10 @@ package clients
 import (
 	"context"
 
-	"api-gateway/pkg/conversion"
-	"api-gateway/pkg/grpc"
-	"api-gateway/pkg/types"
-	invpb "proto-go/inventory"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/conversion"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
 )
 
 // ---------------- Inventory Client Interface ----------------

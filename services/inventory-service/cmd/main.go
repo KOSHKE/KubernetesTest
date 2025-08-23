@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	app "inventory-service/internal/app"
+	app "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/app"
 
 	"go.uber.org/zap"
 )

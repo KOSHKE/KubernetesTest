@@ -49,11 +49,11 @@ services:
     volumes:
       - kafka_data:/bitnami/kafka
     healthcheck:
-      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server $KAFKA_BOOTSTRAP_SERVERS --list > /dev/null 2>&1"]
-      interval: 5s
-      timeout: 3s
-      retries: 60
-      start_period: 10s
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -69,11 +69,12 @@ services:
   api-gateway:
     build:
       context: .
-      dockerfile: ./services/api-gateway/Dockerfile
+      dockerfile: services/api-gateway/Dockerfile
     working_dir: /app/services/api-gateway
     volumes:
       - .:/app
       - air_cache_api:/root/.cache
+    command: ["air", "-c", ".air.toml"]
     environment:
       - REDIS_URL=${REDIS_URL}
       - FRONTEND_ORIGINS=${FRONTEND_ORIGINS}
@@ -86,19 +87,24 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - user-service
-      - order-service
-      - inventory-service
-      - payment-service
+      user-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
 
   user-service:
     build:
       context: .
-      dockerfile: ./services/user-service/Dockerfile
+      dockerfile: services/user-service/Dockerfile
     working_dir: /app/services/user-service
     volumes:
       - .:/app
       - air_cache_user:/root/.cache
+    command: ["air", "-c", ".air.toml"]
     environment:
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -114,17 +120,20 @@ services:
     ports:
       - "50051:50051"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   order-service:
     build:
       context: .
-      dockerfile: ./services/order-service/Dockerfile
+      dockerfile: services/order-service/Dockerfile
     working_dir: /app/services/order-service
     volumes:
       - .:/app
       - air_cache_order:/root/.cache
+    command: ["air", "-c", ".air.toml"]
     environment:
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -138,18 +147,22 @@ services:
     ports:
       - "50052:50052"
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   inventory-service:
     build:
       context: .
-      dockerfile: ./services/inventory-service/Dockerfile
+      dockerfile: services/inventory-service/Dockerfile
     working_dir: /app/services/inventory-service
     volumes:
       - .:/app
       - air_cache_inventory:/root/.cache
+    command: ["air", "-c", ".air.toml"]
     environment:
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -162,18 +175,22 @@ services:
     ports:
       - "50053:50053"
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   payment-service:
     build:
       context: .
-      dockerfile: ./services/payment-service/Dockerfile
+      dockerfile: services/payment-service/Dockerfile
     working_dir: /app/services/payment-service
     volumes:
       - .:/app
       - air_cache_payment:/root/.cache
+    command: ["air", "-c", ".air.toml"]
     environment:
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -185,9 +202,12 @@ services:
     ports:
       - "50054:50054"
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   # Frontend (Vite dev server)
   frontend:

@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"time"
 
-	"payment-service/internal/ports/processor"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/ports/processor"
 )
 
 // MockPaymentProcessor simulates payment outcomes (50% success) with latency

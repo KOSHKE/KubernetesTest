@@ -1,8 +1,8 @@
 package grpc
 
 import (
-	userpb "proto-go/user"
-	"user-service/internal/app/services"
+	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
 
 	gogrpc "google.golang.org/grpc"
 )

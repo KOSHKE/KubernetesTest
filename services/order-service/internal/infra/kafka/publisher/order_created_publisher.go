@@ -3,16 +3,14 @@ package publisher
 import (
 	"context"
 
-	shared "kubernetetest/pkg/kafka"
-
+	kafkaclient "github.com/kubernetestest/ecommerce-platform/pkg/kafkaclient"
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
 	"google.golang.org/protobuf/proto"
 
-	"proto-go/events"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
 )
 
-type SugaredLogger = shared.SugaredLogger
-
-type Publisher = shared.Publisher
+type Publisher = kafkaclient.Publisher
 
 type OrderCreatedPublisher struct {
 	base  Publisher
@@ -20,14 +18,19 @@ type OrderCreatedPublisher struct {
 }
 
 func NewOrderCreatedPublisher(bootstrapServers, topic string) (*OrderCreatedPublisher, error) {
-	kp, err := shared.NewKafkaPublisher(bootstrapServers, "order-service")
+	config := kafkaclient.PublisherConfig{
+		BootstrapServers: bootstrapServers,
+		ClientID:         "order-service",
+	}
+
+	kp, err := kafkaclient.NewKafkaPublisher(config)
 	if err != nil {
 		return nil, err
 	}
 	return &OrderCreatedPublisher{base: kp, topic: topic}, nil
 }
 
-func (p *OrderCreatedPublisher) WithLogger(l SugaredLogger) *OrderCreatedPublisher {
+func (p *OrderCreatedPublisher) WithLogger(l logger.Logger) *OrderCreatedPublisher {
 	p.base = p.base.WithLogger(l)
 	return p
 }

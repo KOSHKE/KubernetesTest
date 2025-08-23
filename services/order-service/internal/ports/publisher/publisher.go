@@ -3,7 +3,7 @@ package publisher
 import (
 	"context"
 
-	events "proto-go/events"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 )
 
 // EventPublisher defines minimal contract for emitting domain events

@@ -3,10 +3,10 @@ package grpc
 import (
 	"context"
 
-	appsvc "payment-service/internal/app/services"
-	"payment-service/internal/domain/entities"
-	"payment-service/internal/domain/valueobjects"
-	pb "proto-go/payment"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/entities"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
+	pb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

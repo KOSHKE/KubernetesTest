@@ -1,4 +1,4 @@
-# Use official Go image based on Debian for better C library support (librdkafka, protobuf, etc.)
+# Use official Go image based on Debian for better C library support
 FROM golang:1.25-bookworm
 
 # Set working directory for the service
@@ -13,9 +13,7 @@ RUN apt-get update && \
 RUN go install github.com/air-verse/air@latest
 
 # Copy go.mod and go.sum first to leverage Docker layer caching
-COPY services/inventory-service/go.mod services/inventory-service/go.sum ./
-COPY proto-go/go.mod /app/proto-go/go.mod
-COPY pkg/kafka/go.mod /app/pkg/kafka/go.mod
+COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download

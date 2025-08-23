@@ -3,16 +3,17 @@ package publisher
 import (
 	"context"
 
-	shared "kubernetetest/pkg/kafka"
+	kafkaclient "github.com/kubernetestest/ecommerce-platform/pkg/kafkaclient"
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
 
 	"google.golang.org/protobuf/proto"
 
-	events "proto-go/events"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 )
 
-type SugaredLogger = shared.SugaredLogger
+type SugaredLogger = logger.Logger
 
-type Publisher = shared.Publisher
+type Publisher = kafkaclient.Publisher
 
 type StockEventsPublisher struct {
 	base          Publisher
@@ -21,7 +22,12 @@ type StockEventsPublisher struct {
 }
 
 func NewStockEventsPublisher(bootstrapServers, topicReserved, topicFailed string) (*StockEventsPublisher, error) {
-	kp, err := shared.NewKafkaPublisher(bootstrapServers, "inventory-service")
+	config := kafkaclient.PublisherConfig{
+		BootstrapServers: bootstrapServers,
+		ClientID:         "inventory-service",
+	}
+	
+	kp, err := kafkaclient.NewKafkaPublisher(config)
 	if err != nil {
 		return nil, err
 	}
@@ -50,3 +56,6 @@ func (p *StockEventsPublisher) PublishStockReservationFailed(ctx context.Context
 	}
 	return p.base.Publish(ctx, p.topicFailed, bytes)
 }
+
+
+

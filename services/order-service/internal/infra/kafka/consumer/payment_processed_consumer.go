@@ -3,9 +3,9 @@ package consumer
 import (
 	"context"
 
-	shared "kubernetetest/pkg/kafka"
-
-	events "proto-go/events"
+	kafkaclient "github.com/kubernetestest/ecommerce-platform/pkg/kafkaclient"
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -21,20 +21,26 @@ func (f PaymentProcessedHandlerFunc) Handle(ctx context.Context, evt *events.Pay
 }
 
 type Consumer struct {
-	c   *shared.Consumer
+	c   *kafkaclient.Consumer
 	h   PaymentProcessedHandler
-	log shared.SugaredLogger
+	log logger.Logger
 }
 
 func NewConsumer(bootstrapServers, groupID, autoOffsetReset string, handler PaymentProcessedHandler) (*Consumer, error) {
-	c, err := shared.NewConsumer(bootstrapServers, groupID, autoOffsetReset)
+	config := kafkaclient.ConsumerConfig{
+		BootstrapServers: bootstrapServers,
+		GroupID:          groupID,
+		AutoOffsetReset:  autoOffsetReset,
+	}
+
+	c, err := kafkaclient.NewConsumer(config)
 	if err != nil {
 		return nil, err
 	}
 	return &Consumer{c: c, h: handler}, nil
 }
 
-func (c *Consumer) WithLogger(l shared.SugaredLogger) *Consumer {
+func (c *Consumer) WithLogger(l logger.Logger) *Consumer {
 	c.log = l
 	c.c.WithLogger(l)
 	return c

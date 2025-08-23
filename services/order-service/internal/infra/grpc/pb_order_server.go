@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	appsvc "order-service/internal/app/services"
-	derrors "order-service/internal/domain/errors"
-	"order-service/internal/domain/models"
-	orderpb "order-service/internal/pb/order"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/app/services"
+	derrors "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/errors"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
+	orderpb "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/pb/order"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -13,9 +13,7 @@ RUN apt-get update && \
 RUN go install github.com/air-verse/air@latest
 
 # Copy go.mod and go.sum first to leverage Docker layer caching
-COPY services/order-service/go.mod services/order-service/go.sum ./
-COPY proto-go/go.mod /app/proto-go/go.mod
-COPY pkg/kafka/go.mod /app/pkg/kafka/go.mod
+COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download

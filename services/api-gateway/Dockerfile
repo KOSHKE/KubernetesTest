@@ -1,23 +1,28 @@
-FROM golang:1.25-alpine
+# Use official Go image based on Debian for better C library support
+FROM golang:1.25-bookworm
 
-# Base image for development
+# Set working directory for the service
 WORKDIR /app/services/api-gateway
 
-# Install Git and Air for live reload during development
-RUN apk add --no-cache git \
-    && go install github.com/air-verse/air@latest
+# Install Git and build-essential for compiling C dependencies
+RUN apt-get update && \
+    apt-get install -y git build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first to leverage Docker layer caching
-COPY services/api-gateway/go.mod services/api-gateway/go.sum ./
-# Copy proto-go module file for local replace to work during dependency download
-COPY proto-go/go.mod /app/proto-go/go.mod
-COPY pkg/kafka/go.mod /app/pkg/kafka/go.mod
+# Install Air for hot reload during development
+RUN go install github.com/air-verse/air@latest
+
+# Copy go.mod and go.sum first to leverage Docker layer caching
+COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
-# Copy the entire codebase
-WORKDIR /app
+# Copy the full codebase
 COPY . /app
 
-# Start Air with the provided configuration
+# Set working directory for the service
 WORKDIR /app/services/api-gateway
+
+# Start Air for live reload
 CMD ["air", "-c", ".air.toml"]

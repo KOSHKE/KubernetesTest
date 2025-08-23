@@ -3,13 +3,13 @@ package services
 import (
 	"context"
 	"errors"
-	"inventory-service/internal/domain/models"
-	invpub "inventory-service/internal/ports/events"
-	"inventory-service/internal/ports/repository"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/domain/models"
+	invpub "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/ports/events"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/ports/repository"
 	"sync"
 	"time"
 
-	events "proto-go/events"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 
 	"go.uber.org/multierr"
 )

@@ -2,7 +2,7 @@ package entities
 
 import (
 	"time"
-	"user-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
 )
 
 // User represents the User aggregate root

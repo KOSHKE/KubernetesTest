@@ -1,7 +1,7 @@
 package order
 
 import (
-	realpb "proto-go/order"
+	realpb "github.com/kubernetestest/ecommerce-platform/proto-go/order"
 )
 
 // Re-export generated types into service-local import path to avoid module import issues.

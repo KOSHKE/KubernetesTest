@@ -1,258 +1,150 @@
-# Kubernetes Test Project
+# KubernetesTest Project Rules
 
-## Project Overview
+## Архитектура и принципы
 
-This project represents a microservices architecture for an order management system using Kubernetes, Docker, Go, and React.
+### Общие принципы
+- **SOLID принципы**: Следовать Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
+- **DRY**: Избегать дублирования кода
+- **YAGNI**: Не добавлять функциональность "на будущее"
+- **Чистый код**: Читаемость, простота, минимализм
 
-## Architecture
+### Структура проекта
+- **`pkg/`**: Переиспользуемые пакеты для всех микросервисов
+- **`services/`**: Микросервисы (api-gateway, user-service, inventory-service, order-service, payment-service)
+- **`proto/`**: Protobuf определения
+- **`frontend/`**: React фронтенд
 
-### Services
+## Пакеты
 
-1. **API Gateway** - Single entry point for all requests
-2. **User Service** - User management and authentication
-3. **Order Service** - Order management
-4. **Inventory Service** - Product and inventory management
-5. **Payment Service** - Payment processing
+### 1. Унифицированный логгер (`pkg/logger/`)
+- **Интерфейс**: `Logger` с методами `Error`, `Warn`, `Info`, `Debug`
+- **Реализация**: `ZapLogger` для *zap.SugaredLogger (удобный API)
+- **Основа**: Zap SugaredLogger - золотой стандарт в Go логировании
+- **Использование**: Все пакеты используют один интерфейс логгера
 
-### Infrastructure
+### 2. Redis клиент (`pkg/redisclient/`)
+- **Архитектура**: Унифицированный клиент для кеша, токенов и списков
+- **Методы**: `Set`, `Get`, `Del`, `Exists`, `Expire`, `LPush`, `RPush`, `LPop`, `RPop`, `LRange`, `LLen`, `MSet`, `MGet`
+- **Токены**: `StoreToken`, `GetTokenUser`, `RevokeToken`, `RevokeAllUserTokens`, `IsTokenValid`
+- **Оптимизации**: Pipeline операции, batch операции, индексы для пользователей
+- **Логирование**: Через унифицированный интерфейс `logger.Logger`
 
-- **PostgreSQL** - Main database
-- **Redis** - Cache and refresh token storage with SOLID architecture
-- **Kafka** - Asynchronous communication between services
-- **Frontend** - React application with TypeScript
+### 3. Kafka (`pkg/kafka/`)
+- **Consumer**: Worker pool с `RunValueLoop` и `RunMetaLoop`
+- **Publisher**: Асинхронная публикация с подтверждением доставки
+- **Конфигурация**: Структурированная через `ConsumerConfig` и `PublisherConfig`
+- **Оптимизации**: Сжатие Snappy, батчинг, увеличенные буферы
+- **Логирование**: Через унифицированный интерфейс `logger.Logger`
 
-## JWT Authentication
+## Логирование
 
-### Implemented Components
+### Принципы
+- **Единый интерфейс**: Все пакеты используют `logger.Logger`
+- **Структурированное логирование**: Ключ-значение пары для контекста
+- **Уровни**: `Error`, `Warn`, `Info`, `Debug`
+- **Адаптеры**: Легко добавить новый логгер без изменения кода
 
-#### 1. Authentication Libraries
-
-- **`pkg/jwt/`** - JWT token management (generation, validation, refresh)
-- **`pkg/redisclient/`** - Storage and management of refresh tokens in Redis
-
-#### 2. User Service
-
-- **JWT Manager** - Generation of access and refresh tokens
-- **Redis Client** - Storage of refresh tokens with revocation capability
-- **Auth Service** - Interface for authentication
-- **Updated methods**:
-  - `LoginUser` - returns token pair
-  - `RefreshToken` - refreshes access token
-  - `Logout` - revokes refresh token
-
-#### 3. API Gateway
-
-- **Auth Middleware** - JWT token validation for protected routes
-- **Updated routes**:
-  - `/api/v1/auth/*` - public authentication routes
-  - `/api/v1/users/*`, `/api/v1/orders/*`, `/api/v1/payments/*` - protected routes
-  - `/api/v1/inventory/*` - public product routes
-
-#### 4. Frontend
-
-- **Auth Service** - Token management in localStorage
-- **Login Component** - Login form
-- **Automatic token refresh** - Axios interceptor for automatic access token refresh
-- **Protected routes** - Redirect to login for unauthenticated users
-
-### Configuration
-
-#### Environment Variables
-
-```bash
-# JWT Configuration
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
-JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production
-ACCESS_TOKEN_TTL=15m
-REFRESH_TOKEN_TTL=168h
-
-# Redis
-REDIS_URL=redis:6379
-```
-
-#### Docker Compose
-
-Updated to support JWT environment variables in user-service and api-gateway.
-
-### Security
-
-- **Access tokens** - short-lived (15 minutes)
-- **Refresh tokens** - long-lived (7 days)
-- **Redis storage** - ability to revoke tokens
-- **Automatic refresh** - transparent token refresh on frontend
-- **Protected routes** - all order and payment operations require authentication
-
-## Redis Architecture
-
-### SOLID Principles Implementation
-
-#### Single Responsibility Principle
-- **`Client`** - базовое подключение к Redis
-- **`TokenStorage`** - управление JWT токенами
-- **`Cache`** - общие операции кэширования
-- **`List`** - операции со списками
-
-#### Interface Segregation Principle
+### Использование
 ```go
-// Используйте только нужные интерфейсы
-tokenStorage := redisclient.NewTokenStorage(client)
-cache := redisclient.NewCache(client)
-list := redisclient.NewList(client)
+// В микросервисах
+log := logger.NewZapLogger(zapLogger.Sugar())
+
+// В пакетах
+redisClient := redisclient.New(addr, password, db, log)
+kafkaConsumer := kafka.NewConsumer(config).WithLogger(log)
 ```
 
-#### Dependency Inversion Principle
-- Все операции через интерфейсы
-- Легкое тестирование с моками
-- Гибкая замена реализаций
+## Производительность
 
-### Performance Optimizations
+### Redis
+- **Connection Pool**: `PoolSize: 20`, `MinIdleConns: 10`
+- **Pipeline операции**: Для массовых операций с токенами
+- **Индексы**: Пользовательские индексы для быстрого поиска токенов
+- **Batch операции**: `MSet`, `MGet` для множественных ключей
 
-#### Efficient Token Revocation
-- **Было**: Сканирование всех ключей `refresh_token:*`
-- **Стало**: Индекс пользователя `user_tokens:{userID}` + pipeline операции
+### Kafka
+- **Worker Pool**: Настраиваемое количество воркеров
+- **Буферизация**: Увеличенные буферы для высокой пропускной способности
+- **Сжатие**: Snappy для экономии трафика
+- **Батчинг**: `linger.ms: 5` для группировки сообщений
 
-#### Connection Pooling
-- Настраиваемый размер пула
-- Минимальные и максимальные соединения
-- Retry логика с таймаутами
+## Обработка ошибок
 
-#### Unified Logging
-- **Интеграция с существующим логгером** - используйте ваш Zap логгер
-- **Консистентность логов** - одинаковый формат во всех компонентах
-- **Correlation ID** - отслеживание запросов через сервисы
-- **Структурированное логирование** - JSON формат для анализа
+### Принципы
+- **Контекст**: Всегда добавлять контекст к ошибкам
+- **Логирование**: Логировать все ошибки через унифицированный логгер
+- **Graceful degradation**: Graceful shutdown для всех компонентов
+- **Retry логика**: Настраиваемые повторные попытки
 
-### Usage Examples
-
-#### Basic Client
+### Формат ошибок
 ```go
-client := redisclient.NewSimpleClient("localhost:6379", "", 0)
-defer client.Close()
+return fmt.Errorf("failed to %s: %w", operation, err)
 ```
 
-#### Advanced Configuration
-```go
-cfg := &redisclient.Config{
-    PoolSize:     20,
-    MinIdleConns: 10,
-    MaxRetries:   5,
-    DialTimeout:  10 * time.Second,
-}
-client := redisclient.NewClient(cfg)
-```
+## Тестирование
 
-#### Token Operations
-```go
-tokenStorage := redisclient.NewTokenStorage(client)
-err := tokenStorage.StoreRefreshToken(ctx, token, userID, expiration)
-```
+### Моки
+- **Тестирование**: Используйте `logger.NewZapLogger(zap.NewNop().Sugar())` для тестов
+- **Mock Redis**: Для unit тестов Redis операций
+- **Mock Kafka**: Для тестирования producer/consumer
 
-#### Cache Operations
-```go
-cache := redisclient.NewCache(client)
-err := cache.Set(ctx, "key", value, time.Hour)
-```
+## Конфигурация
 
-#### Logging Integration
-```go
-// Используйте ваш существующий логгер
-import "go.uber.org/zap"
+### Принципы
+- **Структуры конфигурации**: Вместо множественных параметров
+- **Значения по умолчанию**: Разумные дефолты для всех параметров
+- **Валидация**: Проверка конфигурации при создании
+- **Environment variables**: Через конфигурационные структуры
 
-logger := zap.NewProduction() // ваш существующий логгер
+## Безопасность
 
-// Создайте Redis клиент с логгером
-redisClient := redisclient.NewClientWithLogger(
-    "localhost:6379", "", 0,
-    redisclient.NewZapLoggerAdapter(logger),
-)
+### Redis
+- **TTL**: Автоматическое истечение токенов
+- **Изоляция**: Разные базы данных для разных сервисов
+- **Аутентификация**: Поддержка паролей
 
-// Теперь все Redis операции логируются через ваш логгер
-tokenStorage := redisclient.NewTokenStorage(redisClient)
-```
+### Kafka
+- **Acknowledgment**: `acks: "all"` для надежности
+- **Таймауты**: Настраиваемые таймауты для доставки
+- **Graceful shutdown**: Корректное завершение работы
 
-### API Endpoints
+## Мониторинг и метрики
 
-#### Public Routes
-- `POST /api/v1/auth/register` - Registration
-- `POST /api/v1/auth/login` - Login
-- `POST /api/v1/auth/refresh` - Token refresh
-- `POST /api/v1/auth/logout` - Logout
-- `GET /api/v1/inventory/*` - Product browsing
+### Логирование
+- **Структурированные логи**: JSON формат для анализа
+- **Контекст**: Время выполнения, размер данных, количество операций
+- **Трейсинг**: Worker ID для отслеживания обработки
 
-#### Protected Routes
-- `GET /api/v1/users/profile` - User profile
-- `PUT /api/v1/users/profile` - Profile update
-- `POST /api/v1/orders` - Create order
-- `GET /api/v1/orders` - User orders list
-- `GET /api/v1/orders/:id` - Order details
-- `POST /api/v1/payments` - Process payment
-- `GET /api/v1/payments/:id` - Payment details
-- `POST /api/v1/payments/:id/refund` - Payment refund
+### Метрики
+- **Производительность**: Время выполнения операций
+- **Ошибки**: Количество и типы ошибок
+- **Пропускная способность**: Сообщений в секунду
 
-## Project Launch
+## Развертывание
 
-### Requirements
+### Docker
+- **Универсальный Dockerfile**: Один многоступенчатый Dockerfile для всех сервисов
+- **Multi-stage builds**: Builder stage для компиляции, runtime stage для выполнения
+- **Target-based builds**: `--target service-name` для сборки конкретного сервиса
+- **Development stage**: Отдельный stage с Air для hot reload
+- **Health checks**: Проверка готовности сервисов
+- **Graceful shutdown**: Корректное завершение работы
+- **Security**: Непривилегированный пользователь в runtime
 
-- Docker and Docker Compose
-- Node.js 18+ (for frontend)
+### Kubernetes
+- **Resource limits**: CPU и память для каждого сервиса
+- **Liveness/Readiness**: Проверки состояния сервисов
+- **Horizontal scaling**: Автоматическое масштабирование
 
-### Commands
+## Разработка
 
-```bash
-# Start all services
-docker-compose up -d
+### Код
+- **Go 1.25**: Использовать современные возможности Go
+- **Context**: Всегда использовать `context.Context` для отмены операций
+- **Interfaces**: Минимальные интерфейсы, максимальная гибкость
+- **Error handling**: Явная обработка всех ошибок
 
-# Stop
-docker-compose down
-
-# View logs
-docker-compose logs -f [service-name]
-```
-
-### Service Access
-
-- **Frontend**: http://localhost:3001
-- **API Gateway**: http://localhost:8080
-- **Kafka UI**: http://localhost:8085
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
-
-## Development
-
-### Project Structure
-
-```
-├── services/           # Microservices
-│   ├── api-gateway/   # API Gateway
-│   ├── user-service/  # User service
-│   ├── order-service/ # Order service
-│   ├── inventory-service/ # Inventory service
-│   └── payment-service/   # Payment service
-├── pkg/               # Common packages
-│   ├── jwt/          # JWT authentication
-│   ├── redisclient/  # Redis client with SOLID architecture
-│   └── kafka/        # Kafka clients
-├── frontend/          # React application
-└── proto/            # Protobuf definitions
-```
-
-### Adding New Services
-
-1. Create service in `services/` folder
-2. Add to `docker-compose.yml`
-3. Update API Gateway if necessary
-4. Add environment variables
-
-## Monitoring and Logging
-
-- **Zap** - structured logging in Go services
-- **Health checks** - service health verification
-- **Kafka UI** - Kafka message monitoring
-
-## Production Security
-
-- Change JWT secret keys
-- Configure HTTPS
-- Add rate limiting
-- Configure security monitoring
-- Use Kubernetes secrets for sensitive data
+### Документация
+- **Комментарии**: Только для публичных API
+- **Примеры**: НЕ создавать файлы с примерами
+- **README**: Только по запросу пользователя

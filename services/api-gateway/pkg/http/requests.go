@@ -1,8 +1,8 @@
 package http
 
 import (
-	"api-gateway/internal/clients"
-	"api-gateway/pkg/types"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
 )
 
 // ========== User Requests ==========

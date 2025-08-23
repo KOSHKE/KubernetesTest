@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"user-service/internal/domain/entities"
-	"user-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/entities"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
 )
 
 type UserRepository interface {

@@ -6,9 +6,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	events "proto-go/events"
+	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // SugaredLogger is a minimal interface compatible with zap.SugaredLogger
@@ -21,27 +21,27 @@ type SugaredLogger interface {
 
 // PaymentProcessedPublisher publishes events.PaymentProcessed to a configured topic
 type PaymentProcessedPublisher struct {
-	p        *ckafka.Producer
-	delivery chan ckafka.Event
+	p        *kafka.Producer
+	delivery chan kafka.Event
 	log      SugaredLogger
 	topic    string
 }
 
 func NewPaymentProcessedPublisher(bootstrapServers, topic string) (*PaymentProcessedPublisher, error) {
-	conf := &ckafka.ConfigMap{
+	conf := &kafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
 		"client.id":         "payment-service",
 		"acks":              "all",
 	}
-	p, err := ckafka.NewProducer(conf)
+	p, err := kafka.NewProducer(conf)
 	if err != nil {
 		return nil, err
 	}
-	pub := &PaymentProcessedPublisher{p: p, topic: topic, delivery: make(chan ckafka.Event, 100)}
+	pub := &PaymentProcessedPublisher{p: p, topic: topic, delivery: make(chan kafka.Event, 100)}
 	// background drain with success/error logging
 	go func() {
 		for evt := range pub.delivery {
-			if m, ok := evt.(*ckafka.Message); ok {
+			if m, ok := evt.(*kafka.Message); ok {
 				if m.TopicPartition.Error != nil {
 					if pub.log != nil {
 						t := ""
@@ -83,7 +83,7 @@ func (p *PaymentProcessedPublisher) PublishPaymentProcessed(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	msg := &ckafka.Message{TopicPartition: ckafka.TopicPartition{Topic: &p.topic, Partition: ckafka.PartitionAny}, Value: bytes}
+	msg := &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &p.topic, Partition: kafka.PartitionAny}, Value: bytes}
 	if err := p.p.Produce(msg, p.delivery); err != nil {
 		return err
 	}

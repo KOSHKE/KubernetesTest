@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"payment-service/internal/domain/entities"
-	derrors "payment-service/internal/domain/errors"
-	"payment-service/internal/domain/valueobjects"
-	procport "payment-service/internal/ports/processor"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/entities"
+	derrors "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/errors"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
+	procport "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/ports/processor"
 )
 
 type PaymentService struct {

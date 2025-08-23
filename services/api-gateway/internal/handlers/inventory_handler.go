@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"api-gateway/internal/clients"
-	"api-gateway/pkg/http"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )

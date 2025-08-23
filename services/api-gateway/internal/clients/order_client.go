@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 
-	"api-gateway/pkg/grpc"
-	"api-gateway/pkg/types"
-	orderpb "proto-go/order"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+	orderpb "github.com/kubernetestest/ecommerce-platform/proto-go/order"
 )
 
 // ---------------- Order Client Interface ----------------

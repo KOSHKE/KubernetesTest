@@ -6,14 +6,15 @@ import (
 	"net"
 	"time"
 
-	appsvc "inventory-service/internal/app/services"
-	"inventory-service/internal/domain/models"
-	grpcsvr "inventory-service/internal/infra/grpc"
-	con "inventory-service/internal/infra/kafka/consumer"
-	pub "inventory-service/internal/infra/kafka/publisher"
-	repo "inventory-service/internal/infra/repository"
-	"proto-go/events"
-	invpb "proto-go/inventory"
+	pkglogger "github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
+	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/domain/models"
+	grpcsvr "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/infra/grpc"
+	con "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/infra/kafka/consumer"
+	pub "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/infra/kafka/publisher"
+	repo "github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/infra/repository"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -82,7 +83,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	if brokers := getEnv("KAFKA_BROKERS", "kafka:9092"); brokers != "" {
 		if p, err := pub.NewStockEventsPublisher(brokers, "inventory.v1.stock_reserved", "inventory.v1.stock_reservation_failed"); err == nil {
 			defer p.Close()
-			p = p.WithLogger(log)
+			p = p.WithLogger(pkglogger.NewZapLogger(log))
 			svc = svc.WithPublisher(p)
 		}
 	}
@@ -102,7 +103,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		})
 		if cons, err := con.NewConsumer(brokers, "inventory-service", handler); err == nil {
 			defer cons.Close()
-			cons.WithLogger(log)
+			cons.WithLogger(pkglogger.NewZapLogger(log))
 			go cons.Run(ctx, []string{"orders.v1.order_created"})
 		}
 		// Consume payment outcomes to finalize or release reservations
@@ -113,7 +114,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			return nil
 		})); err == nil {
 			defer payCons.Close()
-			payCons.WithLogger(log)
+			payCons.WithLogger(pkglogger.NewZapLogger(log))
 			go payCons.Run(ctx, []string{"payments.v1.payment_processed"})
 		}
 	}

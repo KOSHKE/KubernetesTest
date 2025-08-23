@@ -6,25 +6,26 @@ import (
 	"net"
 	"sync"
 
-	"order-service/internal/app/services"
-	"order-service/internal/domain/models"
-	clockimpl "order-service/internal/infra/clock"
-	ordergrpc "order-service/internal/infra/grpc"
-	con "order-service/internal/infra/kafka/consumer"
-	pub "order-service/internal/infra/kafka/publisher"
-	productinfoimpl "order-service/internal/infra/productinfo"
-	"order-service/internal/infra/repository"
-	"order-service/internal/ports/productinfo"
-	"proto-go/events"
-	invpb "proto-go/inventory"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
+	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
+	clockimpl "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/clock"
+	ordergrpc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/grpc"
+	con "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/kafka/consumer"
+	pub "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/kafka/publisher"
+	productinfoimpl "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/productinfo"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/repository"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/productinfo"
 
+	pkglogger "github.com/kubernetestest/ecommerce-platform/pkg/logger"
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+
 )
 
 func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
@@ -62,7 +63,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		log.Infow("kafka producer disabled or not configured")
 	}
 	if prod != nil {
-		_ = prod.WithLogger(log)
+		_ = prod.WithLogger(pkglogger.NewZapLogger(log))
 		defer prod.Close()
 	}
 
@@ -106,7 +107,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			return nil
 		})); err == nil {
 			defer cons.Close()
-			cons.WithLogger(log)
+			cons.WithLogger(pkglogger.NewZapLogger(log))
 			wg.Add(1)
 			go func() { defer wg.Done(); cons.Run(ctx, []string{"payments.v1.payment_processed"}) }()
 		} else {
@@ -155,7 +156,7 @@ func connectDB(cfg *Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: nil})
 	if err != nil {
 		return nil, err
 	}

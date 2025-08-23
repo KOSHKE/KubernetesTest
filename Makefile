@@ -1,6 +1,6 @@
 # Makefile for Microservices Order System (dev only)
 
-.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt deps-get deps-tidy mod-download update-mod go-mod-all
+.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt deps-get deps-tidy mod-download update-mod go-mod-all build-service build-all
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -38,13 +38,3 @@ fmt: ## Run gofmt locally across all Go services (requires local Go toolchain)
 	cd services/order-service && go fmt ./...
 	cd services/inventory-service && go fmt ./...
 	cd services/payment-service && go fmt ./...
-
-go-mod-all: ## Run go mod download && go mod tidy locally for all Go modules
-	@echo "Running go mod download && go mod tidy for all modules (locally)..."
-	@echo "(Ensure Go is installed and available in PATH)"
-	cd libs/kafka && go mod download && go mod tidy
-	cd services/api-gateway && go mod download && go mod tidy
-	cd services/user-service && go mod download && go mod tidy
-	cd services/order-service && go mod download && go mod tidy
-	cd services/inventory-service && go mod download && go mod tidy
-	cd services/payment-service && go mod download && go mod tidy

@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 
-	"api-gateway/pkg/grpc"
-	"api-gateway/pkg/types"
-	paymentpb "proto-go/payment"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+	paymentpb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
 )
 
 type PaymentClient interface {

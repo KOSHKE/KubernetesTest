@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"order-service/internal/domain/models"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
 )
 
 type OrderRepository interface {

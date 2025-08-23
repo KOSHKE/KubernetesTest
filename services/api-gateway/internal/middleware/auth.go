@@ -3,8 +3,8 @@ package middleware
 import (
 	"strings"
 
-	"api-gateway/internal/config"
-	"api-gateway/pkg/http"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/config"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

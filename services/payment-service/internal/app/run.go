@@ -7,16 +7,17 @@ import (
 	"net"
 	"time"
 
-	pub "kubernetetest/pkg/kafka"
-	app "payment-service/internal/app/services"
-	"payment-service/internal/domain/entities"
-	derrors "payment-service/internal/domain/errors"
-	"payment-service/internal/domain/valueobjects"
-	"payment-service/internal/infra/cache"
-	srv "payment-service/internal/infra/grpc"
-	con "payment-service/internal/infra/kafka/consumer"
-	mockproc "payment-service/internal/infra/processor"
-	"proto-go/events"
+	pub "github.com/kubernetestest/ecommerce-platform/pkg/kafkaclient"
+	pkglogger "github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
+	app "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/entities"
+	derrors "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/errors"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/cache"
+	srv "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/grpc"
+	con "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/kafka/consumer"
+	mockproc "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/processor"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -47,10 +48,14 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		log.Infow("Redis cache initialized", "addr", cfg.RedisAddr, "db", cfg.RedisDB)
 	}
 	if cfg.KafkaBrokers != "" {
-		if p, err := pub.NewKafkaPublisher(cfg.KafkaBrokers, "payment-service"); err != nil {
+		config := pub.PublisherConfig{
+			BootstrapServers: cfg.KafkaBrokers,
+			ClientID:         "payment-service",
+		}
+		if p, err := pub.NewKafkaPublisher(config); err != nil {
 			log.Warnw("kafka producer init failed", "error", err)
 		} else {
-			prod = p.WithLogger(log)
+			prod = p.WithLogger(pkglogger.NewZapLogger(log))
 			closers = append(closers, prod)
 			log.Infow("Kafka producer initialized", "brokers", cfg.KafkaBrokers)
 		}
@@ -65,7 +70,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		})); err != nil {
 			log.Warnw("kafka order-created consumer init failed", "error", err)
 		} else {
-			consOC = oc.WithLogger(log)
+			consOC = oc.WithLogger(pkglogger.NewZapLogger(log))
 			closers = append(closers, consOC)
 			go consOC.Run(ctx, []string{"orders.v1.order_created"})
 			log.Infow("Kafka consumer started", "topic", "orders.v1.order_created")
@@ -116,7 +121,7 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		})); err != nil {
 			log.Warnw("kafka consumer init failed", "error", err)
 		} else {
-			consSR = c.WithLogger(log)
+			consSR = c.WithLogger(pkglogger.NewZapLogger(log))
 			closers = append(closers, consSR)
 			go consSR.Run(ctx, []string{"inventory.v1.stock_reserved"})
 			log.Infow("Kafka consumer started", "topic", "inventory.v1.stock_reserved")

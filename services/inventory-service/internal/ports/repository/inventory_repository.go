@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"inventory-service/internal/domain/models"
+	"github.com/kubernetestest/ecommerce-platform/services/inventory-service/internal/domain/models"
 )
 
 type InventoryRepository interface {

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net"
 
-	"redisclient"
-	"user-service/internal/app/services"
-	"user-service/internal/infra/auth"
-	grpcsvc "user-service/internal/infra/grpc"
-	"user-service/internal/infra/repository"
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/auth"
+	grpcsvc "github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/grpc"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/repository"
 
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
@@ -17,12 +17,12 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // Run wires dependencies, starts gRPC server and blocks until context cancellation.
-func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
-	log := logger.Sugar()
+func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
+	log := zapLogger.Sugar()
 
 	// Connect DB
 	db, err := connectDB(cfg)
@@ -56,9 +56,9 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 	}
 
 	// Use existing logger for Redis operations
-	redisLogger := redisclient.NewSugaredLoggerAdapter(log)
+	redisLog := logger.NewZapLogger(log)
 
-	authService, err := auth.NewJWTAuthService(authConfig, userRepo, redisLogger)
+	authService, err := auth.NewJWTAuthService(authConfig, userRepo, redisLog)
 	if err != nil {
 		log.Errorw("failed to initialize auth service", "error", err)
 		return err
@@ -105,7 +105,7 @@ func connectDB(cfg *Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
 	if err != nil {
 		return nil, err
 	}

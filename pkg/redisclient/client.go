@@ -6,23 +6,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
-
-// Logger interface for minimal, structured logging
-type Logger interface {
-	Error(msg string, keysAndValues ...interface{})
-	Warn(msg string, keysAndValues ...interface{})
-}
 
 // Client provides unified Redis operations for caching, tokens, and lists
 type Client struct {
 	rdb    *redis.Client
-	logger Logger
+	logger logger.Logger
 }
 
 // New creates optimized Redis client with minimal configuration
-func New(addr, password string, db int, logger Logger) *Client {
+func New(addr, password string, db int, logger logger.Logger) *Client {
 	return &Client{
 		rdb: redis.NewClient(&redis.Options{
 			Addr:         addr,
@@ -42,7 +37,9 @@ func New(addr, password string, db int, logger Logger) *Client {
 // Close terminates Redis connection
 func (c *Client) Close() error {
 	if err := c.rdb.Close(); err != nil {
-		c.logger.Error("failed to close Redis connection", "error", err)
+		if c.logger != nil {
+			c.logger.Error("failed to close Redis connection", "error", err)
+		}
 		return err
 	}
 	return nil
@@ -51,7 +48,9 @@ func (c *Client) Close() error {
 // Ping verifies Redis connectivity
 func (c *Client) Ping(ctx context.Context) error {
 	if err := c.rdb.Ping(ctx).Err(); err != nil {
-		c.logger.Error("Redis ping failed", "error", err)
+		if c.logger != nil {
+			c.logger.Error("Redis ping failed", "error", err)
+		}
 		return err
 	}
 	return nil
@@ -63,12 +62,16 @@ func (c *Client) Ping(ctx context.Context) error {
 func (c *Client) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
 	data, err := c.serialize(value)
 	if err != nil {
-		c.logger.Error("failed to serialize value", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to serialize value", "error", err, "key", key)
+		}
 		return fmt.Errorf("serialize error: %w", err)
 	}
 
 	if err := c.rdb.Set(ctx, key, data, ttl).Err(); err != nil {
-		c.logger.Error("failed to set cache value", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to set cache value", "error", err, "key", key)
+		}
 		return fmt.Errorf("set cache error: %w", err)
 	}
 	return nil
@@ -81,12 +84,16 @@ func (c *Client) Get(ctx context.Context, key string, dest interface{}) error {
 		if err == redis.Nil {
 			return fmt.Errorf("key not found: %s", key)
 		}
-		c.logger.Error("failed to get cache value", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to get cache value", "error", err, "key", key)
+		}
 		return fmt.Errorf("get cache error: %w", err)
 	}
 
 	if err := c.deserialize(data, dest); err != nil {
-		c.logger.Error("failed to deserialize value", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to deserialize value", "error", err, "key", key)
+		}
 		return fmt.Errorf("deserialize error: %w", err)
 	}
 	return nil
@@ -99,7 +106,9 @@ func (c *Client) Del(ctx context.Context, keys ...string) error {
 	}
 
 	if err := c.rdb.Del(ctx, keys...).Err(); err != nil {
-		c.logger.Error("failed to delete keys", "error", err, "keys", keys)
+		if c.logger != nil {
+			c.logger.Error("failed to delete keys", "error", err, "keys", keys)
+		}
 		return fmt.Errorf("delete error: %w", err)
 	}
 	return nil
@@ -109,7 +118,9 @@ func (c *Client) Del(ctx context.Context, keys ...string) error {
 func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 	exists, err := c.rdb.Exists(ctx, key).Result()
 	if err != nil {
-		c.logger.Error("failed to check key existence", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to check key existence", "error", err, "key", key)
+		}
 		return false, fmt.Errorf("exists check error: %w", err)
 	}
 	return exists > 0, nil
@@ -118,7 +129,9 @@ func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 // Expire sets TTL for existing key
 func (c *Client) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	if err := c.rdb.Expire(ctx, key, ttl).Err(); err != nil {
-		c.logger.Error("failed to set expiration", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to set expiration", "error", err, "key", key)
+		}
 		return fmt.Errorf("expire error: %w", err)
 	}
 	return nil
@@ -138,7 +151,9 @@ func (c *Client) StoreToken(ctx context.Context, token, userID string, ttl time.
 	pipe.Expire(ctx, indexKey, ttl)
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.logger.Error("failed to store token", "error", err, "user_id", userID)
+		if c.logger != nil {
+			c.logger.Error("failed to store token", "error", err, "user_id", userID)
+		}
 		return fmt.Errorf("store token error: %w", err)
 	}
 	return nil
@@ -151,10 +166,14 @@ func (c *Client) GetTokenUser(ctx context.Context, token string) (string, error)
 	userID, err := c.rdb.Get(ctx, tokenKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			c.logger.Warn("token not found", "token", token[:8]+"...")
+			if c.logger != nil {
+				c.logger.Warn("token not found", "token", token[:8]+"...")
+			}
 			return "", fmt.Errorf("token not found")
 		}
-		c.logger.Error("failed to get token", "error", err, "token", token[:8]+"...")
+		if c.logger != nil {
+			c.logger.Error("failed to get token", "error", err, "token", token[:8]+"...")
+		}
 		return "", fmt.Errorf("get token error: %w", err)
 	}
 	return userID, nil
@@ -177,7 +196,9 @@ func (c *Client) RevokeToken(ctx context.Context, token string) error {
 	pipe.SRem(ctx, indexKey, token)
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.logger.Error("failed to revoke token", "error", err, "token", token[:8]+"...")
+		if c.logger != nil {
+			c.logger.Error("failed to revoke token", "error", err, "token", token[:8]+"...")
+		}
 		return fmt.Errorf("revoke token error: %w", err)
 	}
 	return nil
@@ -190,7 +211,9 @@ func (c *Client) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	// Get all tokens for user
 	tokens, err := c.rdb.SMembers(ctx, indexKey).Result()
 	if err != nil && err != redis.Nil {
-		c.logger.Error("failed to get user tokens", "error", err, "user_id", userID)
+		if c.logger != nil {
+			c.logger.Error("failed to get user tokens", "error", err, "user_id", userID)
+		}
 		return fmt.Errorf("get user tokens error: %w", err)
 	}
 
@@ -206,7 +229,9 @@ func (c *Client) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	pipe.Del(ctx, indexKey)
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		c.logger.Error("failed to revoke user tokens", "error", err, "user_id", userID, "count", len(tokens))
+		if c.logger != nil {
+			c.logger.Error("failed to revoke user tokens", "error", err, "user_id", userID, "count", len(tokens))
+		}
 		return fmt.Errorf("revoke user tokens error: %w", err)
 	}
 	return nil
@@ -217,7 +242,9 @@ func (c *Client) IsTokenValid(ctx context.Context, token string) bool {
 	tokenKey := fmt.Sprintf("token:%s", token)
 	exists, err := c.rdb.Exists(ctx, tokenKey).Result()
 	if err != nil {
-		c.logger.Error("failed to check token validity", "error", err, "token", token[:8]+"...")
+		if c.logger != nil {
+			c.logger.Error("failed to check token validity", "error", err, "token", token[:8]+"...")
+		}
 		return false
 	}
 	return exists > 0
@@ -232,7 +259,9 @@ func (c *Client) LPush(ctx context.Context, key string, values ...interface{}) e
 	}
 
 	if err := c.rdb.LPush(ctx, key, values...).Err(); err != nil {
-		c.logger.Error("failed to lpush", "error", err, "key", key, "count", len(values))
+		if c.logger != nil {
+			c.logger.Error("failed to lpush", "error", err, "key", key, "count", len(values))
+		}
 		return fmt.Errorf("lpush error: %w", err)
 	}
 	return nil
@@ -245,7 +274,9 @@ func (c *Client) RPush(ctx context.Context, key string, values ...interface{}) e
 	}
 
 	if err := c.rdb.RPush(ctx, key, values...).Err(); err != nil {
-		c.logger.Error("failed to rpush", "error", err, "key", key, "count", len(values))
+		if c.logger != nil {
+			c.logger.Error("failed to rpush", "error", err, "key", key, "count", len(values))
+		}
 		return fmt.Errorf("rpush error: %w", err)
 	}
 	return nil
@@ -258,7 +289,9 @@ func (c *Client) LPop(ctx context.Context, key string) (string, error) {
 		if err == redis.Nil {
 			return "", fmt.Errorf("list empty")
 		}
-		c.logger.Error("failed to lpop", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to lpop", "error", err, "key", key)
+		}
 		return "", fmt.Errorf("lpop error: %w", err)
 	}
 	return result, nil
@@ -271,7 +304,9 @@ func (c *Client) RPop(ctx context.Context, key string) (string, error) {
 		if err == redis.Nil {
 			return "", fmt.Errorf("list empty")
 		}
-		c.logger.Error("failed to rpop", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to rpop", "error", err, "key", key)
+		}
 		return "", fmt.Errorf("rpop error: %w", err)
 	}
 	return result, nil
@@ -281,7 +316,9 @@ func (c *Client) RPop(ctx context.Context, key string) (string, error) {
 func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
 	result, err := c.rdb.LRange(ctx, key, start, stop).Result()
 	if err != nil {
-		c.logger.Error("failed to lrange", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to lrange", "error", err, "key", key)
+		}
 		return nil, fmt.Errorf("lrange error: %w", err)
 	}
 	return result, nil
@@ -291,7 +328,9 @@ func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]s
 func (c *Client) LLen(ctx context.Context, key string) (int64, error) {
 	result, err := c.rdb.LLen(ctx, key).Result()
 	if err != nil {
-		c.logger.Error("failed to llen", "error", err, "key", key)
+		if c.logger != nil {
+			c.logger.Error("failed to llen", "error", err, "key", key)
+		}
 		return 0, fmt.Errorf("llen error: %w", err)
 	}
 	return result, nil
@@ -310,14 +349,18 @@ func (c *Client) MSet(ctx context.Context, pairs map[string]interface{}) error {
 	for key, value := range pairs {
 		data, err := c.serialize(value)
 		if err != nil {
-			c.logger.Error("failed to serialize batch value", "error", err, "key", key)
+			if c.logger != nil {
+				c.logger.Error("failed to serialize batch value", "error", err, "key", key)
+			}
 			return fmt.Errorf("serialize batch error: %w", err)
 		}
 		values = append(values, key, data)
 	}
 
 	if err := c.rdb.MSet(ctx, values...).Err(); err != nil {
-		c.logger.Error("failed to mset", "error", err, "count", len(pairs))
+		if c.logger != nil {
+			c.logger.Error("failed to mset", "error", err, "count", len(pairs))
+		}
 		return fmt.Errorf("mset error: %w", err)
 	}
 	return nil
@@ -331,7 +374,9 @@ func (c *Client) MGet(ctx context.Context, keys []string) (map[string]string, er
 
 	results, err := c.rdb.MGet(ctx, keys...).Result()
 	if err != nil {
-		c.logger.Error("failed to mget", "error", err, "keys", keys)
+		if c.logger != nil {
+			c.logger.Error("failed to mget", "error", err, "keys", keys)
+		}
 		return nil, fmt.Errorf("mget error: %w", err)
 	}
 

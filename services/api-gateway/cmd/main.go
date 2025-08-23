@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"api-gateway/internal/app"
-	"api-gateway/internal/config"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/app"
+	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/config"
 
 	"go.uber.org/zap"
 )

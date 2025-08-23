@@ -1,8 +1,8 @@
 package grpc
 
 import (
-	appsvc "payment-service/internal/app/services"
-	pb "proto-go/payment"
+	appsvc "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/app/services"
+	pb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
 
 	"google.golang.org/grpc"
 )

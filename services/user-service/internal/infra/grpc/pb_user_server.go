@@ -2,8 +2,8 @@ package grpc
 
 import (
 	"context"
-	userpb "proto-go/user"
-	"user-service/internal/app/services"
+	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

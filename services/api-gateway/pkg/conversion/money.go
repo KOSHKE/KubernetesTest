@@ -1,6 +1,6 @@
 package conversion
 
-import "api-gateway/pkg/types"
+import "github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
 
 // PBMoney is a minimal interface satisfied by protobuf Money messages.
 type PBMoney interface {
