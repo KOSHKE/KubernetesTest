@@ -1,0 +1,149 @@
+{
+  "id": null,
+  "title": "User Service Metrics",
+  "tags": ["user-service", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+      {
+        "id": 1,
+        "title": "User Creation Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(entity_events_total{service=\"user-service\", entity_type=\"user\", action=\"created\"}[5m])",
+            "legendFormat": "Users/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Login Success Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(entity_events_total{service=\"user-service\", entity_type=\"user\", action=\"login_success\"}[5m])",
+            "legendFormat": "Logins/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Failed Login Attempts",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(entity_events_total{service=\"user-service\", entity_type=\"user\", action=\"login_failed\"}[5m])",
+            "legendFormat": "Failed Logins/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 4,
+        "title": "Total Users Created",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "entity_events_total{service=\"user-service\", entity_type=\"user\", action=\"created\"}",
+            "legendFormat": "Total Users"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "gRPC Server Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"user-service\"}",
+            "legendFormat": "Service Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+}

@@ -8,6 +8,7 @@ import (
 	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/entities"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/metrics"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/auth"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,6 +17,7 @@ import (
 type UserService struct {
 	userRepo    repository.UserRepository
 	authService auth.AuthService
+	metrics     metrics.UserMetrics
 }
 
 type RegisterUserRequest struct {
@@ -31,10 +33,11 @@ type LoginRequest struct {
 	Password string
 }
 
-func NewUserService(userRepo repository.UserRepository, authService auth.AuthService) *UserService {
+func NewUserService(userRepo repository.UserRepository, authService auth.AuthService, metrics metrics.UserMetrics) *UserService {
 	return &UserService{
 		userRepo:    userRepo,
 		authService: authService,
+		metrics:     metrics,
 	}
 }
 
@@ -66,6 +69,9 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 	if err := s.userRepo.Create(ctx, userEntity); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+
+	// Record metrics
+	s.metrics.UserCreated()
 
 	// Convert domain user to protobuf user
 	pbUser := &userpb.User{
@@ -108,6 +114,9 @@ func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*userpb
 		return nil, fmt.Errorf("failed to store refresh token: %w", err)
 	}
 
+	// Record successful login metrics
+	s.metrics.UserLoginSuccess()
+
 	// Convert domain user to protobuf user
 	pbUser := &userpb.User{
 		Id:        userEntity.ID(),
@@ -148,6 +157,9 @@ func (s *UserService) UpdateUser(ctx context.Context, userID string, firstName, 
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
+	// Record profile update metrics
+	s.metrics.UserProfileUpdated()
+
 	return userEntity, nil
 }
 
@@ -158,5 +170,14 @@ func (s *UserService) RefreshToken(ctx context.Context, refreshToken string) (*a
 
 // Logout revokes refresh token
 func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
-	return s.authService.RevokeRefreshToken(ctx, refreshToken)
+	err := s.authService.RevokeRefreshToken(ctx, refreshToken)
+	if err == nil {
+		s.metrics.UserLogout()
+	}
+	return err
+}
+
+// RecordFailedLogin records failed login attempt for metrics
+func (s *UserService) RecordFailedLogin(reason string) {
+	s.metrics.UserLoginFailed(reason)
 }

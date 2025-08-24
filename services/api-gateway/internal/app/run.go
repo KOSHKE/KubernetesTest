@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
 	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
 	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/config"
 	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/handlers"
@@ -50,6 +52,10 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 	inventoryHandler := handlers.NewInventoryHandler(inventoryClient)
 	paymentHandler := handlers.NewPaymentHandler(paymentClient)
 
+	// Initialize metrics
+	promMetrics := metrics.NewPrometheusMetrics("api-gateway")
+	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, sugar.Desugar())
+
 	router := gin.Default()
 	// Strict CORS for prod via env list
 	allowed := func() []string {
@@ -89,6 +95,25 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 	}
 
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "healthy"}) })
+
+	// Add metrics endpoint to main HTTP server
+	router.GET("/metrics", func(c *gin.Context) {
+		// Get metrics from metrics server
+		metricsMux := metricsServer.GetMux()
+		metricsMux.ServeHTTP(c.Writer, c.Request)
+	})
+
+	// Add metrics middleware to track HTTP requests
+	router.Use(func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		duration := time.Since(start)
+
+		// Record HTTP metrics with proper status code
+		status := strconv.Itoa(c.Writer.Status())
+		promMetrics.HTTPRequestsTotal(c.Request.Method, c.Request.URL.Path, status)
+		promMetrics.HTTPRequestDuration(c.Request.Method, c.Request.URL.Path, duration)
+	})
 
 	api := router.Group("/api/v1")
 	{
@@ -140,26 +165,45 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 
 	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: router}
 
+	// gracefulShutdown performs graceful shutdown for all servers
+	gracefulShutdown := func(shutdownCtx context.Context) {
+		sugar.Infow("shutting down api-gateway...")
+		_ = httpServer.Shutdown(shutdownCtx)
+		_ = metricsServer.Shutdown(shutdownCtx)
+	}
+
+	// Start metrics server
+	metricsErr := make(chan error, 1)
+	go func() { metricsErr <- metricsServer.Start() }()
+	sugar.Infow("metrics server starting", "port", cfg.MetricsPort)
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.ListenAndServe() }()
 	sugar.Infow("api-gateway starting", "port", cfg.Port)
 
 	select {
 	case <-ctx.Done():
-		sugar.Infow("shutting down api-gateway...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = httpServer.Shutdown(shutdownCtx)
+		gracefulShutdown(shutdownCtx)
 		return nil
 	case err := <-serveErr:
-		if err == http.ErrServerClosed {
-			sugar.Infow("server closed via graceful shutdown")
-			return nil
-		}
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			sugar.Errorw("http serve failed", "error", err)
 			return err
 		}
-		return nil
+	case err := <-metricsErr:
+		if err != nil {
+			sugar.Errorw("metrics server failed", "error", err)
+			return err
+		}
 	}
+
+	// If we reached here, one of the servers failed with an error
+	// Wait for context cancellation for graceful shutdown
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	gracefulShutdown(shutdownCtx)
+	return nil
 }

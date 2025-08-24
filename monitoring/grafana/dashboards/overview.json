@@ -1,0 +1,103 @@
+{
+  "id": null,
+  "title": "Microservices Overview",
+  "tags": ["overview", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+      {
+        "id": 1,
+        "title": "All Services - Entity Events Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(entity_events_total{action=\"created\"}[5m])",
+            "legendFormat": "{{service}} - {{entity_type}} created"
+          },
+          {
+            "expr": "rate(entity_events_total{action=\"login_success\"}[5m])",
+            "legendFormat": "{{service}} - login success"
+          },
+          {
+            "expr": "rate(entity_events_total{action=\"login_failed\"}[5m])",
+            "legendFormat": "{{service}} - login failed"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "HTTP Request Rate by Service",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{service}} - {{method}} {{endpoint}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 3,
+        "title": "HTTP Response Status Codes",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{service}} - {{status}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+}

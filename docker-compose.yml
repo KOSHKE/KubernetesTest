@@ -10,6 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -21,6 +22,7 @@ services:
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,6 +50,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
     volumes:
       - kafka_data:/bitnami/kafka
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
       interval: 10s
@@ -62,8 +65,10 @@ services:
     environment:
       - KAFKA_CLUSTERS_0_NAME=${KAFKA_CLUSTER_NAME}
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+    restart: unless-stopped
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
 
   # Go services with Air (hot reload)
   api-gateway:
@@ -86,6 +91,8 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
     ports:
       - "8080:8080"
+      - "8081:8081"
+    restart: unless-stopped
     depends_on:
       user-service:
         condition: service_started
@@ -116,9 +123,12 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL}
       - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL}
+      - METRICS_PORT=9091
       - AUTO_MIGRATE=true
     ports:
       - "50051:50051"
+      - "9091:9091"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,8 +154,11 @@ services:
       - KAFKA_BROKERS=${KAFKA_BROKERS}
       - AUTO_MIGRATE=true
       - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL}
+      - METRICS_PORT=9095
     ports:
       - "50052:50052"
+      - "9095:9095"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,8 +185,11 @@ services:
       - REDIS_URL=${REDIS_URL}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
       - AUTO_MIGRATE=true
+      - METRICS_PORT=9096
     ports:
       - "50053:50053"
+      - "9096:9096"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -199,8 +215,11 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
       - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - METRICS_PORT=9097
     ports:
       - "50054:50054"
+      - "9097:9097"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,8 +242,47 @@ services:
     command: sh ./docker-entrypoint.sh
     ports:
       - "3001:3000"
+    restart: unless-stopped
     depends_on:
       - api-gateway
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    depends_on:
+      user-service:
+        condition: service_started
+      api-gateway:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_started
 
 volumes:
   postgres_data:
@@ -234,3 +292,5 @@ volumes:
   air_cache_order:
   air_cache_payment:
   air_cache_inventory:
+  prometheus_data:
+  grafana_data:

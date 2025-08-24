@@ -46,6 +46,8 @@ func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest
 func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*userpb.LoginResponse, error) {
 	resp, err := s.svc.LoginUser(ctx, &services.LoginRequest{Email: req.Email, Password: req.Password})
 	if err != nil {
+		// Record failed login metrics
+		s.svc.RecordFailedLogin("invalid_credentials")
 		return nil, err
 	}
 

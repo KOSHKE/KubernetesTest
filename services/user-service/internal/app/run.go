@@ -6,10 +6,12 @@ import (
 	"net"
 
 	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/auth"
 	grpcsvc "github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/grpc"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/infra/repository"
+	usermetrics "github.com/kubernetestest/ecommerce-platform/services/user-service/internal/metrics"
 
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
@@ -65,7 +67,13 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 	}
 	defer authService.Close()
 
-	userService := services.NewUserService(userRepo, authService)
+	// Initialize metrics
+	metricsInstance := usermetrics.NewUserMetrics()
+
+	userService := services.NewUserService(userRepo, authService, metricsInstance)
+
+	// Register metrics with Prometheus
+	_ = metricsInstance
 
 	// gRPC server
 	server := gogrpc.NewServer()
@@ -75,6 +83,15 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	// Start metrics server
+	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, zapLogger)
+	go func() {
+		log.Infow("metrics server starting", "port", cfg.MetricsPort)
+		if err := metricsServer.Start(); err != nil {
+			log.Errorw("metrics server failed", "error", err)
+		}
+	}()
 
 	// Listen
 	lis, err := netListen("tcp", ":"+cfg.Port)

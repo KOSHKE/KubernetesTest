@@ -6,6 +6,7 @@ import (
 
 type Config struct {
 	Port                string
+	MetricsPort         string
 	RedisURL            string
 	FrontendOrigins     string
 	UserServiceURL      string
@@ -19,6 +20,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:                getEnv("PORT", "8080"),
+		MetricsPort:         getEnv("METRICS_PORT", "8081"),
 		RedisURL:            getEnv("REDIS_URL", "redis:6379"),
 		FrontendOrigins:     getEnv("FRONTEND_ORIGINS", "http://localhost:3001"),
 		UserServiceURL:      getEnv("USER_SERVICE_URL", "localhost:50051"),

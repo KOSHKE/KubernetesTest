@@ -45,6 +45,7 @@ KubernetesTest/
 │   ├── jwt/                   # JWT utilities and validation
 │   ├── kafkaclient/           # Kafka consumer and publisher
 │   ├── logger/                # Unified logging interface
+│   ├── metrics/               # Prometheus metrics interface and implementation
 │   └── redisclient/           # Redis client with connection pooling
 ├── proto/                     # Protobuf definitions
 ├── proto-go/                  # Generated Go files from proto
@@ -95,6 +96,13 @@ import "github.com/kubernetestest/ecommerce-platform/pkg/logger"
 **Features**: Connection pooling, health checks, structured logging
 **Usage**: Use for all Redis operations instead of direct go-redis
 
+### 5. Metrics Package (`pkg/metrics/`)
+**Features**: Prometheus metrics interface and implementation
+**Implementation**: `PrometheusMetrics` with configurable service name
+**Usage**: Use for HTTP metrics and as base for service-specific metrics
+**Service-Specific**: Each service has its own `internal/metrics/` package
+**Reusability**: Can create service-specific metrics from existing `PrometheusMetrics` instances
+
 ## Technology Stack
 
 ### Backend (Go)
@@ -119,6 +127,7 @@ import "github.com/kubernetestest/ecommerce-platform/pkg/logger"
 - **Message Queue**: Kafka 4.0.0 (KRaft) - USE pkg/kafkaclient
 - **Containerization**: Docker + Docker Compose
 - **Kafka UI**: provectuslabs/kafka-ui
+- **Monitoring**: Prometheus 2.48.0 + Grafana 10.2.0
 
 ### Protocols and API
 - **HTTP REST**: API Gateway (Gin)
@@ -246,14 +255,21 @@ The project uses environment variables for configuration. A `.env.example` file 
 ### Port Mapping
 - **Frontend**: 3001:3000
 - **API Gateway**: 8080:8080
+- **API Gateway Metrics**: 8081:8081
 - **User Service**: 50051:50051
+- **User Service Metrics**: 9091:9091
 - **Order Service**: 50052:50052
+- **Order Service Metrics**: 9095:9095
 - **Inventory Service**: 50053:50053
+- **Inventory Service Metrics**: 9096:9096
 - **Payment Service**: 50054:50054
+- **Payment Service Metrics**: 9097:9097
 - **PostgreSQL**: 5432:5432
 - **Redis**: 6379:6379
 - **Kafka**: 9092:9092
 - **Kafka UI**: 8085:8080
+- **Prometheus**: 9090:9090
+- **Grafana**: 3000:3000
 
 ## API Endpoints
 
@@ -343,6 +359,9 @@ make proto-clean
 ### Health Checks
 - All services have health check endpoints
 - Docker Compose uses health checks for dependencies
+- Infrastructure services (PostgreSQL, Redis, Kafka) have health checks with `service_healthy` condition
+- Go services wait for healthy infrastructure before starting
+- Prometheus waits for all Go services to start before collecting metrics
 
 ### Logging
 - **Structured logging** through Zap - USE pkg/logger wrapper
@@ -351,7 +370,10 @@ make proto-clean
 
 ### Monitoring
 - **Kafka UI**: http://localhost:8085
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3000 (admin/admin)
 - **Health endpoints**: `/health` on each service
+- **Metrics endpoints**: `/metrics` on each service
 - **Structured logs** in JSON format
 
 ## Security
@@ -401,9 +423,10 @@ make proto-clean
 1. **ALWAYS use pkg/logger** instead of direct zap
 2. **ALWAYS use pkg/kafkaclient** instead of direct confluent-kafka-go
 3. **ALWAYS use pkg/jwt** instead of direct golang-jwt
-4. **ALWAYS use pkg/redisclient** instead of direct go-redis
-5. **NEVER create new packages** for functionality that already exists in /pkg
-6. **NEVER import external packages** for functionality available in /pkg
+4. **ALWAYS use pkg/metrics** instead of direct prometheus client
+5. **ALWAYS use pkg/redisclient** instead of direct go-redis
+6. **NEVER create new packages** for functionality that already exists in /pkg
+7. **NEVER import external packages** for functionality available in /pkg
 
 ## Common Patterns
 
@@ -414,6 +437,9 @@ logger := logger.NewZapLogger(zapLogger)
 kafkaConsumer := kafkaclient.NewConsumer(config)
 redisClient := redisclient.NewClient(config)
 jwtService := jwt.NewService(config)
+
+// For metrics, use service-specific package
+metricsInstance := usermetrics.NewUserMetrics() // in user-service
 ```
 
 ### Error Handling

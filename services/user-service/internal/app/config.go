@@ -18,6 +18,7 @@ type Config struct {
 	JWTRefreshSecret string
 	AccessTokenTTL   time.Duration
 	RefreshTokenTTL  time.Duration
+	MetricsPort      string
 }
 
 // LoadConfigFromEnv loads configuration from environment variables.
@@ -34,6 +35,7 @@ func LoadConfigFromEnv() *Config {
 		JWTRefreshSecret: getEnv("JWT_REFRESH_SECRET", "your-refresh-secret-key"),
 		AccessTokenTTL:   getEnvAsDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 		RefreshTokenTTL:  getEnvAsDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
+		MetricsPort:      getEnv("METRICS_PORT", "9090"),
 	}
 }
 

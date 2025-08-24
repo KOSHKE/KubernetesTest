@@ -1,6 +1,6 @@
 # Makefile for Microservices Order System (dev only)
 
-.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt deps-get deps-tidy mod-download update-mod go-mod-all build-service build-all
+.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt deps-get deps-tidy mod-download update-mod go-mod-all build-service build-all monitoring-up monitoring-down
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -29,6 +29,14 @@ dev-rebuild: ## Rebuild images and start dev environment with Air (one-off)
 dev-down: ## Stop local development environment
 	@echo "Stopping development environment..."
 	docker compose down
+
+monitoring-up: ## Start only monitoring services (Prometheus + Grafana)
+	@echo "Starting monitoring services..."
+	docker compose up -d prometheus grafana
+
+monitoring-down: ## Stop monitoring services
+	@echo "Stopping monitoring services..."
+	docker compose stop prometheus grafana
 	
 fmt: ## Run gofmt locally across all Go services (requires local Go toolchain)
 	@echo "Formatting Go code locally with go fmt..."
