@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
 	derrors "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/errors"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/clock"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/productinfo"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/publisher"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/repository"
-
-	events "github.com/kubernetestest/ecommerce-platform/proto-go/events"
-
 	"go.uber.org/zap"
 )
 
@@ -64,14 +63,16 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *CreateOrderRequest)
 		return nil, fmt.Errorf("shipping address is required")
 	}
 
-	// Determine next sequential number per user and stable order ID
+	// Determine next sequential number per user and generate secure order ID
 	num, err := s.orderRepo.NextOrderNumber(ctx, req.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate order number: %w", err)
 	}
 
-	order := &models.Order{UserID: req.UserID, Number: num, Status: models.OrderStatusPending, ShippingAddress: req.ShippingAddress, Items: make([]models.OrderItem, 0, len(req.Items)), Currency: req.Currency}
-	order.ID = fmt.Sprintf("%s-#%d", req.UserID, num)
+	// Generate secure order ID (ORD- + UUID) instead of exposing user ID
+	orderID := "ORD-" + uuid.New().String()
+
+	order := &models.Order{ID: orderID, UserID: req.UserID, Number: num, Status: models.OrderStatusPending, ShippingAddress: req.ShippingAddress, Items: make([]models.OrderItem, 0, len(req.Items)), Currency: req.Currency}
 	now := s.now()
 	order.CreatedAt, order.UpdatedAt = now, now
 

@@ -3,14 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/kubernetestest/ecommerce-platform/proto-go/user"
+	"github.com/google/uuid"
+	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/entities"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/auth"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/ports/repository"
-
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -39,7 +38,7 @@ func NewUserService(userRepo repository.UserRepository, authService auth.AuthSer
 	}
 }
 
-func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest) (*user.User, error) {
+func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest) (*userpb.User, error) {
 	// Check if user exists
 	emailVO, err := valueobjects.NewEmail(req.Email)
 	if err != nil {
@@ -58,8 +57,9 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 	if err != nil {
 		return nil, fmt.Errorf("invalid password: %w", err)
 	}
-	// Generate a simple ID (can be replaced with UUID)
-	id := "user-" + time.Now().Format("20060102150405")
+
+	// Generate a proper UUID for user ID
+	id := uuid.New().String()
 	userEntity := entities.NewUser(id, emailVO, passwordVO, req.FirstName, req.LastName, req.Phone)
 
 	// Save to database
@@ -68,7 +68,7 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 	}
 
 	// Convert domain user to protobuf user
-	pbUser := &user.User{
+	pbUser := &userpb.User{
 		Id:        userEntity.ID(),
 		Email:     userEntity.Email().Value(),
 		FirstName: userEntity.FirstName(),
@@ -81,7 +81,7 @@ func (s *UserService) RegisterUser(ctx context.Context, req *RegisterUserRequest
 	return pbUser, nil
 }
 
-func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*user.LoginResponse, error) {
+func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*userpb.LoginResponse, error) {
 	// Find user by email
 	emailVO, err := valueobjects.NewEmail(req.Email)
 	if err != nil {
@@ -109,7 +109,7 @@ func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*user.L
 	}
 
 	// Convert domain user to protobuf user
-	pbUser := &user.User{
+	pbUser := &userpb.User{
 		Id:        userEntity.ID(),
 		Email:     userEntity.Email().Value(),
 		FirstName: userEntity.FirstName(),
@@ -119,7 +119,7 @@ func (s *UserService) LoginUser(ctx context.Context, req *LoginRequest) (*user.L
 		UpdatedAt: timestamppb.New(userEntity.UpdatedAt()),
 	}
 
-	return &user.LoginResponse{
+	return &userpb.LoginResponse{
 		User:         pbUser,
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
