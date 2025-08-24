@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+
 	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
 	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
 
@@ -49,7 +50,6 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 	}
 
 	// Debug logging
-	
 
 	return &userpb.LoginResponse{
 		User: &userpb.User{
@@ -106,13 +106,13 @@ func (s *PBUserServer) UpdateUser(ctx context.Context, req *userpb.UpdateUserReq
 }
 
 func (s *PBUserServer) RefreshToken(ctx context.Context, req *userpb.RefreshTokenRequest) (*userpb.RefreshTokenResponse, error) {
-	accessToken, err := s.svc.RefreshToken(ctx, req.RefreshToken)
+	tokenPair, err := s.svc.RefreshToken(ctx, req.RefreshToken)
 	if err != nil {
 		return nil, err
 	}
 	return &userpb.RefreshTokenResponse{
-		AccessToken: accessToken,
-		ExpiresIn:   900, // 15 minutes in seconds
+		AccessToken: tokenPair.AccessToken,
+		ExpiresIn:   tokenPair.ExpiresIn,
 	}, nil
 }
 

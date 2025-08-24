@@ -25,8 +25,8 @@ type AuthService interface {
 	// ValidateRefreshToken validates refresh token and returns claims
 	ValidateRefreshToken(tokenString string) (map[string]interface{}, error)
 
-	// RefreshAccessToken generates new access token using refresh token
-	RefreshAccessToken(refreshToken string) (string, error)
+	// RefreshAccessToken generates new access and refresh token pair using refresh token
+	RefreshAccessToken(refreshToken string) (*TokenPair, error)
 
 	// RevokeRefreshToken removes refresh token from Redis
 	RevokeRefreshToken(ctx context.Context, refreshToken string) error

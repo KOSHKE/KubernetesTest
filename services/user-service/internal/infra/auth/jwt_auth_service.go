@@ -65,13 +65,15 @@ func NewJWTAuthService(config *Config, userRepo repository.UserRepository, logge
 	}
 
 	// Create JWT manager
-	jwtConfig := &jwt.Config{
+	jwtConfig := jwt.Config{
 		AccessTokenSecret:  config.AccessTokenSecret,
 		RefreshTokenSecret: config.RefreshTokenSecret,
 		AccessTokenTTL:     config.AccessTokenTTL,
 		RefreshTokenTTL:    config.RefreshTokenTTL,
+		Issuer:             "user-service",       // Added: issuer for JWT claims
+		Audience:           "ecommerce-platform", // Added: audience for JWT claims
 	}
-	jwtManager := jwt.NewManager(jwtConfig)
+	jwtManager := jwt.NewManager(jwtConfig, logger)
 
 	return &JWTAuthService{
 		jwtManager: jwtManager,
@@ -145,31 +147,44 @@ func (s *JWTAuthService) ValidateRefreshToken(tokenString string) (map[string]in
 	}, nil
 }
 
-// RefreshAccessToken generates new access token using refresh token
-func (s *JWTAuthService) RefreshAccessToken(refreshToken string) (string, error) {
+// RefreshAccessToken generates new access and refresh token pair using refresh token
+func (s *JWTAuthService) RefreshAccessToken(refreshToken string) (*auth.TokenPair, error) { // Changed: returns TokenPair, not just string
 	// Validate refresh token first
 	claims, err := s.ValidateRefreshToken(refreshToken)
 	if err != nil {
-		return "", fmt.Errorf("failed to validate refresh token: %w", err)
+		return nil, fmt.Errorf("failed to validate refresh token: %w", err)
 	}
 
 	userID, ok := claims["user_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("invalid user ID in token")
+		return nil, fmt.Errorf("invalid user ID in token")
 	}
 
-	email, ok := claims["email"].(string)
-	if !ok {
-		return "", fmt.Errorf("invalid email in token")
-	}
-
-	// Generate new access token using the user information from claims
-	accessToken, err := s.jwtManager.GenerateTokenPair(userID, email)
+	// Generate new token pair using the user information from claims
+	tokenPair, err := s.jwtManager.RefreshAccessToken(refreshToken)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate new access token: %w", err)
+		return nil, fmt.Errorf("failed to generate new token pair: %w", err)
 	}
 
-	return accessToken.AccessToken, nil
+	// Store new refresh token in Redis
+	err = s.StoreRefreshToken(context.Background(), tokenPair.RefreshToken, userID)
+	if err != nil {
+		s.logger.Error("failed to store new refresh token", "error", err, "user_id", userID)
+		return nil, fmt.Errorf("failed to store new refresh token: %w", err)
+	}
+
+	// Revoke old refresh token
+	err = s.RevokeRefreshToken(context.Background(), refreshToken)
+	if err != nil {
+		s.logger.Warn("failed to revoke old refresh token", "error", err, "user_id", userID)
+		// Don't fail the operation if revocation fails
+	}
+
+	return &auth.TokenPair{
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		ExpiresIn:    tokenPair.ExpiresIn,
+	}, nil
 }
 
 // RevokeRefreshToken removes refresh token from Redis

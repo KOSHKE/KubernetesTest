@@ -151,8 +151,8 @@ func (s *UserService) UpdateUser(ctx context.Context, userID string, firstName, 
 	return userEntity, nil
 }
 
-// RefreshToken generates new access token using refresh token
-func (s *UserService) RefreshToken(ctx context.Context, refreshToken string) (string, error) {
+// RefreshToken generates new access and refresh token pair using refresh token
+func (s *UserService) RefreshToken(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
 	return s.authService.RefreshAccessToken(refreshToken)
 }
 
