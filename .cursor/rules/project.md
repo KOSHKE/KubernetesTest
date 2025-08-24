@@ -1,235 +1,437 @@
-# E-commerce Platform Project Documentation
+# KubernetesTest Project Documentation
 
 ## Project Overview
-Microservices-based e-commerce platform built with Go, using gRPC, Kafka, Redis, and PostgreSQL. The project follows Go best practices with clean architecture principles.
 
-## Current Architecture
+**KubernetesTest** is a microservices-based order management system built with Go, React, and modern cloud-native technologies. The project demonstrates microservices architecture using gRPC, Kafka for events, PostgreSQL for data, and Redis for caching.
 
-### Services
-- **API Gateway** (Port 8080) - HTTP to gRPC gateway
-- **User Service** (Port 50051) - User management and authentication
-- **Order Service** (Port 50052) - Order processing and management
-- **Inventory Service** (Port 50053) - Product catalog and stock management
-- **Payment Service** (Port 50054) - Payment processing
+## System Architecture
+
+### General Scheme
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Frontend  │    │ API Gateway │    │   Services  │
+│   (React)   │◄──►│   (Gin)     │◄──►│    (Go)     │
+└─────────────┘    └─────────────┘    └─────────────┘
+                          │                   │
+                          ▼                   ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │   Kafka     │    │ PostgreSQL  │
+                   │ (Messages)  │    │  (Data)     │
+                   └─────────────┘    └─────────────┘
+                          ▲                   │
+                          │                   │
+                   ┌──────┴──────┐            │
+                   │   Services  │◄───────────┘
+                   │ (Direct     │
+                   │  Kafka)     │
+                   └─────────────┘
+```
+
+### Microservices
+1. **API Gateway** - HTTP API with authentication middleware (port 8080)
+2. **User Service** - User management and JWT authentication (port 50051)
+3. **Order Service** - Order processing and management (port 50052)
+4. **Inventory Service** - Product catalog and inventory management (port 50053)
+5. **Payment Service** - Payment processing and refunds (port 50054)
+
+## Project Structure
+
+```
+KubernetesTest/
+├── .cursor/                    # Cursor IDE configuration
+├── .git/                      # Git repository
+├── frontend/                  # React + TypeScript frontend
+├── pkg/                       # READY-TO-USE packages - USE THESE!
+│   ├── jwt/                   # JWT utilities and validation
+│   ├── kafkaclient/           # Kafka consumer and publisher
+│   ├── logger/                # Unified logging interface
+│   └── redisclient/           # Redis client with connection pooling
+├── proto/                     # Protobuf definitions
+├── proto-go/                  # Generated Go files from proto
+├── services/                  # Microservices
+│   ├── api-gateway/          # API Gateway service
+│   ├── user-service/         # User service
+│   ├── order-service/        # Order service
+│   ├── inventory-service/    # Inventory service
+│   └── payment-service/      # Payment service
+├── docker-compose.yml         # Docker Compose configuration
+├── Makefile                   # Development commands
+├── go.mod                     # Go module (root - single module for entire project)
+├── go.sum                     # Go dependencies
+├── README.md                  # Project documentation
+└── .env.example              # Environment variables example
+```
+
+**IMPORTANT**: The project uses a single Go module structure with `go.mod` located only in the root directory. All services share the same module and dependencies.
+
+**CRITICAL**: In `/pkg` directory there are READY-TO-USE implementations of common packages. ALWAYS use these instead of creating new ones or importing external packages for the same functionality.
+
+## Ready-to-Use Packages in /pkg
+
+### 1. Logger Package (`pkg/logger/`)
+**Interface**: `Logger` with methods: `Error`, `Warn`, `Info`, `Debug`
+**Implementation**: `ZapLogger` adapter for `*zap.SugaredLogger`
+**Usage**: 
+```go
+import "github.com/kubernetestest/ecommerce-platform/pkg/logger"
+// Use logger.NewZapLogger(zapLogger) to create adapter
+```
+
+### 2. Kafka Client (`pkg/kafkaclient/`)
+**Consumer**: `Consumer` with worker pool optimization
+**Publisher**: `Publisher` for sending messages
+**Features**: 
+- Worker pool for parallel processing
+- Configurable buffer sizes
+- Graceful shutdown
+- Structured logging integration
+**Usage**: Always use this instead of direct confluent-kafka-go
+
+### 3. JWT Package (`pkg/jwt/`)
+**Features**: Token generation, validation, refresh logic
+**Usage**: Use for all JWT operations instead of direct golang-jwt
+
+### 4. Redis Client (`pkg/redisclient/`)
+**Features**: Connection pooling, health checks, structured logging
+**Usage**: Use for all Redis operations instead of direct go-redis
+
+## Technology Stack
+
+### Backend (Go)
+- **Language**: Go 1.25
+- **Module Structure**: Single Go module (root `go.mod`) for all services
+- **Framework**: Gin (HTTP), gRPC
+- **ORM**: GORM with PostgreSQL driver
+- **Authentication**: JWT (golang-jwt/jwt/v5) - USE pkg/jwt wrapper
+- **Logging**: Zap (structured logging) - USE pkg/logger wrapper
+- **Migrations**: GORM AutoMigrate
+- **Hot Reload**: Air
+
+### Frontend (React)
+- **Framework**: React 18 + TypeScript
+- **Bundler**: Vite
+- **Styling**: CSS modules
+- **HTTP Client**: Axios
 
 ### Infrastructure
-- **PostgreSQL 15.4** - Primary database
-- **Redis 7.2** - Caching and session storage
-- **Kafka 4.0** - Event streaming and messaging
-- **Kafka UI** - Management interface
+- **Database**: PostgreSQL 15.4
+- **Cache**: Redis 7.2-alpine - USE pkg/redisclient
+- **Message Queue**: Kafka 4.0.0 (KRaft) - USE pkg/kafkaclient
+- **Containerization**: Docker + Docker Compose
+- **Kafka UI**: provectuslabs/kafka-ui
 
-## Recent Changes and Current State
+### Protocols and API
+- **HTTP REST**: API Gateway (Gin)
+- **gRPC**: Inter-service communication
+- **Protobuf**: Data serialization
+- **Swagger/OpenAPI**: API documentation
 
-### 1. Project Structure Refactoring (Latest)
-**Date:** Current session
-**Description:** Restructured project from multiple Go modules to single root module architecture
-**Changes:**
-- Removed all `go.mod` and `go.sum` files from subdirectories
-- Created single root `go.mod` at project root
-- Updated all internal imports to use full module path: `github.com/kubernetestest/ecommerce-platform/...`
-- Standardized Go version to 1.25 across entire project
+## Detailed Service Structure
 
-**Impact:** 
-- Simplified dependency management
-- Follows Go project best practices
-- Eliminated module conflicts
-
-### 2. Docker Architecture Optimization
-**Date:** Current session
-**Description:** Replaced complex multi-stage Dockerfile with individual service Dockerfiles
-**Changes:**
-- Deleted root `Dockerfile` (was using multi-stage builds)
-- Created individual `Dockerfile` for each service in `services/{service-name}/`
-- Each Dockerfile uses `golang:1.25-bookworm` base image
-- Updated `docker-compose.yml` to use service-specific Dockerfiles
-
-**Benefits:**
-- Simpler, more maintainable Docker setup
-- Follows Go project conventions
-- Easier debugging and service-specific customization
-
-### 3. Unified Logging System Implementation
-**Date:** Current session
-**Description:** Created centralized logging package with unified interface
-**Changes:**
-- Created `pkg/logger/` package with universal `Logger` interface
-- Implemented `ZapLogger` adapter for `*zap.SugaredLogger`
-- Updated all services to use `pkglogger.NewZapLogger(log)` instead of direct `*zap.SugaredLogger`
-- Interface methods: `Error`, `Warn`, `Info`, `Debug`
-
-**Benefits:**
-- Consistent logging across all services
-- Easy to switch logging backends
-- Follows Go interface patterns
-
-### 4. Kafka Client Package Refactoring
-**Date:** Current session
-**Description:** Renamed and optimized Kafka client package
-**Changes:**
-- Renamed `pkg/kafka/` to `pkg/kafkaclient/` (user requirement)
-- Updated all service imports to use new package name
-- Fixed package naming conflicts and import paths
-- Maintained `confluent-kafka-go` dependency as required
-
-**Current State:**
-- Package name: `kafkaclient`
-- All services correctly import from new package
-- No more naming conflicts
-
-### 5. Docker Compose Health Checks Implementation
-**Date:** Current session
-**Description:** Added proper service dependency management with health checks
-**Changes:**
-- Updated `depends_on` to use `condition: service_healthy`
-- Added health checks for PostgreSQL, Redis, and Kafka
-- Services wait for infrastructure to be ready before starting
-
-**Configuration:**
-```yaml
-depends_on:
-  postgres:
-    condition: service_healthy
-  redis:
-    condition: service_healthy
-  kafka:
-    condition: service_healthy
+### User Service
+```
+services/user-service/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   ├── config.go        # Configuration
+│   │   └── run.go           # Service startup
+│   ├── domain/
+│   │   ├── entities/        # Domain entities
+│   │   └── valueobjects/    # Value objects
+│   ├── infra/
+│   │   ├── auth/            # JWT authentication (uses pkg/jwt)
+│   │   ├── grpc/            # gRPC server
+│   │   └── repository/      # GORM repository
+│   └── ports/               # Interfaces (auth, repository)
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
 ```
 
-**Benefits:**
-- Prevents "Connection refused" errors
-- Ensures proper startup order
-- Follows Docker Compose best practices
+### API Gateway
+```
+services/api-gateway/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   └── run.go           # Service startup
+│   ├── clients/              # gRPC clients to services
+│   ├── config/               # Configuration
+│   ├── handlers/             # HTTP handlers (user, order, payment, inventory)
+│   ├── middleware/           # HTTP middleware (auth, CORS)
+│   └── pkg/                  # Internal packages
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
+```
 
-### 6. Code Quality Fixes
-**Date:** Current session
-**Description:** Fixed various syntax and type errors across services
-**Changes:**
-- Removed malformed import statements with `\`n\`` characters
-- Fixed Kafka consumer/publisher constructor calls
-- Corrected logger type mismatches
-- Updated all services to use proper logger adapters
+### Order Service
+```
+services/order-service/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   ├── config.go        # Configuration
+│   │   └── run.go           # Service startup
+│   ├── domain/
+│   │   ├── errors/          # Domain errors
+│   │   └── models/          # Order models
+│   ├── infra/
+│   │   ├── clock/           # System clock interface
+│   │   ├── grpc/            # gRPC server
+│   │   ├── kafka/           # Kafka integration (uses pkg/kafkaclient)
+│   │   ├── productinfo/     # Product info provider
+│   │   └── repository/      # GORM repository
+│   └── ports/               # Interfaces
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
+```
 
-**Files Fixed:**
-- `services/inventory-service/internal/infra/kafka/consumer/*.go`
-- `services/payment-service/internal/infra/kafka/consumer/*.go`
-- `services/inventory-service/internal/app/run.go`
-- `services/payment-service/internal/app/run.go`
+### Inventory Service
+```
+services/inventory-service/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   ├── config.go        # Configuration
+│   │   └── run.go           # Service startup
+│   ├── domain/
+│   │   └── models/          # Product, Category, Stock models
+│   ├── infra/
+│   │   ├── grpc/            # gRPC server
+│   │   ├── kafka/           # Kafka integration (uses pkg/kafkaclient)
+│   │   └── repository/      # GORM repository
+│   └── ports/               # Interfaces
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
+```
 
-## Current Technical Debt and Issues
+### Payment Service
+```
+services/payment-service/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   ├── config.go        # Configuration
+│   │   └── run.go           # Service startup
+│   ├── domain/
+│   │   ├── entities/        # Payment entity
+│   │   ├── errors/          # Domain errors
+│   │   └── valueobjects/    # Money value object
+│   ├── infra/
+│   │   ├── cache/           # Order totals cache
+│   │   ├── grpc/            # gRPC server
+│   │   ├── kafka/           # Kafka integration (uses pkg/kafkaclient)
+│   │   └── processor/       # Payment processor
+│   └── ports/               # Interfaces
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
+```
 
-### 1. Build Errors Resolved
-- ✅ All syntax errors in Kafka consumers fixed
-- ✅ Logger type mismatches resolved
-- ✅ Import path conflicts resolved
-- ✅ Docker build issues fixed
+## Configuration
 
-### 2. Remaining Issues
-- ⚠️ Some services may still have build issues (need to verify)
-- ⚠️ Kafka connection issues may persist until health checks are fully implemented
+### Environment Variables
+The project uses environment variables for configuration. A `.env.example` file is provided as a template. Key configuration areas include:
 
-## Development Environment
+- **Database**: PostgreSQL connection settings
+- **JWT**: Authentication secrets and token TTLs
+- **Redis**: Cache connection settings
+- **Kafka**: Message broker configuration
+- **Services**: Inter-service communication URLs
 
-### Prerequisites
-- Go 1.25
-- Docker and Docker Compose
-- Confluent Kafka (via Docker)
+### Port Mapping
+- **Frontend**: 3001:3000
+- **API Gateway**: 8080:8080
+- **User Service**: 50051:50051
+- **Order Service**: 50052:50052
+- **Inventory Service**: 50053:50053
+- **Payment Service**: 50054:50054
+- **PostgreSQL**: 5432:5432
+- **Redis**: 6379:6379
+- **Kafka**: 9092:9092
+- **Kafka UI**: 8085:8080
 
-### Build Commands
+## API Endpoints
+
+### Public Routes
+- `POST /api/v1/auth/register` - User registration
+- `POST /api/v1/auth/login` - User login
+- `POST /api/v1/auth/refresh` - Token refresh
+- `POST /api/v1/auth/logout` - User logout
+- `GET /api/v1/inventory/*` - Product browsing
+
+### Protected Routes (require JWT)
+- `GET /api/v1/users/profile` - Get user profile
+- `PUT /api/v1/users/profile` - Update user profile
+- `POST /api/v1/orders` - Create new order
+- `GET /api/v1/orders` - List user orders
+- `GET /api/v1/orders/:id` - Get order details
+- `POST /api/v1/payments` - Process payment
+- `GET /api/v1/payments/:id` - Get payment details
+- `POST /api/v1/payments/:id/refund` - Process refund
+
+## JWT Authentication
+
+### Tokens
+- **Access Token**: Short-lived (15 minutes) for API requests
+- **Refresh Token**: Long-lived (7 days) stored in Redis
+
+### Authentication Flow
+1. User logs in → receives access + refresh tokens
+2. Access token used for API requests
+3. When expired → automatic refresh using refresh token
+4. On logout → refresh token revoked from Redis
+
+## Events and Kafka
+
+### Event Topics
+- **order_created** - Order creation
+- **payment_processed** - Payment processing
+- **stock_reserved** - Stock reservation
+- **stock_events** - Inventory events
+
+### Event Flow
+1. **Order Service** → `order_created` → **Inventory Service**
+2. **Inventory Service** → `stock_reserved` → **Payment Service**
+3. **Payment Service** → `payment_processed` → **Order Service**
+
+### Kafka Integration Architecture
+- **Direct Service Integration**: Services communicate directly with Kafka, not through API Gateway
+- **Event-Driven Communication**: Asynchronous messaging between services for loose coupling
+- **Service Autonomy**: Each service can independently publish and consume events
+- **Scalability**: Services can scale independently based on event processing needs
+- **USE pkg/kafkaclient**: All Kafka operations must use the unified client package
+
+## Development
+
+### Makefile Commands
 ```bash
-# Build all services
-docker-compose build --no-cache
-
-# Build specific service
-docker-compose build service-name
-
-# Run all services
-docker-compose up
-
-# Run specific service
-docker-compose up service-name
+make help              # Show available commands
+make proto             # Generate protobuf stubs
+make proto-clean       # Clean generated files
+make dev-up            # Start dev environment
+make dev-rebuild       # Rebuild and start
+make dev-down          # Stop dev environment
+make fmt               # Format Go code
 ```
 
-### Hot Reload
-- All services use Air for hot reload during development
-- `.air.toml` files configured for each service
-- Volume mounts enable live code updates
+### Hot Reload with Air
+Each service supports hot reload through Air:
+```bash
+# Navigate to service directory
+cd services/user-service
 
-## Architecture Patterns
+# Start with hot reload
+air
+```
 
-### 1. Clean Architecture
-- Domain models in `internal/domain/`
-- Application services in `internal/app/services/`
-- Infrastructure in `internal/infra/`
-- Ports (interfaces) in `internal/ports/`
+### Protobuf Generation
+```bash
+# Generate Go files from proto
+make proto
 
-### 2. Event-Driven Architecture
-- Kafka for asynchronous communication
-- Event sourcing for order and payment flows
-- Saga pattern for distributed transactions
+# Clean generated files
+make proto-clean
+```
 
-### 3. Dependency Injection
-- Services accept interfaces, not concrete implementations
-- Logger injected via constructor or setter methods
-- Repository pattern for data access
+## Monitoring and Logging
 
-## Best Practices Implemented
+### Health Checks
+- All services have health check endpoints
+- Docker Compose uses health checks for dependencies
 
-### 1. Go Conventions
-- Single root module
-- Proper package naming (`kafkaclient`, not `kafka`)
-- Interface segregation (`Logger` interface)
-- Error handling with context
+### Logging
+- **Structured logging** through Zap - USE pkg/logger wrapper
+- **Correlation ID** for request tracking
+- **Request ID** for unique identification
 
-### 2. Docker Best Practices
-- Service-specific Dockerfiles
-- Health checks for dependencies
-- Proper startup order management
-- Development vs production stages
+### Monitoring
+- **Kafka UI**: http://localhost:8085
+- **Health endpoints**: `/health` on each service
+- **Structured logs** in JSON format
 
-### 3. Logging Standards
-- Structured logging with Zap
-- Unified interface across all packages
-- Consistent error message format
-- Minimal debug logging (user preference)
+## Security
 
-## Next Steps and Recommendations
+### JWT
+- Token validation on all protected routes - USE pkg/jwt
+- Refresh token storage in Redis with revocation capability
+- Configurable token lifetime
 
-### 1. Immediate Actions
-- Test all services with new Docker setup
-- Verify Kafka connectivity with health checks
-- Run full integration tests
+### CORS
+- CORS configuration for frontend origins
+- Secure default settings
 
-### 2. Future Improvements
-- Consider adding metrics and monitoring
-- Implement proper error handling and retry logic
-- Add comprehensive testing suite
-- Consider service mesh for production
+### Validation
+- Input data validation
+- User input sanitization
+- SQL injection protection through GORM
 
-### 3. Monitoring and Observability
-- Add structured logging for all operations
-- Implement distributed tracing
-- Add health check endpoints for all services
-- Consider adding Prometheus metrics
+## Deployment
 
-## Notes for AI Assistant
+### Docker
+- Multi-stage Dockerfiles for size optimization
+- Health checks for all services
+- Volume mounts for hot reload in development
 
-### Current State
-- Project is in active development/refactoring phase
-- All major architectural issues have been resolved
-- Services should build and run correctly with current setup
-- Docker Compose with health checks is the recommended approach
+## Development Principles
 
-### Common Issues to Watch For
-- Logger type mismatches (use `pkglogger.NewZapLogger(log)`)
-- Import path conflicts (use full module paths)
-- Kafka connection issues (ensure health checks pass)
-- Docker build failures (use service-specific Dockerfiles)
+### Go Best Practices
+- Following Effective Go
+- Idiomatic Go code
+- Error handling through error return
+- Using context.Context for timeouts
 
-### Key Files to Reference
-- `docker-compose.yml` - Service orchestration
-- `go.mod` - Dependencies and module configuration
-- `pkg/logger/` - Logging interface and adapters
-- `pkg/kafkaclient/` - Kafka client implementation
-- Service-specific `Dockerfile` files
+### Architectural Principles
+- **Clean Architecture** / Layered approach
+- **Dependency Injection** through interfaces
+- **Separation of Concerns** between layers
+- **Interface Segregation** for flexibility
 
-This documentation reflects the current state as of the latest refactoring session. All major issues have been addressed and the project should be in a working state.
+### Code Style
+- Small functions with clear names
+- No "magic numbers"
+- GoDoc style comments
+- Structured logging
+
+### Package Usage Rules
+1. **ALWAYS use pkg/logger** instead of direct zap
+2. **ALWAYS use pkg/kafkaclient** instead of direct confluent-kafka-go
+3. **ALWAYS use pkg/jwt** instead of direct golang-jwt
+4. **ALWAYS use pkg/redisclient** instead of direct go-redis
+5. **NEVER create new packages** for functionality that already exists in /pkg
+6. **NEVER import external packages** for functionality available in /pkg
+
+## Common Patterns
+
+### Service Initialization
+```go
+// Always use pkg packages
+logger := logger.NewZapLogger(zapLogger)
+kafkaConsumer := kafkaclient.NewConsumer(config)
+redisClient := redisclient.NewClient(config)
+jwtService := jwt.NewService(config)
+```
+
+### Error Handling
+```go
+// Use domain-specific errors
+if err != nil {
+    return fmt.Errorf("failed to process order: %w", err)
+}
+```
+
+### Logging
+```go
+// Use structured logging through pkg/logger
+logger.Error("failed to connect to database", "error", err, "host", host)
+```
+
+## Conclusion
+
+The KubernetesTest project represents a modern microservices architecture using Go, demonstrating best practices for developing cloud-native applications. The architecture is ready for Kubernetes deployment and can be easily extended for production use.
+
+**REMEMBER**: Always use the ready-to-use packages in `/pkg` directory. They provide unified interfaces, optimized implementations, and consistent behavior across all services.
