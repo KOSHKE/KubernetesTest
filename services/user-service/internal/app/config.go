@@ -13,6 +13,7 @@ type Config struct {
 	DBName           string
 	DBUser           string
 	DBPass           string
+	DBSSLMode        string
 	RedisURL         string
 	JWTSecret        string
 	JWTRefreshSecret string
@@ -30,6 +31,7 @@ func LoadConfigFromEnv() *Config {
 		DBName:           getEnv("DB_NAME", "userdb"),
 		DBUser:           getEnv("DB_USER", "admin"),
 		DBPass:           getEnv("DB_PASSWORD", "password"),
+		DBSSLMode:        getEnv("DB_SSLMODE", "disable"),
 		RedisURL:         getEnv("REDIS_URL", "localhost:6379"),
 		JWTSecret:        getEnv("JWT_SECRET", "your-secret-key"),
 		JWTRefreshSecret: getEnv("JWT_REFRESH_SECRET", "your-refresh-secret-key"),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
 	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
@@ -58,9 +59,7 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 	}
 
 	// Use existing logger for Redis operations
-	redisLog := logger.NewZapLogger(log)
-
-	authService, err := auth.NewJWTAuthService(authConfig, userRepo, redisLog)
+	authService, err := auth.NewJWTAuthService(authConfig, userRepo, logger.NewZapLogger(log))
 	if err != nil {
 		log.Errorw("failed to initialize auth service", "error", err)
 		return err
@@ -71,9 +70,6 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 	metricsInstance := usermetrics.NewUserMetrics()
 
 	userService := services.NewUserService(userRepo, authService, metricsInstance)
-
-	// Register metrics with Prometheus
-	_ = metricsInstance
 
 	// gRPC server
 	server := gogrpc.NewServer()
@@ -90,6 +86,15 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 		log.Infow("metrics server starting", "port", cfg.MetricsPort)
 		if err := metricsServer.Start(); err != nil {
 			log.Errorw("metrics server failed", "error", err)
+		}
+	}()
+
+	// Graceful shutdown for metrics server
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			log.Errorw("metrics server shutdown failed", "error", err)
 		}
 	}()
 
@@ -119,16 +124,26 @@ func Run(ctx context.Context, cfg *Config, zapLogger *zap.Logger) error {
 
 // connectDB creates DB connection and verifies it.
 func connectDB(cfg *Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName)
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPass, cfg.DBName, cfg.DBSSLMode)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
 	if err != nil {
 		return nil, err
 	}
-	if sqlDB, err := db.DB(); err != nil {
+
+	// Configure connection pool settings
+	sqlDB, err := db.DB()
+	if err != nil {
 		return nil, err
-	} else if err := sqlDB.Ping(); err != nil {
+	}
+
+	// Set connection pool limits to prevent connection leaks
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(25)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	if err := sqlDB.Ping(); err != nil {
 		return nil, err
 	}
 	return db, nil
