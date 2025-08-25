@@ -9,6 +9,7 @@ import (
 
 	pub "github.com/kubernetestest/ecommerce-platform/pkg/kafkaclient"
 	pkglogger "github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
 	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
 	app "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/app/services"
 	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/entities"
@@ -18,6 +19,7 @@ import (
 	srv "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/grpc"
 	con "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/kafka/consumer"
 	mockproc "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/infra/processor"
+	paymentmetrics "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/metrics"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -31,8 +33,12 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 
 	server := grpc.NewServer()
 	processor := mockproc.NewMockPaymentProcessor()
-	paymentService := app.NewPaymentService(processor)
-	srv.RegisterPaymentPBServer(server, paymentService)
+
+	// Initialize metrics
+	metricsInstance := paymentmetrics.NewPaymentMetrics()
+
+	paymentService := app.NewPaymentService(processor, metricsInstance)
+	srv.RegisterPaymentPBServer(server, paymentService, metricsInstance)
 
 	// Kafka wiring (best-effort)
 	var prod pub.Publisher
@@ -127,6 +133,24 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 			log.Infow("Kafka consumer started", "topic", "inventory.v1.stock_reserved")
 		}
 	}
+
+	// Start metrics server
+	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, logger)
+	go func() {
+		log.Infow("metrics server starting", "port", cfg.MetricsPort)
+		if err := metricsServer.Start(); err != nil {
+			log.Errorw("metrics server failed", "error", err)
+		}
+	}()
+
+	// Graceful shutdown for metrics server
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			log.Errorw("metrics server shutdown failed", "error", err)
+		}
+	}()
 
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(server, healthServer)

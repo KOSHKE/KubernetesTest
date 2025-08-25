@@ -147,7 +147,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 			{
 				payments.POST("", paymentHandler.ProcessPayment)
 				payments.GET("/:id", paymentHandler.GetPayment)
-				payments.POST("/:id/refund", paymentHandler.RefundPayment)
 			}
 		}
 

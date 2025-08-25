@@ -67,55 +67,16 @@ func (h *PaymentHandler) GetPayment(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		
+
 		// Check if payment belongs to the authenticated user
 		if payment.UserID != userID {
 			http.RespondForbidden(c, "Access denied: payment does not belong to user")
 			return nil
 		}
-		
+
 		return nil
 	}, "get payment") {
 		http.RespondSuccess(c, gin.H{"message": "Payment retrieved successfully"}, "Payment retrieved successfully")
-	}
-}
-
-// RefundPayment processes payment refunds
-func (h *PaymentHandler) RefundPayment(c *gin.Context) {
-	userID, ok := middleware.GetUserID(c)
-	if !ok {
-		http.RespondUnauthorized(c, "User not authenticated")
-		return
-	}
-
-	paymentID, ok := h.RequireParam(c, "id")
-	if !ok {
-		return // Error response already sent by RequireParam
-	}
-
-	var req http.RefundRequest
-	if !h.ValidateRequest(c, &req) {
-		return
-	}
-
-	if h.HandlePaymentClientOperation(c, func() error {
-		// Get payment first to verify ownership
-		payment, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
-		if err != nil {
-			return err
-		}
-		
-		// Check if payment belongs to the authenticated user
-		if payment.UserID != userID {
-			http.RespondForbidden(c, "Access denied: payment does not belong to user")
-			return nil
-		}
-		
-		// Process refund
-		_, err = h.paymentClient.RefundPayment(c.Request.Context(), paymentID, req.Amount, req.Reason)
-		return err
-	}, "process refund") {
-		http.RespondSuccess(c, gin.H{"message": "Refund processed successfully"}, "Refund processed successfully")
 	}
 }
 

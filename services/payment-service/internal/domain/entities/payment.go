@@ -1,8 +1,9 @@
 package entities
 
 import (
-	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 	"time"
+
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 )
 
 type PaymentStatus string
@@ -10,7 +11,6 @@ type PaymentStatus string
 const (
 	PaymentCompleted PaymentStatus = "COMPLETED"
 	PaymentFailed    PaymentStatus = "FAILED"
-	PaymentRefunded  PaymentStatus = "REFUNDED"
 )
 
 type PaymentMethod string

@@ -376,6 +376,109 @@ make proto-clean
 - **Metrics endpoints**: `/metrics` on each service
 - **Structured logs** in JSON format
 
+## Metrics Architecture
+
+### Overview
+The project implements a comprehensive metrics system following Prometheus best practices with **consistent labeling** across all metric types. This ensures unified analysis, simplified dashboard creation, and better correlation between business and technical metrics.
+
+### Metrics Structure
+
+#### 1. **HTTP/gRPC Metrics (pkg/metrics)**
+- **Request Counters**: `http_requests_total{service, method, endpoint, status_code}`
+- **Request Duration**: `http_request_duration_seconds{service, method, endpoint}`
+- **Standardized across all services** for technical monitoring
+
+#### 2. **Business Metrics (Service-Specific)**
+Each service implements domain-specific metrics with consistent labeling:
+- **Success Metrics**: `{service, method, status}` - e.g., `payment_succeeded_total{service="payment-service", method="CREDIT_CARD", status="success"}`
+- **Failure Metrics**: `{service, method, failure_reason}` - e.g., `payment_failed_total{service="payment-service", method="unknown", failure_reason="insufficient_funds"}`
+- **Duration Metrics**: `{service, method}` - e.g., `payment_processing_duration_seconds{service="payment-service", method="CREDIT_CARD"}`
+
+### Label Consistency Benefits
+
+#### **Unified Label Structure**
+- **`service`** - consistent across all metrics (e.g., "payment-service", "user-service")
+- **`method`** - business method (CREDIT_CARD, DEBIT_CARD) matching HTTP method concept
+- **`status`** - success/failure status (similar to HTTP status_code)
+- **`failure_reason`** - specific failure reasons for business logic
+
+#### **Cross-Metric Analysis**
+```promql
+# Compare business success rate vs HTTP success rate
+rate(payment_succeeded_total{service="payment-service"}[5m]) vs
+rate(http_requests_total{service="payment-service", status_code="200"}[5m])
+
+# Analyze performance by method
+rate(payment_processing_duration_seconds_sum{service="payment-service", method="CREDIT_CARD"}[5m]) /
+rate(payment_processing_duration_seconds_count{service="payment-service", method="CREDIT_CARD"}[5m])
+```
+
+### Metrics Implementation
+
+#### **Service-Specific Metrics Package**
+Each service has its own `internal/metrics/` package:
+```go
+// Example: Payment Service Metrics
+type PaymentMetrics interface {
+    PaymentSucceeded(method string)
+    PaymentFailed(reason string)
+    PaymentProcessingDuration(duration time.Duration, method string)
+    metrics.Metrics // Inherits HTTP metrics from pkg/metrics
+}
+```
+
+#### **Prometheus Integration**
+- **CounterVec** for success/failure metrics with proper labels
+- **HistogramVec** for duration metrics with configurable buckets
+- **Automatic registration** using `promauto` for zero-config setup
+
+### Grafana Dashboards
+
+#### **Dashboard Structure**
+Each service has a dedicated dashboard showing:
+1. **Business Rate Metrics** - success/failure rates per second
+2. **Cumulative Counts** - total successful/failed operations
+3. **Performance Metrics** - average duration and percentiles
+4. **Service Health** - Prometheus `up` metric
+5. **Comparison Views** - pie charts for success vs failure ratios
+
+#### **Dashboard Configuration**
+- **Refresh Rate**: 5-10 seconds for real-time monitoring
+- **Time Range**: 1 hour default with zoom capabilities
+- **Panel Types**: Stat panels for single values, timeseries for trends
+- **PromQL Queries**: Optimized for consistent label usage
+
+### Best Practices Applied
+
+#### **Label Cardinality Control**
+- **Low Cardinality**: `method` has limited values (CREDIT_CARD, DEBIT_CARD, etc.)
+- **Meaningful Labels**: `status` and `failure_reason` provide business context
+- **Consistent Naming**: Matches `pkg/metrics` HTTP metric patterns
+- **Avoiding Duplication**: No redundant labels when context is already clear
+
+#### **Metrics Naming Convention**
+- **Descriptive Names**: Clear purpose and data representation
+- **Standardized Units**: Time in seconds, sizes in bytes
+- **Consistent Format**: Lowercase with underscores
+- **Help Text**: Comprehensive descriptions for each metric
+
+### Benefits of Consistent Metrics Architecture
+
+1. **Unified Analysis**: Easy correlation between business and HTTP metrics
+2. **Simplified Dashboards**: Same label names across different metric types
+3. **Better Aggregation**: Group by `method` across all metric types
+4. **Reduced Learning Curve**: Developers familiar with HTTP metrics understand business metrics
+5. **Easier Troubleshooting**: Trace issues from business logic to HTTP layer
+6. **Scalable Monitoring**: Consistent pattern for future services
+7. **Effective Alerting**: Reliable threshold setting and anomaly detection
+
+### Metrics Documentation
+Each service includes comprehensive metrics documentation:
+- **METRICS.md** files with examples and PromQL queries
+- **Label descriptions** and usage guidelines
+- **Cross-metric analysis** examples
+- **Best practices** for dashboard creation
+
 ## Security
 
 ### JWT

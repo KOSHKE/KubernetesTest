@@ -1,0 +1,212 @@
+{
+  "id": null,
+  "title": "Payment Service Metrics",
+  "tags": ["payment-service", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+      {
+        "id": 1,
+        "title": "Payment Processing Rate",
+        "type": "stat",
+        "targets": [
+                     {
+             "expr": "rate(payment_succeeded_total{service=\"payment-service\", status=\"success\"}[5m])",
+             "legendFormat": "Successful Payments/sec"
+           }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Payment Failure Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(payment_failed_total{service=\"payment-service\"}[5m])",
+            "legendFormat": "Failed Payments/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+
+      {
+        "id": 3,
+        "title": "Total Successful Payments",
+        "type": "stat",
+        "targets": [
+                     {
+             "expr": "payment_succeeded_total{service=\"payment-service\", status=\"success\"}",
+             "legendFormat": "Total Success"
+           }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+             {
+         "id": 4,
+         "title": "Payment Processing Duration",
+         "type": "stat",
+         "targets": [
+           {
+             "expr": "rate(payment_processing_duration_seconds_sum{service=\"payment-service\"}[5m]) / rate(payment_processing_duration_seconds_count{service=\"payment-service\"}[5m])",
+             "legendFormat": "Avg Duration (sec)"
+           }
+         ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+             {
+         "id": 5,
+         "title": "Payment Duration Percentiles",
+         "type": "stat",
+         "targets": [
+           {
+             "expr": "histogram_quantile(0.95, rate(payment_processing_duration_seconds_bucket{service=\"payment-service\"}[5m]))",
+             "legendFormat": "95th Percentile"
+           },
+           {
+             "expr": "histogram_quantile(0.50, rate(payment_processing_duration_seconds_bucket{service=\"payment-service\"}[5m]))",
+             "legendFormat": "50th Percentile"
+           }
+         ],
+         "fieldConfig": {
+           "defaults": {
+             "color": {
+               "mode": "palette-classic"
+             },
+             "custom": {
+               "displayMode": "auto"
+             }
+           }
+         },
+         "gridPos": {
+           "h": 8,
+           "w": 12,
+           "x": 0,
+           "y": 16
+         }
+       },
+       {
+         "id": 6,
+         "title": "Service Status",
+         "type": "stat",
+         "targets": [
+           {
+             "expr": "up{job=\"payment-service\"}",
+             "legendFormat": "Service Status"
+           }
+         ],
+         "fieldConfig": {
+           "defaults": {
+             "color": {
+               "mode": "palette-classic"
+             },
+             "custom": {
+               "displayMode": "auto"
+             }
+           }
+         },
+         "gridPos": {
+           "h": 8,
+           "w": 12,
+           "x": 12,
+           "y": 16
+         }
+       },
+             {
+         "id": 7,
+         "title": "Payment Success vs Failure",
+         "type": "piechart",
+         "targets": [
+           {
+             "expr": "payment_succeeded_total{service=\"payment-service\", status=\"success\"}",
+             "legendFormat": "Successful"
+           },
+           {
+             "expr": "payment_failed_total{service=\"payment-service\"}",
+             "legendFormat": "Failed"
+           }
+         ],
+         "fieldConfig": {
+           "defaults": {
+             "color": {
+               "mode": "palette-classic"
+             },
+             "custom": {
+               "displayMode": "auto"
+             }
+           }
+         },
+         "gridPos": {
+           "h": 8,
+           "w": 24,
+           "x": 0,
+           "y": 24
+         }
+       }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "5s"
+}

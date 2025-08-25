@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Port                  string
+	MetricsPort           string
 	KafkaBrokers          string
 	KafkaAutoOffsetReset  string
 	PaymentProcessTimeout time.Duration
@@ -44,6 +45,7 @@ func LoadConfigFromEnv() *Config {
 	}
 	return &Config{
 		Port:                  getEnv("PORT", "50054"),
+		MetricsPort:           getEnv("METRICS_PORT", "9097"),
 		KafkaBrokers:          getEnv("KAFKA_BROKERS", "kafka:9092"),
 		KafkaAutoOffsetReset:  getEnv("KAFKA_AUTO_OFFSET_RESET", "earliest"),
 		PaymentProcessTimeout: procTimeout,

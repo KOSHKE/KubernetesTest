@@ -3,16 +3,15 @@ package clients
 import (
 	"context"
 
+	paymentpb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
 	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
 	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
-	paymentpb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
 )
 
 type PaymentClient interface {
 	Close() error
 	ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*PaymentResponse, error)
 	GetPayment(ctx context.Context, paymentID string) (*Payment, error)
-	RefundPayment(ctx context.Context, paymentID string, amount types.Money, reason string) (*PaymentResponse, error)
 }
 
 type paymentClient struct {
@@ -103,24 +102,6 @@ func (c *paymentClient) GetPayment(ctx context.Context, paymentID string) (*Paym
 	return mapPaymentFromPB(resp.Payment), nil
 }
 
-func (c *paymentClient) RefundPayment(ctx context.Context, paymentID string, amount types.Money, reason string) (*PaymentResponse, error) {
-	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*paymentpb.RefundPaymentResponse, error) {
-		return c.client.RefundPayment(ctx, &paymentpb.RefundPaymentRequest{
-			PaymentId: paymentID,
-			Amount:    &paymentpb.Money{Amount: amount.Amount, Currency: amount.Currency},
-			Reason:    reason,
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &PaymentResponse{
-		Payment: mapPaymentFromPB(resp.Payment),
-		Success: resp.Success,
-		Message: resp.Message,
-	}, nil
-}
-
 func mapMethodToEnum(method string) paymentpb.PaymentMethod {
 	switch method {
 	case "CREDIT_CARD", "credit_card":
@@ -157,8 +138,6 @@ func mapStatusFromEnum(status paymentpb.PaymentStatus) string {
 		return "COMPLETED"
 	case paymentpb.PaymentStatus_PAYMENT_FAILED:
 		return "FAILED"
-	case paymentpb.PaymentStatus_PAYMENT_REFUNDED:
-		return "REFUNDED"
 	case paymentpb.PaymentStatus_PAYMENT_PROCESSING:
 		return "PROCESSING"
 	default:

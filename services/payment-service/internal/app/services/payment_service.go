@@ -8,17 +8,23 @@ import (
 	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/entities"
 	derrors "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/errors"
 	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/domain/valueobjects"
+	"github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/metrics"
 	procport "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/ports/processor"
 )
 
 type PaymentService struct {
 	processor procport.PaymentProcessor
+	metrics   metrics.PaymentMetrics
 	mu        sync.RWMutex
 	payments  map[string]*entities.Payment
 }
 
-func NewPaymentService(processor procport.PaymentProcessor) *PaymentService {
-	return &PaymentService{processor: processor, payments: make(map[string]*entities.Payment)}
+func NewPaymentService(processor procport.PaymentProcessor, metrics metrics.PaymentMetrics) *PaymentService {
+	return &PaymentService{
+		processor: processor,
+		metrics:   metrics,
+		payments:  make(map[string]*entities.Payment),
+	}
 }
 
 // (Clock/IDGenerator injection removed as unused)
@@ -39,8 +45,13 @@ type ProcessPaymentResponse struct {
 }
 
 func (s *PaymentService) ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*ProcessPaymentResponse, error) {
+	start := time.Now()
+
 	res, err := s.processor.Process(ctx, procport.ProcessRequest{CardNumber: req.CardNumber})
 	if err != nil {
+		// Record failed payment
+		s.metrics.PaymentFailed("processor_error")
+		s.metrics.PaymentProcessingDuration(time.Since(start), string(req.Method))
 		return nil, err
 	}
 
@@ -71,6 +82,14 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, req *ProcessPayment
 	s.payments[payment.ID] = payment
 	s.mu.Unlock()
 
+	// Record metrics based on result
+	if res.Success {
+		s.metrics.PaymentSucceeded(string(req.Method))
+	} else {
+		s.metrics.PaymentFailed(res.FailureReason)
+	}
+	s.metrics.PaymentProcessingDuration(time.Since(start), string(req.Method))
+
 	if !res.Success {
 		return &ProcessPaymentResponse{Payment: payment, Success: res.Success, Message: message}, derrors.ErrPaymentDeclined
 	}
@@ -86,26 +105,6 @@ func (s *PaymentService) GetPayment(ctx context.Context, id string) (*entities.P
 		return nil, derrors.ErrPaymentNotFound
 	}
 	return p, nil
-}
-
-func (s *PaymentService) RefundPayment(ctx context.Context, paymentID string, amount valueobjects.Money, reason string) (*entities.Payment, string, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	p, ok := s.payments[paymentID]
-	if !ok {
-		return nil, "", false, derrors.ErrPaymentNotFound
-	}
-	if p.Status != entities.PaymentCompleted {
-		return nil, "", false, derrors.ErrInvalidRefund
-	}
-
-	now := s.now()
-	p.Status = entities.PaymentRefunded
-	p.UpdatedAt = now
-	p.TransactionID = "refund-" + now.Format("20060102150405")
-
-	return p, "Refund processed successfully - Reason: " + reason, true, nil
 }
 
 func (s *PaymentService) now() time.Time { return time.Now() }

@@ -128,12 +128,6 @@ func (r *ProcessPaymentRequest) ToClientRequest() *clients.ProcessPaymentRequest
 	}
 }
 
-// RefundRequest contains information for refunding payment
-type RefundRequest struct {
-	Amount types.Money `json:"amount" binding:"required" msg:"Refund amount is required"`
-	Reason string      `json:"reason" binding:"required,min=10,max=500" msg:"Refund reason must be between 10 and 500 characters"`
-}
-
 // ========== Inventory Requests ==========
 
 // StockCheckRequest contains information for checking stock availability
