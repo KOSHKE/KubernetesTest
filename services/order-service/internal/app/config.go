@@ -16,6 +16,7 @@ type Config struct {
 	DefaultCurrency          string
 	InventoryProviderTimeout time.Duration
 	KafkaAutoOffsetReset     string
+	MetricsPort              string
 }
 
 func LoadConfigFromEnv() *Config {
@@ -36,6 +37,7 @@ func LoadConfigFromEnv() *Config {
 		DefaultCurrency:          getEnv("DEFAULT_CURRENCY", "USD"),
 		InventoryProviderTimeout: timeout,
 		KafkaAutoOffsetReset:     getEnv("KAFKA_AUTO_OFFSET_RESET", "earliest"),
+		MetricsPort:              getEnv("METRICS_PORT", "9095"),
 	}
 }
 

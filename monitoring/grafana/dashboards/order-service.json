@@ -1,0 +1,149 @@
+{
+  "id": null,
+  "title": "Order Service Metrics",
+  "tags": ["order-service", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Order Creation Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(order_created_total{service=\"order-service\", status=\"success\"}[5m])",
+          "legendFormat": "Orders Created/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "title": "Total Orders Created",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "order_created_total{service=\"order-service\", status=\"success\"}",
+          "legendFormat": "Total Orders"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "id": 5,
+      "title": "Kafka Event Processing Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(kafka_event_processed_total{service=\"order-service\", status=\"success\"}[5m])",
+          "legendFormat": "Events Processed/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      }
+    },
+    {
+      "id": 6,
+      "title": "Kafka Event Processing Duration",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(kafka_event_processing_duration_seconds_sum{service=\"order-service\"}[5m]) / rate(kafka_event_processing_duration_seconds_count{service=\"order-service\"}[5m])",
+          "legendFormat": "Avg Duration (sec)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      }
+    },
+    {
+      "id": 7,
+      "title": "Service Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "up{job=\"order-service\"}",
+          "legendFormat": "Service Status"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      }
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "5s"
+}

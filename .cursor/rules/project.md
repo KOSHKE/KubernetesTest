@@ -241,6 +241,29 @@ services/payment-service/
 └── .air.toml                # Air configuration
 ```
 
+### Order Service
+```
+services/order-service/
+├── cmd/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── app/
+│   │   ├── config.go        # Configuration
+│   │   └── run.go           # Service startup
+│   ├── domain/
+│   │   ├── errors/          # Domain errors
+│   │   └── models/          # Order models
+│   ├── infra/
+│   │   ├── clock/           # System clock interface
+│   │   ├── grpc/            # gRPC server
+│   │   ├── kafka/           # Kafka integration (uses pkg/kafkaclient)
+│   │   ├── productinfo/     # Product info provider
+│   │   └── repository/      # GORM repository
+│   └── ports/               # Interfaces
+├── Dockerfile                # Docker image
+└── .air.toml                # Air configuration
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -411,6 +434,12 @@ rate(http_requests_total{service="payment-service", status_code="200"}[5m])
 # Analyze performance by method
 rate(payment_processing_duration_seconds_sum{service="payment-service", method="CREDIT_CARD"}[5m]) /
 rate(payment_processing_duration_seconds_count{service="payment-service", method="CREDIT_CARD"}[5m])
+
+# Order service: Monitor Kafka event processing
+rate(kafka_event_processed_total{service="order-service", event_type="order_creation", status="success"}[5m])
+
+# Order service: Monitor Kafka event processing
+rate(kafka_event_processed_total{service="order-service", event_type="order_creation", status="success"}[5m])
 ```
 
 ### Metrics Implementation
@@ -423,6 +452,15 @@ type PaymentMetrics interface {
     PaymentSucceeded(method string)
     PaymentFailed(reason string)
     PaymentProcessingDuration(duration time.Duration, method string)
+    metrics.Metrics // Inherits HTTP metrics from pkg/metrics
+}
+
+// Example: Order Service Metrics
+type OrderMetrics interface {
+    OrderCreated(currency string)
+    OrderCreationFailed(reason string)
+    EventProcessed(eventType string, success bool)
+    EventProcessingDuration(duration time.Duration, eventType string)
     metrics.Metrics // Inherits HTTP metrics from pkg/metrics
 }
 ```
@@ -441,6 +479,17 @@ Each service has a dedicated dashboard showing:
 3. **Performance Metrics** - average duration and percentiles
 4. **Service Health** - Prometheus `up` metric
 5. **Comparison Views** - pie charts for success vs failure ratios
+
+**Order Service Dashboard** includes:
+- Order creation rates
+- Kafka event processing metrics
+- Service health monitoring
+
+**Payment Service Dashboard** includes:
+- Payment success/failure rates
+- Processing duration metrics
+- Method-based analysis
+- Service health monitoring
 
 #### **Dashboard Configuration**
 - **Refresh Rate**: 5-10 seconds for real-time monitoring
@@ -478,6 +527,11 @@ Each service includes comprehensive metrics documentation:
 - **Label descriptions** and usage guidelines
 - **Cross-metric analysis** examples
 - **Best practices** for dashboard creation
+
+**Available Documentation**:
+- **Payment Service**: `services/payment-service/METRICS.md`
+- **Order Service**: `services/order-service/METRICS.md`
+- **User Service**: Service-specific metrics implementation
 
 ## Security
 

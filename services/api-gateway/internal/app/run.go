@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -56,7 +57,29 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 	promMetrics := metrics.NewPrometheusMetrics("api-gateway")
 	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, sugar.Desugar())
 
-	router := gin.Default()
+	router := gin.New() // Use gin.New() instead of gin.Default() to avoid default logging
+
+	// Add custom logging middleware that excludes /metrics
+	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		// Skip logging for metrics endpoint
+		if param.Path == "/metrics" {
+			return ""
+		}
+
+		// Custom log format
+		return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %s\n",
+			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
+			param.StatusCode,
+			param.Latency,
+			param.ClientIP,
+			param.Method,
+			param.Path,
+		)
+	}))
+
+	// Add recovery middleware
+	router.Use(gin.Recovery())
+
 	// Strict CORS for prod via env list
 	allowed := func() []string {
 		var o []string
@@ -105,6 +128,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 
 	// Add metrics middleware to track HTTP requests
 	router.Use(func(c *gin.Context) {
+		// Skip metrics endpoint to avoid log pollution
+		if c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
+
 		start := time.Now()
 		c.Next()
 		duration := time.Since(start)

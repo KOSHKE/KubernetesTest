@@ -18,13 +18,12 @@ scrape_configs:
     scrape_interval: 3s
     scrape_timeout: 2s
 
-  # Temporarily disabled until services are ready
-  # - job_name: 'order-service'
-  #   static_configs:
-  #     - targets: ['order-service:9095']
-  #   metrics_path: /metrics
-  #   scrape_interval: 5s
-  #   scrape_timeout: 3s
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['order-service:9095']
+    metrics_path: /metrics
+    scrape_interval: 3s
+    scrape_timeout: 2s
 
   # - job_name: 'inventory-service'
   #   static_configs:

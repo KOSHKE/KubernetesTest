@@ -8,24 +8,25 @@ import (
 
 	"github.com/kubernetestest/ecommerce-platform/proto-go/events"
 	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/app/services"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/models"
-	clockimpl "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/clock"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/application/dto"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/application/services"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/ports/productinfo"
+	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/valueobjects"
 	ordergrpc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/grpc"
 	con "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/kafka/consumer"
 	pub "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/kafka/publisher"
 	productinfoimpl "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/productinfo"
 	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/infra/repository"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/ports/productinfo"
+	ordermetrics "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/metrics"
 
 	pkglogger "github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	pkgmetrics "github.com/kubernetestest/ecommerce-platform/pkg/metrics"
 	"go.uber.org/zap"
 	gogrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-
 )
 
 func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
@@ -84,24 +85,29 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		log.Infow("inventory provider not configured")
 	}
 
+	// Initialize metrics
+	metricsInstance := ordermetrics.NewOrderMetrics()
+
 	// Build service with the new constructor
 	orderService := services.NewOrderService(
 		orderRepo,
-		clockimpl.NewSystemClock(),
 		prod,
 		provider,
 		logger,
+		metricsInstance,
 	)
 
 	// Optional Kafka consumer (payments)
 	var wg sync.WaitGroup
 	if brokers != "" {
 		if cons, err := con.NewConsumer(brokers, "order-service", cfg.KafkaAutoOffsetReset, con.PaymentProcessedHandlerFunc(func(cctx context.Context, evt *events.PaymentProcessed) error {
-			status := models.OrderStatusConfirmed
-			if !evt.Success {
-				status = models.OrderStatusCancelled
+			var status valueobjects.OrderStatus
+			if evt.Success {
+				status = valueobjects.OrderStatusConfirmed
+			} else {
+				status = valueobjects.OrderStatusCancelled
 			}
-			if _, err := orderService.UpdateOrderStatus(cctx, &services.UpdateOrderStatusRequest{OrderID: evt.OrderId, Status: status}); err != nil {
+			if _, err := orderService.UpdateOrderStatus(cctx, &dto.UpdateOrderStatusRequest{OrderID: evt.OrderId, Status: status}); err != nil {
 				log.Warnw("update order status failed", "orderID", evt.OrderId, "status", status, "error", err)
 			}
 			return nil
@@ -115,8 +121,21 @@ func Run(ctx context.Context, cfg *Config, logger *zap.Logger) error {
 		}
 	}
 
+	// Start metrics server
+	metricsServer := pkgmetrics.NewMetricsServer(cfg.MetricsPort, logger)
+	go func() {
+		if err := metricsServer.Start(); err != nil {
+			log.Errorw("metrics server failed", "error", err)
+		}
+	}()
+	defer func() {
+		if err := metricsServer.Shutdown(ctx); err != nil {
+			log.Errorw("metrics server shutdown failed", "error", err)
+		}
+	}()
+
 	server := gogrpc.NewServer()
-	ordergrpc.RegisterOrderPBServer(server, orderService, cfg.DefaultCurrency)
+	ordergrpc.RegisterOrderPBServer(server, orderService, cfg.DefaultCurrency, metricsInstance)
 
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
