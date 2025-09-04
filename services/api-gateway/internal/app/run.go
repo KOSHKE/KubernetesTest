@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/config"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/handlers"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/middleware"
+	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/services/api-gateway/internal/clients"
+	"ecommerce-platform/services/api-gateway/internal/config"
+	"ecommerce-platform/services/api-gateway/internal/handlers"
+	"ecommerce-platform/services/api-gateway/internal/middleware"
 
 	cors "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -54,7 +54,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 	paymentHandler := handlers.NewPaymentHandler(paymentClient)
 
 	// Initialize metrics
-	promMetrics := metrics.NewPrometheusMetrics("api-gateway")
+	promMetrics := metrics.NewPrometheusMetrics("api-gateway", nil)
 	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, sugar.Desugar())
 
 	router := gin.New() // Use gin.New() instead of gin.Default() to avoid default logging
@@ -175,7 +175,6 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 			payments := protected.Group("/payments")
 			{
 				payments.POST("", paymentHandler.ProcessPayment)
-				payments.GET("/:id", paymentHandler.GetPayment)
 			}
 		}
 
@@ -202,7 +201,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
 
 	// Start metrics server
 	metricsErr := make(chan error, 1)
-	go func() { metricsErr <- metricsServer.Start() }()
+	go func() { metricsErr <- metricsServer.Start(ctx) }()
 	sugar.Infow("metrics server starting", "port", cfg.MetricsPort)
 
 	serveErr := make(chan error, 1)

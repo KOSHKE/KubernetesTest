@@ -21,9 +21,10 @@ import EmptyState from '../components/ui/EmptyState';
 
 interface OrdersPageProps {
   isAuthenticated: boolean;
+  user: { id: string; email: string; first_name: string; last_name: string } | null;
 }
 
-const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated }) => {
+const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated, user }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

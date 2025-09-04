@@ -1,6 +1,6 @@
 package conversion
 
-import "github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+import "ecommerce-platform/pkg/common/valueobjects"
 
 // PBMoney is a minimal interface satisfied by protobuf Money messages.
 type PBMoney interface {
@@ -8,11 +8,11 @@ type PBMoney interface {
 	GetCurrency() string
 }
 
-// MoneyFromPB converts a protobuf Money-like message to internal types.Money.
+// MoneyFromPB converts a protobuf Money-like message to internal valueobjects.Money.
 // Returns zero-value Money when m is nil.
-func MoneyFromPB(m PBMoney) types.Money {
+func MoneyFromPB(m PBMoney) valueobjects.Money {
 	if m == nil {
-		return types.Money{}
+		return valueobjects.Money{}
 	}
-	return types.Money{Amount: m.GetAmount(), Currency: m.GetCurrency()}
+	return valueobjects.Money{Amount: m.GetAmount(), Currency: m.GetCurrency()}
 }

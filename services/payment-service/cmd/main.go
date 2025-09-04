@@ -6,20 +6,20 @@ import (
 	"os/signal"
 	"syscall"
 
-	app "github.com/kubernetestest/ecommerce-platform/services/payment-service/internal/app"
+	"ecommerce-platform/pkg/config"
+	app "ecommerce-platform/services/payment-service/internal/app"
 
 	"go.uber.org/zap"
 )
-
-type Config struct {
-	Port string
-}
 
 func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	cfg := app.LoadConfigFromEnv()
+	cfg, err := config.LoadPaymentConfig()
+	if err != nil {
+		logger.Fatal("failed to load configuration", zap.Error(err))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()

@@ -16,6 +16,7 @@ message OrderCreated {
   int64 total_amount = 4; // minor units
   string currency = 5;    // ISO 4217
   string occurred_at = 6; // RFC3339
+  string payment_method = 7; // payment method (e.g., "CREDIT_CARD", "DEBIT_CARD")
 }
 
 

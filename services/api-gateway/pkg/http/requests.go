@@ -1,8 +1,8 @@
 package http
 
 import (
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/services/api-gateway/internal/clients"
 )
 
 // ========== User Requests ==========
@@ -50,6 +50,7 @@ type CreateOrderRequest struct {
 	ShippingAddress string             `json:"shipping_address" binding:"required,min=10,max=200" msg:"Shipping address must be between 10 and 200 characters"`
 	PaymentDetails  PaymentDetails     `json:"payment_details" binding:"required" msg:"Payment details are required"`
 	PaymentMethod   string             `json:"payment_method" binding:"required,oneof=credit_card debit_card paypal" msg:"Payment method must be credit_card, debit_card, or paypal"`
+	Currency        string             `json:"currency" binding:"required,oneof=USD EUR GBP" msg:"Currency must be USD, EUR, or GBP"`
 }
 
 // ToClientRequest converts CreateOrderRequest to clients.CreateOrderRequest
@@ -63,6 +64,7 @@ func (r *CreateOrderRequest) ToClientRequest() *clients.CreateOrderRequest {
 		UserID:          r.UserID,
 		Items:           items,
 		ShippingAddress: r.ShippingAddress,
+		Currency:        r.Currency,
 	}
 }
 
@@ -82,7 +84,7 @@ func (r *CreateOrderRequest) ToStockCheckRequest() *clients.StockCheckRequest {
 // OrderItemRequest contains information for an order item
 type OrderItemRequest struct {
 	ProductID string `json:"product_id" binding:"required" msg:"Product ID is required"`
-	Quantity  int32  `json:"quantity" binding:"required,min=1,max=100" msg:"Quantity must be between 1 and 100"`
+	Quantity  int32  `json:"quantity" binding:"required,min=1,max=1000" msg:"Quantity must be between 1 and 1000"`
 }
 
 // ToClientRequest converts OrderItemRequest to clients.OrderItemRequest
@@ -106,10 +108,10 @@ type PaymentDetails struct {
 
 // ProcessPaymentRequest contains information for processing payment
 type ProcessPaymentRequest struct {
-	OrderID string         `json:"order_id" binding:"required,uuid" msg:"Valid order ID is required"`
-	UserID  string         `json:"user_id" binding:"required,uuid" msg:"Valid user ID is required"`
-	Amount  types.Money    `json:"amount" binding:"required" msg:"Payment amount is required"`
-	Details PaymentDetails `json:"details" binding:"required" msg:"Payment details are required"`
+	OrderID string             `json:"order_id" binding:"required,uuid" msg:"Valid order ID is required"`
+	UserID  string             `json:"user_id" binding:"required,uuid" msg:"Valid user ID is required"`
+	Amount  valueobjects.Money `json:"amount" binding:"required" msg:"Payment amount is required"`
+	Details PaymentDetails     `json:"details" binding:"required" msg:"Payment details are required"`
 }
 
 // ToClientRequest converts ProcessPaymentRequest to clients.ProcessPaymentRequest

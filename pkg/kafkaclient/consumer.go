@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/logger"
 )
 
 // Consumer wraps a confluent-kafka consumer with optimized worker pool

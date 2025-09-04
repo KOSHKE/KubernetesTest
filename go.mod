@@ -1,4 +1,4 @@
-module github.com/kubernetestest/ecommerce-platform
+module ecommerce-platform
 
 go 1.25
 

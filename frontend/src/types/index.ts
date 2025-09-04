@@ -104,8 +104,12 @@ export interface PaymentDetails {
 
 export interface CreateOrderRequest {
   user_id: string; // Required user_id for order creation
-  items: { product_id: string; quantity: number }[];
+  items: { 
+    product_id: string; 
+    quantity: number;
+  }[];
   shipping_address: string;
   payment_method: string;
   payment_details: PaymentDetails;
+  currency: string; // Required currency for order
 }

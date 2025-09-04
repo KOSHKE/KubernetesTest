@@ -1,14 +1,14 @@
 package grpc
 
 import (
-	appsvc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/application/services"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/metrics"
-	orderpb "github.com/kubernetestest/ecommerce-platform/proto-go/order"
+	orderpb "ecommerce-platform/proto-go/order"
+	"ecommerce-platform/services/order-service/internal/application/services"
 
 	gogrpc "google.golang.org/grpc"
 )
 
-// RegisterOrderPBServer registers the protobuf server implementation
-func RegisterOrderPBServer(server *gogrpc.Server, svc *appsvc.OrderService, defaultCurrency string, m metrics.OrderMetrics) {
-	orderpb.RegisterOrderServiceServer(server, NewPBOrderServer(svc, defaultCurrency, m))
+// RegisterOrderPBServer hides proto dependency from main
+func RegisterOrderPBServer(server *gogrpc.Server, svc *services.OrderApplicationService) {
+	pbServer := NewPBOrderServer(svc)
+	orderpb.RegisterOrderServiceServer(server, pbServer)
 }

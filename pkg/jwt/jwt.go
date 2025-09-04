@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/logger"
 )
 
 // Claims represents JWT claims

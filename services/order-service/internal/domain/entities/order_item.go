@@ -1,7 +1,7 @@
 package entities
 
 import (
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/valueobjects"
+	"ecommerce-platform/pkg/common/valueobjects"
 )
 
 // OrderItem represents an individual item within an order
@@ -9,11 +9,11 @@ type OrderItem struct {
 	ProductID   string
 	ProductName string
 	Quantity    int32
-	UnitPrice   *valueobjects.Money
+	UnitPrice   valueobjects.Money
 }
 
 // NewOrderItem creates a new OrderItem
-func NewOrderItem(productID, productName string, quantity int32, unitPrice *valueobjects.Money) *OrderItem {
+func NewOrderItem(productID, productName string, quantity int32, unitPrice valueobjects.Money) *OrderItem {
 	return &OrderItem{
 		ProductID:   productID,
 		ProductName: productName,
@@ -27,24 +27,14 @@ func (oi *OrderItem) ChangeQuantity(newQuantity int32) {
 	oi.Quantity = newQuantity
 }
 
-// ChangeUnitPrice changes the item unit price
-func (oi *OrderItem) ChangeUnitPrice(newPrice *valueobjects.Money) error {
-	if oi.UnitPrice.Currency != newPrice.Currency {
-		return valueobjects.ErrCurrencyMismatch
-	}
-
-	oi.UnitPrice = newPrice
-	return nil
-}
-
 // TotalPrice calculates and returns the total price for this item
-func (oi *OrderItem) TotalPrice() *valueobjects.Money {
+func (oi *OrderItem) TotalPrice() valueobjects.Money {
 	return oi.UnitPrice.Multiply(int64(oi.Quantity))
 }
 
 // Currency returns the currency of the item
 func (oi *OrderItem) Currency() string {
-	return oi.UnitPrice.Currency
+	return oi.UnitPrice.Currency.Code()
 }
 
 // UnitPriceAmount returns the unit price amount in minor units

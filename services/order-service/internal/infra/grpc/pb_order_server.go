@@ -2,42 +2,33 @@ package grpc
 
 import (
 	"context"
-	"errors"
-	"time"
+	stdErrors "errors"
 
-	orderpb "github.com/kubernetestest/ecommerce-platform/proto-go/order"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/application/dto"
-	appsvc "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/application/services"
-	derrors "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/errors"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/domain/valueobjects"
-	"github.com/kubernetestest/ecommerce-platform/services/order-service/internal/metrics"
+	"ecommerce-platform/pkg/common/grpcutils"
+	orderpb "ecommerce-platform/proto-go/order"
+	"ecommerce-platform/services/order-service/internal/application/dto"
+	appsvc "ecommerce-platform/services/order-service/internal/application/services"
+	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBOrderServer struct {
 	orderpb.UnimplementedOrderServiceServer
-	svc             *appsvc.OrderService
-	defaultCurrency string
-	metrics         metrics.OrderMetrics
+	svc *appsvc.OrderApplicationService
 }
 
-func NewPBOrderServer(svc *appsvc.OrderService, defaultCurrency string, m metrics.OrderMetrics) *PBOrderServer {
-	return &PBOrderServer{svc: svc, defaultCurrency: defaultCurrency, metrics: m}
+func NewPBOrderServer(svc *appsvc.OrderApplicationService) *PBOrderServer {
+	return &PBOrderServer{svc: svc}
 }
 
 func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrderRequest) (*orderpb.CreateOrderResponse, error) {
-	start := time.Now()
-
 	// Map proto -> app request
 	items := make([]dto.OrderItemRequest, 0, len(req.Items))
 	for _, it := range req.Items {
 		items = append(items, dto.OrderItemRequest{
-			ProductID:   it.ProductId,
-			ProductName: "",
-			Quantity:    it.Quantity,
+			ProductID: it.ProductId,
+			Quantity:  it.Quantity,
 		})
 	}
 
@@ -45,29 +36,19 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 		UserID:          req.UserId,
 		Items:           items,
 		ShippingAddress: req.ShippingAddress,
-		Currency:        s.defaultCurrency,
+		Currency:        req.Currency,
 	})
 	if err != nil {
-		if s.metrics != nil {
-			s.metrics.EventProcessed("order_creation", false)
-			s.metrics.EventProcessingDuration(time.Since(start), "order_creation")
-		}
-		return nil, toStatusErr(err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
-	// Record metrics for successful request
-	if s.metrics != nil {
-		s.metrics.EventProcessed("order_creation", true)
-		s.metrics.EventProcessingDuration(time.Since(start), "order_creation")
-	}
-
-	return &orderpb.CreateOrderResponse{Order: mapOrderResponseToPB(order), Message: "Order created"}, nil
+	return &orderpb.CreateOrderResponse{Order: mapOrderResponseToPB(order)}, nil
 }
 
 func (s *PBOrderServer) GetOrder(ctx context.Context, req *orderpb.GetOrderRequest) (*orderpb.GetOrderResponse, error) {
 	ord, err := s.svc.GetOrder(ctx, &dto.GetOrderRequest{OrderID: req.Id, UserID: req.UserId})
 	if err != nil {
-		return nil, toStatusErr(err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	return &orderpb.GetOrderResponse{Order: mapOrderResponseToPB(ord)}, nil
 }
@@ -75,7 +56,7 @@ func (s *PBOrderServer) GetOrder(ctx context.Context, req *orderpb.GetOrderReque
 func (s *PBOrderServer) GetUserOrders(ctx context.Context, req *orderpb.GetUserOrdersRequest) (*orderpb.GetUserOrdersResponse, error) {
 	response, err := s.svc.GetUserOrders(ctx, &dto.GetUserOrdersRequest{UserID: req.UserId, Page: int(req.Page), Limit: int(req.Limit)})
 	if err != nil {
-		return nil, toStatusErr(err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	out := make([]*orderpb.Order, 0, len(response.Orders))
 	for _, o := range response.Orders {
@@ -85,50 +66,31 @@ func (s *PBOrderServer) GetUserOrders(ctx context.Context, req *orderpb.GetUserO
 }
 
 func (s *PBOrderServer) UpdateOrderStatus(ctx context.Context, req *orderpb.UpdateOrderStatusRequest) (*orderpb.UpdateOrderStatusResponse, error) {
-	start := time.Now()
-
-	var st valueobjects.OrderStatus
+	var st orderValueObjects.OrderStatus
 	switch req.Status {
 	case orderpb.OrderStatus_PENDING:
-		st = valueobjects.OrderStatusPending
+		st = orderValueObjects.OrderStatusPending
 	case orderpb.OrderStatus_CONFIRMED:
-		st = valueobjects.OrderStatusConfirmed
-	case orderpb.OrderStatus_PROCESSING:
-		st = valueobjects.OrderStatusProcessing
-	case orderpb.OrderStatus_SHIPPED:
-		st = valueobjects.OrderStatusShipped
-	case orderpb.OrderStatus_DELIVERED:
-		st = valueobjects.OrderStatusDelivered
+		st = orderValueObjects.OrderStatusConfirmed
 	case orderpb.OrderStatus_CANCELLED:
-		st = valueobjects.OrderStatusCancelled
+		st = orderValueObjects.OrderStatusCancelled
 	default:
-		return nil, status.Error(codes.InvalidArgument, "unknown order status")
+		return nil, grpcutils.MapErrorToStatus(stdErrors.New("unknown order status"))
 	}
 	ord, err := s.svc.UpdateOrderStatus(ctx, &dto.UpdateOrderStatusRequest{OrderID: req.Id, Status: st})
 	if err != nil {
-		// Record metrics for failed request
-		if s.metrics != nil {
-			s.metrics.EventProcessed("order_status_update", false)
-			s.metrics.EventProcessingDuration(time.Since(start), "order_status_update")
-		}
-		return nil, toStatusErr(err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
-	// Record metrics for successful request
-	if s.metrics != nil {
-		s.metrics.EventProcessed("order_status_update", true)
-		s.metrics.EventProcessingDuration(time.Since(start), "order_status_update")
-	}
-
-	return &orderpb.UpdateOrderStatusResponse{Order: mapOrderResponseToPB(ord), Message: "Order status updated"}, nil
+	return &orderpb.UpdateOrderStatusResponse{Order: mapOrderResponseToPB(ord)}, nil
 }
 
 func (s *PBOrderServer) CancelOrder(ctx context.Context, req *orderpb.CancelOrderRequest) (*orderpb.CancelOrderResponse, error) {
 	ord, err := s.svc.CancelOrder(ctx, &dto.CancelOrderRequest{OrderID: req.Id, UserID: req.UserId})
 	if err != nil {
-		return nil, toStatusErr(err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
-	return &orderpb.CancelOrderResponse{Order: mapOrderResponseToPB(ord), Message: "Order cancelled"}, nil
+	return &orderpb.CancelOrderResponse{Order: mapOrderResponseToPB(ord)}, nil
 }
 
 // Mapping helpers
@@ -136,56 +98,35 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 	items := make([]*orderpb.OrderItem, 0, len(o.Items))
 	for _, it := range o.Items {
 		items = append(items, &orderpb.OrderItem{
-			Id:          it.ProductID, // Using ProductID as ID since OrderItem doesn't have separate ID
 			ProductId:   it.ProductID,
 			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
-			Price:       &orderpb.Money{Amount: it.UnitPrice.Amount, Currency: it.UnitPrice.Currency},
-			Total:       &orderpb.Money{Amount: it.TotalPrice.Amount, Currency: it.TotalPrice.Currency},
+			Price:       &orderpb.Money{Amount: it.UnitPrice.Amount, Currency: it.UnitPrice.Currency.Code()},
+			Total:       &orderpb.Money{Amount: it.TotalPrice.Amount, Currency: it.TotalPrice.Currency.Code()},
 		})
 	}
 	return &orderpb.Order{
 		Id:              o.ID,
 		UserId:          o.UserID,
-		Status:          mapOrderStatusToPB(valueobjects.OrderStatus(o.Status)),
+		Status:          mapOrderStatusToPB(orderValueObjects.OrderStatus(o.Status)),
 		Items:           items,
-		TotalAmount:     &orderpb.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency},
+		TotalAmount:     &orderpb.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency.Code()},
 		ShippingAddress: o.ShippingAddress,
 		CreatedAt:       timestamppb.New(o.CreatedAt),
 		UpdatedAt:       timestamppb.New(o.UpdatedAt),
 	}
 }
 
-// mapOrderStatusToPB converts valueobjects.OrderStatus to protobuf OrderStatus
-func mapOrderStatusToPB(s valueobjects.OrderStatus) orderpb.OrderStatus {
+// mapOrderStatusToPB converts orderValueObjects.OrderStatus to protobuf OrderStatus
+func mapOrderStatusToPB(s orderValueObjects.OrderStatus) orderpb.OrderStatus {
 	switch s {
-	case valueobjects.OrderStatusPending:
+	case orderValueObjects.OrderStatusPending:
 		return orderpb.OrderStatus_PENDING
-	case valueobjects.OrderStatusConfirmed:
+	case orderValueObjects.OrderStatusConfirmed:
 		return orderpb.OrderStatus_CONFIRMED
-	case valueobjects.OrderStatusProcessing:
-		return orderpb.OrderStatus_PROCESSING
-	case valueobjects.OrderStatusShipped:
-		return orderpb.OrderStatus_SHIPPED
-	case valueobjects.OrderStatusDelivered:
-		return orderpb.OrderStatus_DELIVERED
-	case valueobjects.OrderStatusCancelled:
+	case orderValueObjects.OrderStatusCancelled:
 		return orderpb.OrderStatus_CANCELLED
 	default:
 		return orderpb.OrderStatus_PENDING
-	}
-}
-
-// toStatusErr maps domain/service errors to gRPC statuses
-func toStatusErr(err error) error {
-	switch {
-	case errors.Is(err, derrors.ErrOrderNotFound):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, derrors.ErrOrderAccessDenied):
-		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, derrors.ErrInvalidArgument):
-		return status.Error(codes.InvalidArgument, err.Error())
-	default:
-		return status.Error(codes.Internal, err.Error())
 	}
 }

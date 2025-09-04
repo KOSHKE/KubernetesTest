@@ -3,42 +3,43 @@ package clients
 import (
 	"context"
 
-	paymentpb "github.com/kubernetestest/ecommerce-platform/proto-go/payment"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
+	"ecommerce-platform/pkg/common/valueobjects"
+	paymentpb "ecommerce-platform/proto-go/payment"
+	"ecommerce-platform/services/api-gateway/pkg/grpc"
 )
+
+// ---------------- Payment Client Interface ----------------
 
 type PaymentClient interface {
 	Close() error
-	ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*PaymentResponse, error)
-	GetPayment(ctx context.Context, paymentID string) (*Payment, error)
+	ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*ProcessPaymentResponse, error)
 }
 
-type paymentClient struct {
-	*grpc.BaseClient
-	client paymentpb.PaymentServiceClient
-}
+// ---------------- Payment Models ----------------
 
+// Payment represents a payment in the system
 type Payment struct {
-	ID            string      `json:"id"`
-	OrderID       string      `json:"order_id"`
-	UserID        string      `json:"user_id"`
-	Amount        types.Money `json:"amount"`
-	Status        string      `json:"status"`
-	Method        string      `json:"method"`
-	TransactionID string      `json:"transaction_id"`
-	CreatedAt     string      `json:"created_at"`
-	UpdatedAt     string      `json:"updated_at"`
+	ID            string             `json:"id"`
+	OrderID       string             `json:"order_id"`
+	UserID        string             `json:"user_id"`
+	Amount        valueobjects.Money `json:"amount"`
+	Status        string             `json:"status"`
+	Method        string             `json:"method"`
+	TransactionID string             `json:"transaction_id"`
+	CreatedAt     string             `json:"created_at"`
+	UpdatedAt     string             `json:"updated_at"`
 }
 
+// ProcessPaymentRequest represents a request to process a payment
 type ProcessPaymentRequest struct {
-	OrderID string         `json:"order_id"`
-	UserID  string         `json:"user_id"`
-	Amount  types.Money    `json:"amount"`
-	Method  string         `json:"method"`
-	Details PaymentDetails `json:"details"`
+	OrderID string             `json:"order_id"`
+	UserID  string             `json:"user_id"`
+	Amount  valueobjects.Money `json:"amount"`
+	Method  string             `json:"method"`
+	Details PaymentDetails     `json:"details"`
 }
 
+// PaymentDetails represents payment method specific details
 type PaymentDetails struct {
 	CardNumber  string `json:"card_number"`
 	CardHolder  string `json:"card_holder"`
@@ -47,11 +48,20 @@ type PaymentDetails struct {
 	CVV         string `json:"cvv"`
 }
 
-type PaymentResponse struct {
+// ProcessPaymentResponse represents the response after processing a payment
+type ProcessPaymentResponse struct {
 	Payment *Payment `json:"payment"`
 	Success bool     `json:"success"`
 	Message string   `json:"message"`
 }
+
+// paymentClient implements PaymentClient interface
+type paymentClient struct {
+	*grpc.BaseClient
+	client paymentpb.PaymentServiceClient
+}
+
+// ---------------- Constructor ----------------
 
 func NewPaymentClient(address string) (PaymentClient, error) {
 	baseClient, err := grpc.NewBaseClient(address)
@@ -64,7 +74,10 @@ func NewPaymentClient(address string) (PaymentClient, error) {
 	}, nil
 }
 
-func (c *paymentClient) ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*PaymentResponse, error) {
+// ---------------- Payment Methods ----------------
+
+// ProcessPayment processes a payment
+func (c *paymentClient) ProcessPayment(ctx context.Context, req *ProcessPaymentRequest) (*ProcessPaymentResponse, error) {
 	grpcReq := &paymentpb.ProcessPaymentRequest{
 		OrderId: req.OrderID,
 		UserId:  req.UserID,
@@ -85,33 +98,20 @@ func (c *paymentClient) ProcessPayment(ctx context.Context, req *ProcessPaymentR
 	if err != nil {
 		return nil, err
 	}
-	return &PaymentResponse{
-		Payment: mapPaymentFromPB(resp.Payment),
-		Success: resp.Success,
-		Message: resp.Message,
+
+	return &ProcessPaymentResponse{
+		Payment: mapPaymentFromPB(resp.GetPayment()),
+		Success: resp.GetSuccess(),
+		Message: resp.GetMessage(),
 	}, nil
 }
 
-func (c *paymentClient) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
-	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*paymentpb.GetPaymentResponse, error) {
-		return c.client.GetPayment(ctx, &paymentpb.GetPaymentRequest{Id: paymentID})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return mapPaymentFromPB(resp.Payment), nil
-}
+// ---------------- Mapping Helpers ----------------
 
 func mapMethodToEnum(method string) paymentpb.PaymentMethod {
 	switch method {
 	case "CREDIT_CARD", "credit_card":
 		return paymentpb.PaymentMethod_CREDIT_CARD
-	case "DEBIT_CARD", "debit_card":
-		return paymentpb.PaymentMethod_DEBIT_CARD
-	case "PAYPAL", "paypal":
-		return paymentpb.PaymentMethod_PAYPAL
-	case "BANK_TRANSFER", "bank_transfer":
-		return paymentpb.PaymentMethod_BANK_TRANSFER
 	default:
 		return paymentpb.PaymentMethod_CREDIT_CARD
 	}
@@ -121,12 +121,6 @@ func mapMethodFromEnum(method paymentpb.PaymentMethod) string {
 	switch method {
 	case paymentpb.PaymentMethod_CREDIT_CARD:
 		return "CREDIT_CARD"
-	case paymentpb.PaymentMethod_DEBIT_CARD:
-		return "DEBIT_CARD"
-	case paymentpb.PaymentMethod_PAYPAL:
-		return "PAYPAL"
-	case paymentpb.PaymentMethod_BANK_TRANSFER:
-		return "BANK_TRANSFER"
 	default:
 		return "CREDIT_CARD"
 	}
@@ -134,12 +128,12 @@ func mapMethodFromEnum(method paymentpb.PaymentMethod) string {
 
 func mapStatusFromEnum(status paymentpb.PaymentStatus) string {
 	switch status {
+	case paymentpb.PaymentStatus_PAYMENT_PENDING:
+		return "PENDING"
 	case paymentpb.PaymentStatus_PAYMENT_COMPLETED:
 		return "COMPLETED"
 	case paymentpb.PaymentStatus_PAYMENT_FAILED:
 		return "FAILED"
-	case paymentpb.PaymentStatus_PAYMENT_PROCESSING:
-		return "PROCESSING"
 	default:
 		return "PENDING"
 	}
@@ -149,9 +143,9 @@ func mapPaymentFromPB(p *paymentpb.Payment) *Payment {
 	if p == nil {
 		return nil
 	}
-	amt := types.Money{}
+	amt := valueobjects.Money{}
 	if p.Amount != nil {
-		amt = types.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency}
+		amt = valueobjects.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency}
 	}
 	return &Payment{
 		ID:            p.Id,

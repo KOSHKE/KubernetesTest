@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
 

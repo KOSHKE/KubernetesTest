@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Entity action constants
@@ -45,6 +44,7 @@ type Metrics interface {
 // PrometheusMetrics implements Metrics interface using Prometheus
 type PrometheusMetrics struct {
 	serviceName string
+	registry    prometheus.Registerer
 
 	// Entity events counter
 	entityEventsCounter *prometheus.CounterVec
@@ -55,35 +55,54 @@ type PrometheusMetrics struct {
 }
 
 // NewPrometheusMetrics creates new Prometheus metrics instance
-func NewPrometheusMetrics(serviceName string) *PrometheusMetrics {
-	return &PrometheusMetrics{
-		serviceName: serviceName,
-		// Entity events counter
-		entityEventsCounter: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "entity_events_total",
-				Help: "Total number of entity events",
-			},
-			[]string{"service", "entity_type", "action", "reason"},
-		),
-
-		// HTTP metrics
-		httpRequestsTotal: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "http_requests_total",
-				Help: "Total number of HTTP requests",
-			},
-			[]string{"service", "method", "endpoint", "status"},
-		),
-		httpRequestDuration: promauto.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "http_request_duration_seconds",
-				Help:    "HTTP request duration in seconds",
-				Buckets: prometheus.ExponentialBuckets(0.01, 2, 10),
-			},
-			[]string{"service", "method", "endpoint"},
-		),
+func NewPrometheusMetrics(serviceName string, registry prometheus.Registerer) *PrometheusMetrics {
+	if registry == nil {
+		registry = prometheus.DefaultRegisterer
 	}
+
+	metrics := &PrometheusMetrics{
+		serviceName: serviceName,
+		registry:    registry,
+	}
+
+	// Entity events counter
+	metrics.entityEventsCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: serviceName,
+			Name:      "entity_events_total",
+			Help:      "Total number of entity events",
+		},
+		[]string{"service", "entity_type", "action", "reason"},
+	)
+
+	// HTTP metrics
+	metrics.httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: serviceName,
+			Name:      "http_requests_total",
+			Help:      "Total number of HTTP requests",
+		},
+		[]string{"service", "method", "endpoint", "status"},
+	)
+
+	metrics.httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: serviceName,
+			Name:      "http_request_duration_seconds",
+			Help:      "HTTP request duration in seconds",
+			Buckets:   prometheus.DefBuckets, // Standard Prometheus buckets
+		},
+		[]string{"service", "method", "endpoint"},
+	)
+
+	// Register all metrics with the registry
+	registry.MustRegister(
+		metrics.entityEventsCounter,
+		metrics.httpRequestsTotal,
+		metrics.httpRequestDuration,
+	)
+
+	return metrics
 }
 
 // EntityEvent increments entity event counter
@@ -103,4 +122,16 @@ func (m *PrometheusMetrics) HTTPRequestsTotal(method, endpoint, status string) {
 // HTTPRequestDuration records HTTP request duration
 func (m *PrometheusMetrics) HTTPRequestDuration(method, endpoint string, duration time.Duration) {
 	m.httpRequestDuration.WithLabelValues(m.serviceName, method, endpoint).Observe(duration.Seconds())
+}
+
+// GetRegistry returns the underlying prometheus registry
+func (m *PrometheusMetrics) GetRegistry() prometheus.Registerer {
+	return m.registry
+}
+
+// ResetMetrics removes all metrics from the registry (mainly for testing)
+func (m *PrometheusMetrics) ResetMetrics() {
+	m.registry.Unregister(m.entityEventsCounter)
+	m.registry.Unregister(m.httpRequestsTotal)
+	m.registry.Unregister(m.httpRequestDuration)
 }

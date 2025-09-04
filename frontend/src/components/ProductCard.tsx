@@ -27,10 +27,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
 }) => {
   const [rating] = useState(4.2 + Math.random() * 0.8); // Random rating for demo
 
-  const formatMoney = (m?: { amount: number; currency: string }) => {
-    if (!m) return '';
-    const major = (m.amount / 100).toFixed(2);
-    return `${major} ${m.currency}`;
+  const formatMoney = (price?: { amount: number; currency: string }) => {
+    if (!price || !price.amount || !price.currency) return 'Price not available';
+    const major = (price.amount / 100).toFixed(2);
+    return `${major} ${price.currency}`;
   };
 
   const handleAddToCart = () => {
@@ -38,7 +38,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const isOutOfStock = product.stock_quantity === 0;
-  const price = formatMoney((product as any).price as any);
+  const price = formatMoney(product.price);
 
   return (
     <Card

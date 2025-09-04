@@ -4,65 +4,30 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
-)
-
-// ========== Domain Errors ==========
-
-var (
-	// User Domain Errors
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrEmailAlreadyExists = errors.New("email already exists")
-	ErrInvalidUserData    = errors.New("invalid user data")
-	ErrUserUpdateFailed   = errors.New("failed to update user")
-
-	// Order Domain Errors
-	ErrOrderNotFound       = errors.New("order not found")
-	ErrOrderCreationFailed = errors.New("failed to create order")
-	ErrOrderUpdateFailed   = errors.New("failed to update order")
-
-	ErrInvalidOrderData  = errors.New("invalid order data")
-	ErrInsufficientStock = errors.New("insufficient stock")
-	ErrMissingUserID     = errors.New("user_id is required for order operations")
-
-	// Payment Domain Errors
-	ErrPaymentNotFound     = errors.New("payment not found")
-	ErrPaymentFailed       = errors.New("payment processing failed")
-	ErrPaymentRefundFailed = errors.New("payment refund failed")
-	ErrInvalidPaymentData  = errors.New("invalid payment data")
-	ErrInsufficientFunds   = errors.New("insufficient funds")
-	ErrCardDeclined        = errors.New("card declined")
-
-	// Inventory Domain Errors
-	ErrProductNotFound       = errors.New("product not found")
-	ErrStockCheckFailed      = errors.New("stock check failed")
-	ErrProductCreationFailed = errors.New("failed to create product")
-	ErrProductUpdateFailed   = errors.New("failed to update product")
-	ErrInvalidProductData    = errors.New("invalid product data")
-	ErrStockUpdateFailed     = errors.New("failed to update stock")
+	commonErrors "ecommerce-platform/pkg/common/errors"
 )
 
 // ========== Error Handlers ==========
 
 // HandleUserClientError handles user client errors with appropriate HTTP status codes
 func HandleUserClientError(c *gin.Context, err error, operation string) {
-	if errors.Is(err, ErrUserNotFound) {
+	if errors.Is(err, commonErrors.ErrUserNotFound) {
 		RespondNotFound(c, "User not found")
 		return
 	}
-	if errors.Is(err, ErrInvalidCredentials) {
+	if errors.Is(err, commonErrors.ErrInvalidCredentials) {
 		RespondUnauthorized(c, "Invalid credentials")
 		return
 	}
-	if errors.Is(err, ErrEmailAlreadyExists) {
+	if errors.Is(err, commonErrors.ErrEmailAlreadyExists) {
 		RespondBadRequest(c, "Email already exists")
 		return
 	}
-	if errors.Is(err, ErrInvalidUserData) {
+	if errors.Is(err, commonErrors.ErrInvalidUserData) {
 		RespondBadRequest(c, "Invalid user data provided")
 		return
 	}
-	if errors.Is(err, ErrUserUpdateFailed) {
+	if errors.Is(err, commonErrors.ErrUserUpdateFailed) {
 		RespondInternalError(c, "Failed to update user profile")
 		return
 	}
@@ -73,28 +38,28 @@ func HandleUserClientError(c *gin.Context, err error, operation string) {
 
 // HandleOrderClientError handles order client errors with appropriate HTTP status codes
 func HandleOrderClientError(c *gin.Context, err error, operation string) {
-	if errors.Is(err, ErrOrderNotFound) {
+	if errors.Is(err, commonErrors.ErrOrderNotFound) {
 		RespondNotFound(c, "Order not found")
 		return
 	}
-	if errors.Is(err, ErrOrderCreationFailed) {
+	if errors.Is(err, commonErrors.ErrOrderCreationFailed) {
 		RespondBadRequest(c, "Failed to create order")
 		return
 	}
-	if errors.Is(err, ErrOrderUpdateFailed) {
+	if errors.Is(err, commonErrors.ErrOrderUpdateFailed) {
 		RespondBadRequest(c, "Failed to update order")
 		return
 	}
 
-	if errors.Is(err, ErrInvalidOrderData) {
+	if errors.Is(err, commonErrors.ErrInvalidOrderData) {
 		RespondBadRequest(c, "Invalid order data provided")
 		return
 	}
-	if errors.Is(err, ErrInsufficientStock) {
+	if errors.Is(err, commonErrors.ErrInsufficientStock) {
 		RespondBadRequest(c, "Insufficient stock for requested items")
 		return
 	}
-	if errors.Is(err, ErrMissingUserID) {
+	if errors.Is(err, commonErrors.ErrMissingUserID) {
 		RespondBadRequest(c, "User ID is required for order operations")
 		return
 	}
@@ -105,28 +70,60 @@ func HandleOrderClientError(c *gin.Context, err error, operation string) {
 
 // HandlePaymentClientError handles payment client errors with appropriate HTTP status codes
 func HandlePaymentClientError(c *gin.Context, err error, operation string) {
-	if errors.Is(err, ErrPaymentNotFound) {
+	if errors.Is(err, commonErrors.ErrPaymentNotFound) {
 		RespondNotFound(c, "Payment not found")
 		return
 	}
-	if errors.Is(err, ErrPaymentFailed) {
+	if errors.Is(err, commonErrors.ErrPaymentValidationFailed) {
+		RespondBadRequest(c, "Payment validation failed")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentCreationFailed) {
+		RespondInternalError(c, "Failed to create payment")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentPersistenceFailed) {
+		RespondInternalError(c, "Failed to persist payment")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentEventPublishFailed) {
+		RespondInternalError(c, "Failed to publish payment event")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentEventMarshalFailed) {
+		RespondInternalError(c, "Failed to marshal payment event")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentEventConsumerFailed) {
+		RespondInternalError(c, "Failed to consume payment event")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentFailed) {
 		RespondError(c, 402, "Payment processing failed")
 		return
 	}
-	if errors.Is(err, ErrPaymentRefundFailed) {
-		RespondBadRequest(c, "Failed to process refund")
+	if errors.Is(err, commonErrors.ErrPaymentRefundFailed) {
+		RespondError(c, 402, "Failed to process refund")
 		return
 	}
-	if errors.Is(err, ErrInvalidPaymentData) {
+	if errors.Is(err, commonErrors.ErrInvalidPaymentData) {
 		RespondBadRequest(c, "Invalid payment data provided")
 		return
 	}
-	if errors.Is(err, ErrInsufficientFunds) {
+	if errors.Is(err, commonErrors.ErrInsufficientFunds) {
 		RespondError(c, 402, "Insufficient funds")
 		return
 	}
-	if errors.Is(err, ErrCardDeclined) {
+	if errors.Is(err, commonErrors.ErrCardDeclined) {
 		RespondError(c, 402, "Card declined")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentDeclined) {
+		RespondError(c, 402, "Payment declined")
+		return
+	}
+	if errors.Is(err, commonErrors.ErrPaymentAlreadyProcessed) {
+		RespondBadRequest(c, "Payment has already been processed")
 		return
 	}
 
@@ -136,27 +133,27 @@ func HandlePaymentClientError(c *gin.Context, err error, operation string) {
 
 // HandleInventoryClientError handles inventory client errors with appropriate HTTP status codes
 func HandleInventoryClientError(c *gin.Context, err error, operation string) {
-	if errors.Is(err, ErrProductNotFound) {
+	if errors.Is(err, commonErrors.ErrProductNotFound) {
 		RespondNotFound(c, "Product not found")
 		return
 	}
-	if errors.Is(err, ErrStockCheckFailed) {
+	if errors.Is(err, commonErrors.ErrStockCheckFailed) {
 		RespondInternalError(c, "Failed to check stock availability")
 		return
 	}
-	if errors.Is(err, ErrProductCreationFailed) {
+	if errors.Is(err, commonErrors.ErrProductCreationFailed) {
 		RespondBadRequest(c, "Failed to create product")
 		return
 	}
-	if errors.Is(err, ErrProductUpdateFailed) {
+	if errors.Is(err, commonErrors.ErrProductUpdateFailed) {
 		RespondBadRequest(c, "Failed to update product")
 		return
 	}
-	if errors.Is(err, ErrInvalidProductData) {
+	if errors.Is(err, commonErrors.ErrInvalidProductData) {
 		RespondBadRequest(c, "Invalid product data provided")
 		return
 	}
-	if errors.Is(err, ErrStockUpdateFailed) {
+	if errors.Is(err, commonErrors.ErrStockUpdateFailed) {
 		RespondInternalError(c, "Failed to update stock")
 		return
 	}

@@ -11,7 +11,6 @@ service UserService {
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
-  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
@@ -59,13 +58,6 @@ message GetUserRequest {
 
 message GetUserResponse {
   User user = 1;
-}
-
-message UpdateUserRequest {
-  string id = 1;
-  string first_name = 2;
-  string last_name = 3;
-  string phone = 4;
 }
 
 message UpdateUserResponse {

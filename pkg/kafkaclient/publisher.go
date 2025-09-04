@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/kubernetestest/ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/logger"
 )
 
 // Publisher defines interface for publishing messages

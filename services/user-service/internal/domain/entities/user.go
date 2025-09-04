@@ -2,101 +2,33 @@ package entities
 
 import (
 	"time"
-	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/domain/valueobjects"
+
+	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
 )
 
 // User represents the User aggregate root
 type User struct {
-	id        string
-	email     valueobjects.Email
-	password  valueobjects.Password
-	profile   *Profile
-	createdAt time.Time
-	updatedAt time.Time
-}
-
-type Profile struct {
-	firstName string
-	lastName  string
-	phone     string
+	ID        string
+	Email     valueobjects.Email
+	Password  valueobjects.Password
+	FirstName valueobjects.Name
+	LastName  valueobjects.Name
+	Phone     valueobjects.Phone
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // NewUser creates a new User aggregate
-func NewUser(id string, email valueobjects.Email, password valueobjects.Password, firstName, lastName, phone string) *User {
+func NewUser(id string, email valueobjects.Email, password valueobjects.Password, firstName, lastName valueobjects.Name, phone valueobjects.Phone) *User {
 	now := time.Now()
 	return &User{
-		id:       id,
-		email:    email,
-		password: password,
-		profile: &Profile{
-			firstName: firstName,
-			lastName:  lastName,
-			phone:     phone,
-		},
-		createdAt: now,
-		updatedAt: now,
+		ID:        id,
+		Email:     email,
+		Password:  password,
+		FirstName: firstName,
+		LastName:  lastName,
+		Phone:     phone,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
-}
-
-// Getters
-func (u *User) ID() string {
-	return u.id
-}
-
-func (u *User) Email() valueobjects.Email {
-	return u.email
-}
-
-func (u *User) Password() valueobjects.Password {
-	return u.password
-}
-
-func (u *User) FirstName() string {
-	if u.profile == nil {
-		return ""
-	}
-	return u.profile.firstName
-}
-
-func (u *User) LastName() string {
-	if u.profile == nil {
-		return ""
-	}
-	return u.profile.lastName
-}
-
-func (u *User) Phone() string {
-	if u.profile == nil {
-		return ""
-	}
-	return u.profile.phone
-}
-
-func (u *User) CreatedAt() time.Time {
-	return u.createdAt
-}
-
-func (u *User) UpdatedAt() time.Time {
-	return u.updatedAt
-}
-
-// Business methods
-func (u *User) UpdateProfile(firstName, lastName, phone string) {
-	if u.profile == nil {
-		u.profile = &Profile{}
-	}
-
-	u.profile.firstName = firstName
-	u.profile.lastName = lastName
-	u.profile.phone = phone
-	u.updatedAt = time.Now()
-}
-
-func (u *User) ChangePassword(newPassword valueobjects.Password) {
-	u.password = newPassword
-	u.updatedAt = time.Now()
-}
-
-func (u *User) ValidatePassword(password string) bool {
-	return u.password.Verify(password)
 }

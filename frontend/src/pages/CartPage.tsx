@@ -26,13 +26,14 @@ type OrderForm = {
 
 interface CartPageProps {
   isAuthenticated: boolean;
+  user: { id: string; email: string; first_name: string; last_name: string } | null;
 }
 
 function formatMinor(amountMinor: number, currency?: string): string {
   return formatMoneyMinor(amountMinor, currency);
 }
 
-const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
+const CartPage: React.FC<CartPageProps> = ({ isAuthenticated, user }) => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -117,7 +118,7 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
 
   const onSubmit = async (data: FormValues) => {
     // Check authentication before proceeding
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !user) {
       navigate('/login', { state: { from: '/cart' } });
       return;
     }
@@ -127,7 +128,7 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
 
     try {
       const orderData: CreateOrderRequest = {
-        user_id: 'dev-user-1', // Temporary user_id for development
+        user_id: user.id, // Use real user ID instead of hardcoded dev-user-1
         items: cartItems.map(item => ({
           product_id: item.product_id,
           quantity: item.quantity,
@@ -141,6 +142,7 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
           expiry_year: data.expiry_year,
           cvv: data.cvv,
         },
+        currency: cartItems[0]?.price?.currency || 'USD', // Use currency from first item or default to USD
       };
 
       try {
@@ -184,6 +186,11 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated }) => {
   return (
     <Container sx={{ mt: 4 }}>
       <Typography variant="h4" sx={{ mb: 2 }}>Shopping Cart</Typography>
+      {user && (
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+          Welcome back, {user.first_name}! Ready to complete your order?
+        </Typography>
+      )}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>

@@ -15,8 +15,6 @@ message Money {
 // Payment Service
 service PaymentService {
   rpc ProcessPayment(ProcessPaymentRequest) returns (ProcessPaymentResponse);
-  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
-  rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentResponse);
 }
 
 // Domain Models
@@ -34,17 +32,12 @@ message Payment {
 
 enum PaymentStatus {
   PAYMENT_PENDING = 0;
-  PAYMENT_PROCESSING = 1;
-  PAYMENT_COMPLETED = 2;
-  PAYMENT_FAILED = 3;
-  PAYMENT_REFUNDED = 4;
+  PAYMENT_COMPLETED = 1;
+  PAYMENT_FAILED = 2;
 }
 
 enum PaymentMethod {
   CREDIT_CARD = 0;
-  DEBIT_CARD = 1;
-  PAYPAL = 2;
-  BANK_TRANSFER = 3;
 }
 
 // Request/Response Messages
@@ -65,26 +58,6 @@ message PaymentDetails {
 }
 
 message ProcessPaymentResponse {
-  Payment payment = 1;
-  bool success = 2;
-  string message = 3;
-}
-
-message GetPaymentRequest {
-  string id = 1;
-}
-
-message GetPaymentResponse {
-  Payment payment = 1;
-}
-
-message RefundPaymentRequest {
-  string payment_id = 1;
-  Money amount = 2;
-  string reason = 3;
-}
-
-message RefundPaymentResponse {
   Payment payment = 1;
   bool success = 2;
   string message = 3;

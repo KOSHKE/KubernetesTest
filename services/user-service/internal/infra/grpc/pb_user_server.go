@@ -2,128 +2,143 @@ package grpc
 
 import (
 	"context"
+	"time"
 
-	userpb "github.com/kubernetestest/ecommerce-platform/proto-go/user"
-	"github.com/kubernetestest/ecommerce-platform/services/user-service/internal/app/services"
+	"ecommerce-platform/pkg/common/grpcutils"
+	userpb "ecommerce-platform/proto-go/user"
+	"ecommerce-platform/services/user-service/internal/application/dto"
+	appsvc "ecommerce-platform/services/user-service/internal/application/services"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBUserServer struct {
 	userpb.UnimplementedUserServiceServer
-	svc *services.UserService
+	svc *appsvc.UserApplicationService
 }
 
-func NewPBUserServer(svc *services.UserService) *PBUserServer {
+func NewPBUserServer(svc *appsvc.UserApplicationService) *PBUserServer {
 	return &PBUserServer{svc: svc}
 }
 
 func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest) (*userpb.RegisterResponse, error) {
-	resp, err := s.svc.RegisterUser(ctx, &services.RegisterUserRequest{
+	// Map proto -> app request
+	appReq := &dto.RegisterUserRequest{
 		Email:     req.Email,
 		Password:  req.Password,
 		FirstName: req.FirstName,
 		LastName:  req.LastName,
 		Phone:     req.Phone,
-	})
-	if err != nil {
-		return nil, err
 	}
+
+	response, err := s.svc.RegisterUser(ctx, appReq)
+	if err != nil {
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
 	return &userpb.RegisterResponse{
-		User: &userpb.User{
-			Id:        resp.Id,
-			Email:     resp.Email,
-			FirstName: resp.FirstName,
-			LastName:  resp.LastName,
-			Phone:     resp.Phone,
-			CreatedAt: resp.CreatedAt,
-			UpdatedAt: resp.UpdatedAt,
-		},
+		User: mapUserResponseToPB(&dto.GetUserResponse{
+			UserID:    response.UserID,
+			Email:     response.Email,
+			FirstName: response.FirstName,
+			LastName:  response.LastName,
+			Phone:     response.Phone,
+			CreatedAt: response.CreatedAt,
+			UpdatedAt: response.CreatedAt, // Use CreatedAt for newly registered user
+		}),
 		Message: "User registered successfully",
 	}, nil
 }
 
 func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*userpb.LoginResponse, error) {
-	resp, err := s.svc.LoginUser(ctx, &services.LoginRequest{Email: req.Email, Password: req.Password})
-	if err != nil {
-		// Record failed login metrics
-		s.svc.RecordFailedLogin("invalid_credentials")
-		return nil, err
+	// Map proto -> app request
+	appReq := &dto.LoginRequest{
+		Email:    req.Email,
+		Password: req.Password,
 	}
 
-	// Debug logging
+	response, err := s.svc.LoginUser(ctx, appReq)
+	if err != nil {
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
 
 	return &userpb.LoginResponse{
-		User: &userpb.User{
-			Id:        resp.User.Id,
-			Email:     resp.User.Email,
-			FirstName: resp.User.FirstName,
-			LastName:  resp.User.LastName,
-			Phone:     resp.User.Phone,
-			CreatedAt: resp.User.CreatedAt,
-			UpdatedAt: resp.User.UpdatedAt,
-		},
-		Message:      "Login successful",
-		AccessToken:  resp.AccessToken,
-		RefreshToken: resp.RefreshToken,
-		ExpiresIn:    resp.ExpiresIn,
+		User: mapUserResponseToPB(&dto.GetUserResponse{
+			UserID:    response.UserID,
+			Email:     response.Email,
+			FirstName: response.FirstName,
+			LastName:  response.LastName,
+			Phone:     response.Phone,
+			CreatedAt: time.Now(), // Use current time for login response
+			UpdatedAt: time.Now(),
+		}),
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
+		ExpiresIn:    int64(time.Until(response.ExpiresAt).Seconds()),
 	}, nil
 }
 
 func (s *PBUserServer) GetUser(ctx context.Context, req *userpb.GetUserRequest) (*userpb.GetUserResponse, error) {
-	u, err := s.svc.GetUser(ctx, req.Id)
-	if err != nil {
-		return nil, err
+	// Map proto -> app request
+	appReq := &dto.GetUserRequest{
+		UserID: req.Id,
 	}
+
+	response, err := s.svc.GetUser(ctx, appReq)
+	if err != nil {
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
 	return &userpb.GetUserResponse{
-		User: &userpb.User{
-			Id:        u.ID(),
-			Email:     u.Email().Value(),
-			FirstName: u.FirstName(),
-			LastName:  u.LastName(),
-			Phone:     u.Phone(),
-			CreatedAt: timestamppb.New(u.CreatedAt()),
-			UpdatedAt: timestamppb.New(u.UpdatedAt()),
-		},
+		User: mapUserResponseToPB(response),
 	}, nil
 }
 
-func (s *PBUserServer) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) (*userpb.UpdateUserResponse, error) {
-	u, err := s.svc.UpdateUser(ctx, req.Id, req.FirstName, req.LastName, req.Phone)
-	if err != nil {
-		return nil, err
-	}
-	return &userpb.UpdateUserResponse{
-		User: &userpb.User{
-			Id:        u.ID(),
-			Email:     u.Email().Value(),
-			FirstName: u.FirstName(),
-			LastName:  u.LastName(),
-			Phone:     u.Phone(),
-			CreatedAt: timestamppb.New(u.CreatedAt()),
-			UpdatedAt: timestamppb.New(u.UpdatedAt()),
-		},
-		Message: "Profile updated",
-	}, nil
-}
-
+// RefreshToken generates new access and refresh token pair
 func (s *PBUserServer) RefreshToken(ctx context.Context, req *userpb.RefreshTokenRequest) (*userpb.RefreshTokenResponse, error) {
-	tokenPair, err := s.svc.RefreshToken(ctx, req.RefreshToken)
-	if err != nil {
-		return nil, err
+	// Map proto -> app request
+	appReq := &dto.RefreshTokenRequest{
+		RefreshToken: req.RefreshToken,
 	}
+
+	response, err := s.svc.RefreshToken(ctx, appReq)
+	if err != nil {
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
 	return &userpb.RefreshTokenResponse{
-		AccessToken: tokenPair.AccessToken,
-		ExpiresIn:   tokenPair.ExpiresIn,
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
+		ExpiresIn:    int64(time.Until(response.ExpiresAt).Seconds()),
 	}, nil
 }
 
+// Logout revokes refresh token
 func (s *PBUserServer) Logout(ctx context.Context, req *userpb.LogoutRequest) (*userpb.LogoutResponse, error) {
-	err := s.svc.Logout(ctx, req.RefreshToken)
-	if err != nil {
-		return nil, err
+	// Map proto -> app request
+	appReq := &dto.LogoutRequest{
+		RefreshToken: req.RefreshToken,
 	}
+
+	err := s.svc.Logout(ctx, appReq)
+	if err != nil {
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
 	return &userpb.LogoutResponse{
 		Message: "Logout successful",
 	}, nil
+}
+
+// Mapping helpers
+func mapUserResponseToPB(u *dto.GetUserResponse) *userpb.User {
+	return &userpb.User{
+		Id:        u.UserID,
+		Email:     u.Email,
+		FirstName: u.FirstName,
+		LastName:  u.LastName,
+		Phone:     u.Phone,
+		CreatedAt: timestamppb.New(u.CreatedAt),
+		UpdatedAt: timestamppb.New(u.UpdatedAt),
+	}
 }

@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/kubernetestest/ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/metrics"
 )
 
 // UserMetrics interface defines user service specific metrics
@@ -10,8 +10,6 @@ type UserMetrics interface {
 	UserCreated()
 	UserLoginSuccess()
 	UserLoginFailed(reason string)
-	UserLogout()
-	UserProfileUpdated()
 
 	// HTTP metrics (reused from pkg/metrics)
 	metrics.Metrics
@@ -24,9 +22,16 @@ type UserPrometheusMetrics struct {
 
 // NewUserMetrics creates new user service metrics instance
 func NewUserMetrics() UserMetrics {
-	return &UserPrometheusMetrics{
-		PrometheusMetrics: metrics.NewPrometheusMetrics("user-service"),
+	baseMetrics := metrics.NewPrometheusMetrics("user-service", nil)
+
+	userMetrics := &UserPrometheusMetrics{
+		PrometheusMetrics: baseMetrics,
 	}
+
+	// Note: User service uses only base metrics from pkg/metrics
+	// No additional service-specific metrics needed for now
+
+	return userMetrics
 }
 
 // UserCreated increments user creation counter
@@ -42,14 +47,4 @@ func (m *UserPrometheusMetrics) UserLoginSuccess() {
 // UserLoginFailed increments failed login counter with reason
 func (m *UserPrometheusMetrics) UserLoginFailed(reason string) {
 	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionLoginFailed, reason)
-}
-
-// UserLogout increments logout counter
-func (m *UserPrometheusMetrics) UserLogout() {
-	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionLogout, "")
-}
-
-// UserProfileUpdated increments profile update counter
-func (m *UserPrometheusMetrics) UserProfileUpdated() {
-	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionUpdated, "")
 }

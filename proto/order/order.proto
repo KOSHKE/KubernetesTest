@@ -56,6 +56,7 @@ message CreateOrderRequest {
   string user_id = 1;
   repeated OrderItemRequest items = 2;
   string shipping_address = 3;
+  string currency = 4;
 }
 
 message OrderItemRequest {

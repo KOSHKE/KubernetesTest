@@ -3,10 +3,10 @@ package clients
 import (
 	"context"
 
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/conversion"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
-	invpb "github.com/kubernetestest/ecommerce-platform/proto-go/inventory"
+	"ecommerce-platform/pkg/common/valueobjects"
+	invpb "ecommerce-platform/proto-go/inventory"
+	"ecommerce-platform/services/api-gateway/pkg/conversion"
+	"ecommerce-platform/services/api-gateway/pkg/grpc"
 )
 
 // ---------------- Inventory Client Interface ----------------
@@ -27,17 +27,17 @@ type inventoryClient struct {
 // ---------------- Inventory Models ----------------
 
 type Product struct {
-	ID            string      `json:"id"`
-	Name          string      `json:"name"`
-	Description   string      `json:"description"`
-	Price         types.Money `json:"price"`
-	CategoryID    string      `json:"category_id"`
-	CategoryName  string      `json:"category_name"`
-	StockQuantity int32       `json:"stock_quantity"`
-	ImageURL      string      `json:"image_url"`
-	IsActive      bool        `json:"is_active"`
-	CreatedAt     string      `json:"created_at"`
-	UpdatedAt     string      `json:"updated_at"`
+	ID            string             `json:"id"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Price         valueobjects.Money `json:"price"`
+	CategoryID    string             `json:"category_id"`
+	CategoryName  string             `json:"category_name"`
+	StockQuantity int32              `json:"stock_quantity"`
+	ImageURL      string             `json:"image_url"`
+	IsActive      bool               `json:"is_active"`
+	CreatedAt     string             `json:"created_at"`
+	UpdatedAt     string             `json:"updated_at"`
 }
 
 type Category struct {

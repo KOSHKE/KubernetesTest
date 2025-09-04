@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/clients"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/internal/middleware"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/http"
+	"ecommerce-platform/services/api-gateway/internal/clients"
+	"ecommerce-platform/services/api-gateway/internal/middleware"
+	"ecommerce-platform/services/api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,38 +45,6 @@ func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 		return nil
 	}, "process payment") {
 		http.RespondSuccess(c, gin.H{"message": "Payment processed successfully"}, "Payment processed successfully")
-	}
-}
-
-// GetPayment retrieves payment information
-func (h *PaymentHandler) GetPayment(c *gin.Context) {
-	userID, ok := middleware.GetUserID(c)
-	if !ok {
-		http.RespondUnauthorized(c, "User not authenticated")
-		return
-	}
-
-	paymentID, ok := h.RequireParam(c, "id")
-	if !ok {
-		return // Error response already sent by RequireParam
-	}
-
-	if h.HandlePaymentClientOperation(c, func() error {
-		// Get payment and verify it belongs to the authenticated user
-		payment, err := h.paymentClient.GetPayment(c.Request.Context(), paymentID)
-		if err != nil {
-			return err
-		}
-
-		// Check if payment belongs to the authenticated user
-		if payment.UserID != userID {
-			http.RespondForbidden(c, "Access denied: payment does not belong to user")
-			return nil
-		}
-
-		return nil
-	}, "get payment") {
-		http.RespondSuccess(c, gin.H{"message": "Payment retrieved successfully"}, "Payment retrieved successfully")
 	}
 }
 

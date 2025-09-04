@@ -11,15 +11,36 @@ import RegisterPage from './pages/RegisterPage';
 import UnauthorizedView from './components/UnauthorizedView';
 import { authService } from './services/auth';
 
+interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     // Check if user is authenticated on app load
     const checkAuth = () => {
       const authenticated = authService.isAuthenticated();
       setIsAuthenticated(authenticated);
+      
+      // If authenticated, try to get user info from localStorage
+      if (authenticated) {
+        const userInfo = localStorage.getItem('user_info');
+        if (userInfo) {
+          try {
+            setUser(JSON.parse(userInfo));
+          } catch (error) {
+            console.error('Failed to parse user info:', error);
+          }
+        }
+      }
+      
       setIsLoading(false);
     };
 
@@ -29,10 +50,14 @@ function App() {
   const handleLogout = async () => {
     await authService.logout();
     setIsAuthenticated(false);
+    setUser(null);
+    localStorage.removeItem('user_info');
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (userData: User) => {
     setIsAuthenticated(true);
+    setUser(userData);
+    localStorage.setItem('user_info', JSON.stringify(userData));
   };
 
   if (isLoading) {
@@ -48,6 +73,7 @@ function App() {
       <Header 
         onLogout={handleLogout} 
         isAuthenticated={isAuthenticated}
+        user={user}
       />
       
       <main>
@@ -72,6 +98,7 @@ function App() {
               element={
                 <CartPage 
                   isAuthenticated={isAuthenticated}
+                  user={user}
                 />
               } 
             />
@@ -81,6 +108,7 @@ function App() {
                 isAuthenticated ? (
                   <OrdersPage 
                     isAuthenticated={isAuthenticated}
+                    user={user}
                   />
                 ) : (
                   <UnauthorizedView />

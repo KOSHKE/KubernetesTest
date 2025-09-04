@@ -82,10 +82,10 @@ const ProductsPage: React.FC<ProductsPageProps> = () => {
     }
   };
 
-  const formatMoney = (m?: { amount: number; currency: string }) => {
-    if (!m) return '';
-    const major = (m.amount / 100).toFixed(2);
-    return `${major} ${m.currency}`;
+  const formatMoney = (price?: { amount: number; currency: string }) => {
+    if (!price || !price.amount || !price.currency) return 'Price not available';
+    const major = (price.amount / 100).toFixed(2);
+    return `${major} ${price.currency}`;
   };
 
   const addToCart = (product: Product) => {
@@ -97,7 +97,7 @@ const ProductsPage: React.FC<ProductsPageProps> = () => {
       existingCart.push({
         product_id: product.id,
         product_name: product.name,
-        price: { amount: (product.price as any)?.amount ?? 0, currency: (product.price as any)?.currency ?? 'USD' },
+        price: { amount: product.price?.amount ?? 0, currency: product.price?.currency ?? 'USD' },
         quantity: 1,
       });
     }

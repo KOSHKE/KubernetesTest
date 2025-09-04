@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/grpc"
-	"github.com/kubernetestest/ecommerce-platform/services/api-gateway/pkg/types"
-	orderpb "github.com/kubernetestest/ecommerce-platform/proto-go/order"
+	"ecommerce-platform/pkg/common/valueobjects"
+	orderpb "ecommerce-platform/proto-go/order"
+	"ecommerce-platform/services/api-gateway/pkg/grpc"
 )
 
 // ---------------- Order Client Interface ----------------
@@ -25,23 +25,23 @@ type orderClient struct {
 // ---------------- Order Models ----------------
 
 type Order struct {
-	ID              string      `json:"id"`
-	UserID          string      `json:"user_id"`
-	Status          string      `json:"status"`
-	Items           []OrderItem `json:"items"`
-	TotalAmount     types.Money `json:"total_amount"`
-	ShippingAddress string      `json:"shipping_address"`
-	CreatedAt       string      `json:"created_at"`
-	UpdatedAt       string      `json:"updated_at"`
+	ID              string             `json:"id"`
+	UserID          string             `json:"user_id"`
+	Status          string             `json:"status"`
+	Items           []OrderItem        `json:"items"`
+	TotalAmount     valueobjects.Money `json:"total_amount"`
+	ShippingAddress string             `json:"shipping_address"`
+	CreatedAt       string             `json:"created_at"`
+	UpdatedAt       string             `json:"updated_at"`
 }
 
 type OrderItem struct {
-	ID          string      `json:"id"`
-	ProductID   string      `json:"product_id"`
-	ProductName string      `json:"product_name"`
-	Quantity    int32       `json:"quantity"`
-	Price       types.Money `json:"price"`
-	Total       types.Money `json:"total"`
+	ID          string             `json:"id"`
+	ProductID   string             `json:"product_id"`
+	ProductName string             `json:"product_name"`
+	Quantity    int32              `json:"quantity"`
+	Price       valueobjects.Money `json:"price"`
+	Total       valueobjects.Money `json:"total"`
 }
 
 type CreateOrderRequest struct {
@@ -74,12 +74,16 @@ func NewOrderClient(address string) (OrderClient, error) {
 func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error) {
 	items := make([]*orderpb.OrderItemRequest, len(req.Items))
 	for i, it := range req.Items {
-		items[i] = &orderpb.OrderItemRequest{ProductId: it.ProductID, Quantity: it.Quantity}
+		items[i] = &orderpb.OrderItemRequest{
+			ProductId: it.ProductID,
+			Quantity:  it.Quantity,
+		}
 	}
 	grpcReq := &orderpb.CreateOrderRequest{
 		UserId:          req.UserID,
 		Items:           items,
 		ShippingAddress: req.ShippingAddress,
+		Currency:        req.Currency,
 	}
 
 	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.CreateOrderResponse, error) {
@@ -120,11 +124,12 @@ func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page, li
 
 // ---------------- Mapping Helpers ----------------
 
-func mapMoneyFromPB(m *orderpb.Money) types.Money {
+func mapMoneyFromPB(m *orderpb.Money) valueobjects.Money {
 	if m == nil {
-		return types.Money{}
+		return valueobjects.Money{}
 	}
-	return types.Money{Amount: m.GetAmount(), Currency: m.GetCurrency()}
+	currency, _ := valueobjects.NewCurrency(m.GetCurrency())
+	return valueobjects.Money{Amount: m.GetAmount(), Currency: currency}
 }
 
 func mapOrderItemFromPB(it *orderpb.OrderItem) OrderItem {

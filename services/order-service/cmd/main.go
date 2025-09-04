@@ -6,21 +6,29 @@ import (
 	"os/signal"
 	"syscall"
 
-	app "github.com/kubernetestest/ecommerce-platform/services/order-service/internal/app"
+	"ecommerce-platform/pkg/config"
+	"ecommerce-platform/pkg/logger"
+	app "ecommerce-platform/services/order-service/internal/app"
 
 	"go.uber.org/zap"
 )
 
 func main() {
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	zapLogger, _ := zap.NewProduction()
+	defer zapLogger.Sync()
 
-	cfg := app.LoadConfigFromEnv()
+	// Convert to our unified logger interface
+	appLogger := logger.NewZapLogger(zapLogger.Sugar())
+
+	cfg, err := config.LoadOrderConfig()
+	if err != nil {
+		zapLogger.Fatal("failed to load configuration", zap.Error(err))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	if err := app.Run(ctx, cfg, logger); err != nil {
+	if err := app.Run(ctx, cfg, appLogger); err != nil {
 		os.Exit(1)
 	}
 }

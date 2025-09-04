@@ -13,7 +13,7 @@ import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
 
 interface LoginPageProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (userData: { id: string; email: string; first_name: string; last_name: string }) => void;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
@@ -40,10 +40,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setError('');
 
     try {
-      await authService.login({ email, password });
+      const response = await authService.login({ email, password });
       
-      // Call onLoginSuccess to update parent state
-      onLoginSuccess();
+      // Call onLoginSuccess to update parent state with user data
+      onLoginSuccess(response.user);
       
       // Redirect to the page user came from, or home if none
       const from = (location.state as any)?.from || '/';
