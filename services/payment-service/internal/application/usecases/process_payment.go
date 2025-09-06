@@ -11,7 +11,7 @@ import (
 	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 
-	"github.com/google/uuid"
+	"ecommerce-platform/pkg/idgenerator"
 )
 
 // ProcessPaymentUseCase handles payment processing business logic
@@ -41,7 +41,7 @@ func (uc *ProcessPaymentUseCase) Execute(ctx context.Context, orderID, userID st
 
 	if success {
 		payment.Status = paymentvalueobjects.PaymentStatusCompleted
-		payment.TransactionID = uuid.New().String()
+		payment.TransactionID = idgenerator.GenerateID("txn")
 	} else {
 		payment.Status = paymentvalueobjects.PaymentStatusFailed
 	}

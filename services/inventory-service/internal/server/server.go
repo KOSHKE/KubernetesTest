@@ -17,7 +17,6 @@ import (
 	appsvc "ecommerce-platform/services/inventory-service/internal/application/services"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
-	domainservices "ecommerce-platform/services/inventory-service/internal/domain/services"
 	"ecommerce-platform/services/inventory-service/internal/infra/consumer"
 	"ecommerce-platform/services/inventory-service/internal/infra/consumer/handlers"
 	inventoryGrpc "ecommerce-platform/services/inventory-service/internal/infra/grpc"
@@ -48,7 +47,7 @@ type Server struct {
 	db *gorm.DB
 
 	// business dependencies
-	inventoryRepo  repository.InventoryRepository
+	inventoryRepo  repository.InventoryRepositoryFacade
 	stockPublisher publisher.StockEventsPublisher
 	inventorySvc   *appsvc.InventoryApplicationService
 
@@ -160,6 +159,7 @@ func runMigrations(db *gorm.DB, logger logger.Logger) error {
 	if err := db.AutoMigrate(
 		&migration.ProductRecord{},
 		&migration.StockRecord{},
+		&productRepoImpl.OutboxRecordGorm{},
 	); err != nil {
 		return fmt.Errorf("failed to run database migrations: %w", err)
 	}
@@ -174,7 +174,6 @@ func initPublisher(cfg *config.InventoryConfig, logger logger.Logger) (publisher
 	stockPublisher, err := inventoryPublisher.NewStockEventsPublisher(
 		cfg.Kafka.Brokers,
 		"inventory.v1.stock_reserved",
-		"inventory.v1.stock_reservation_failed",
 		"inventory.v1.stock_released",
 		"inventory.v1.stock_committed",
 	)
@@ -203,11 +202,11 @@ func (s *Server) initConsumers(cfg *config.InventoryConfig, logger logger.Logger
 }
 
 func (s *Server) initOrderConsumer(cfg *config.InventoryConfig, logger logger.Logger) error {
-	// Create domain service for inventory business logic
-	inventoryDomainService := domainservices.NewInventoryDomainService(s.inventoryRepo, logger)
+	// Create application service
+	applicationService := appsvc.NewInventoryApplicationService(s.inventoryRepo, s.stockPublisher, logger)
 
 	// Create infrastructure handler
-	orderHandler := handlers.NewOrderCreatedHandler(inventoryDomainService, logger)
+	orderHandler := handlers.NewOrderCreatedHandler(applicationService, logger)
 
 	// Create and start order consumer
 	orderConsumer, err := consumer.NewOrderCreatedConsumer(
@@ -234,11 +233,11 @@ func (s *Server) initOrderConsumer(cfg *config.InventoryConfig, logger logger.Lo
 }
 
 func (s *Server) initPaymentConsumer(cfg *config.InventoryConfig, logger logger.Logger) error {
-	// Create domain service for inventory business logic
-	inventoryDomainService := domainservices.NewInventoryDomainService(s.inventoryRepo, logger)
+	// Create application service
+	applicationService := appsvc.NewInventoryApplicationService(s.inventoryRepo, s.stockPublisher, logger)
 
 	// Create infrastructure handler
-	paymentHandler := handlers.NewPaymentProcessedHandler(inventoryDomainService, logger)
+	paymentHandler := handlers.NewPaymentProcessedHandler(applicationService, logger)
 
 	// Create and start payment consumer
 	paymentConsumer, err := consumer.NewPaymentProcessedConsumer(

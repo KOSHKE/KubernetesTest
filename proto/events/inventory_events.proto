@@ -22,12 +22,6 @@ message PaymentDetails {
   string cvv = 5;
 }
 
-message StockReservationFailed {
-  string order_id = 1;
-  string reason = 2;
-  string occurred_at = 3; // RFC3339
-  string user_id = 4;
-}
 
 message StockReleased {
   string order_id = 1;

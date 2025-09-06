@@ -3,11 +3,11 @@ package grpc
 import (
 	"context"
 
+	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/proto-go/inventory"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
-	domainservices "ecommerce-platform/services/inventory-service/internal/domain/services"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,10 +32,24 @@ func NewPBInventoryServer(appService *services.InventoryApplicationService, logg
 func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetProductsRequest) (*inventory.GetProductsResponse, error) {
 	s.logger.Info("getting products via gRPC", "page", req.Page, "limit", req.Limit)
 
+	// Validate and set defaults
+	page := int(req.Page)
+	limit := int(req.Limit)
+
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
 	// Convert gRPC request to DTO
 	listReq := &dto.ListProductsRequest{
-		Page:   int(req.Page),
-		Limit:  int(req.Limit),
+		Page:   page,
+		Limit:  limit,
 		Search: req.Search,
 	}
 
@@ -103,32 +117,31 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.CheckStockRequest) (*inventory.CheckStockResponse, error) {
 	s.logger.Info("checking stock via gRPC", "itemsCount", len(req.Items))
 
-	// Convert gRPC request to domain service items
-	items := make([]domainservices.StockReservationItem, len(req.Items))
+	// Convert gRPC request to domain value objects
+	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
-		items[i] = domainservices.StockReservationItem{
-			ProductID: item.ProductId,
-			Quantity:  item.Quantity,
+		stockItem, err := valueobjects.NewItem(item.ProductId, item.Quantity)
+		if err != nil {
+			s.logger.Error("invalid item data", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid item data: %v", err)
 		}
+		items[i] = *stockItem
 	}
 
 	// Check stock availability using application service
-	unavailableProducts, err := s.appService.CheckStockAvailability(ctx, items)
-	if err != nil {
-		s.logger.Error("failed to check stock", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to check stock: %v", err)
-	}
+	err := s.appService.CheckStockAvailability(ctx, items)
+	allAvailable := err == nil
 
 	// Convert response to gRPC
 	results := make([]*inventory.StockCheckResult, len(req.Items))
-	allAvailable := len(unavailableProducts) == 0
 
 	for i, item := range req.Items {
 		isAvailable := true
-		for _, unavailable := range unavailableProducts {
-			if unavailable == item.ProductId {
+		if err != nil {
+			// If there's an error, check individual items
+			stock, stockErr := s.appService.GetStockByProductID(ctx, item.ProductId)
+			if stockErr != nil || !stock.CanReserve(item.Quantity) {
 				isAvailable = false
-				break
 			}
 		}
 
@@ -203,18 +216,21 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.ReleaseStockRequest) (*inventory.ReleaseStockResponse, error) {
 	s.logger.Info("releasing stock via gRPC", "orderID", req.OrderId, "itemsCount", len(req.Items))
 
-	// Convert gRPC request to domain service items
-	items := make([]domainservices.StockReservationItem, len(req.Items))
+	// Convert gRPC request to domain value objects
+	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
-		items[i] = domainservices.StockReservationItem{
-			ProductID: item.ProductId,
-			Quantity:  item.Quantity,
+		stockItem, err := valueobjects.NewItem(item.ProductId, item.Quantity)
+		if err != nil {
+			s.logger.Error("invalid item data", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid item data: %v", err)
 		}
+		items[i] = *stockItem
 	}
 
 	// Convert to DTO and release stock using application service
 	releaseReq := &dto.ReleaseStockRequest{
 		OrderID: req.OrderId,
+		UserID:  "", // ReleaseStockRequest doesn't have UserId field
 		Items:   make([]dto.StockReservationItem, len(items)),
 	}
 	for i, item := range items {

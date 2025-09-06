@@ -8,30 +8,32 @@ import (
 
 // Currency represents an ISO 4217 currency code
 type Currency struct {
-	Code string `json:"code" gorm:"type:varchar(3);not null;default:'USD'"`
+	Code string `json:"code" gorm:"type:varchar(3);not null;"`
 }
-
-// Common currency codes
-const (
-	USD = "USD"
-	EUR = "EUR"
-	RUB = "RUB"
-	GBP = "GBP"
-	JPY = "JPY"
-)
 
 // NewCurrency creates a new Currency instance
 func NewCurrency(code string) (Currency, error) {
-	if code == "" {
-		return Currency{}, errors.ErrEmptyCurrency
+	currency := Currency{Code: strings.ToUpper(code)}
+
+	if err := currency.Validate(); err != nil {
+		return Currency{}, err
 	}
-	if len(code) != 3 {
-		return Currency{}, errors.ErrInvalidCurrencyLength
+
+	return currency, nil
+}
+
+// Validate validates currency data
+func (c Currency) Validate() error {
+	if c.Code == "" {
+		return errors.ErrEmptyCurrency
 	}
-	if !isAlpha(code) {
-		return Currency{}, errors.ErrInvalidCurrencyFormat
+	if len(c.Code) != 3 {
+		return errors.ErrInvalidCurrencyLength
 	}
-	return Currency{Code: strings.ToUpper(code)}, nil
+	if !isAlpha(c.Code) {
+		return errors.ErrInvalidCurrencyFormat
+	}
+	return nil
 }
 
 // isAlpha checks if string contains only letters
@@ -52,9 +54,4 @@ func (c Currency) String() string {
 // Equals checks if two currencies are equal
 func (c Currency) Equals(other Currency) bool {
 	return c.Code == other.Code
-}
-
-// IsZero checks if currency is empty
-func (c Currency) IsZero() bool {
-	return c.Code == ""
 }

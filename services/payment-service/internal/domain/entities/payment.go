@@ -6,9 +6,8 @@ import (
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/pkg/idgenerator"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
-
-	"github.com/google/uuid"
 )
 
 type Payment struct {
@@ -27,7 +26,7 @@ type Payment struct {
 func NewPayment(orderID, userID string, amount valueobjects.Money, method paymentvalueobjects.PaymentMethod) *Payment {
 	now := time.Now()
 	return &Payment{
-		ID:            uuid.New().String(),
+		ID:            idgenerator.GenerateID("payment"),
 		OrderID:       orderID,
 		UserID:        userID,
 		Amount:        amount,

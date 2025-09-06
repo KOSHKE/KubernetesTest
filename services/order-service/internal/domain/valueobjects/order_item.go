@@ -6,18 +6,21 @@ import (
 
 // OrderItem represents an item in an order as a value object
 type OrderItem struct {
-	ProductID   string             `gorm:"type:varchar(255);not null"`
-	ProductName string             `gorm:"type:varchar(500);not null"`
-	Quantity    int32              `gorm:"type:int;not null"`
-	Price       valueobjects.Money `gorm:"embedded;embeddedPrefix:price_"`
+	valueobjects.Item `gorm:"embedded"`
+	ProductName       string             `gorm:"type:varchar(500);not null"`
+	Price             valueobjects.Money `gorm:"embedded;embeddedPrefix:price_"`
 }
 
 // NewOrderItem creates a new OrderItem value object
 func NewOrderItem(productID, productName string, quantity int32, price valueobjects.Money) (*OrderItem, error) {
+	item, err := valueobjects.NewItem(productID, quantity)
+	if err != nil {
+		return nil, err
+	}
+
 	return &OrderItem{
-		ProductID:   productID,
+		Item:        *item,
 		ProductName: productName,
-		Quantity:    quantity,
 		Price:       price,
 	}, nil
 }
@@ -27,8 +30,7 @@ func (oi *OrderItem) Equals(other *OrderItem) bool {
 	if other == nil {
 		return false
 	}
-	return oi.ProductID == other.ProductID &&
+	return oi.Item.Equals(&other.Item) &&
 		oi.ProductName == other.ProductName &&
-		oi.Quantity == other.Quantity &&
 		oi.Price == other.Price
 }

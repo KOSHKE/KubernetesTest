@@ -33,24 +33,6 @@ func NewProduct(
 	}
 }
 
-// IsAvailable checks if product is available for purchase
-func (p *Product) IsAvailable() bool {
-	return p.ID != "" && p.Name != ""
-}
-
-// UpdateDetails updates product details
-func (p *Product) UpdateDetails(name string, price valueobjects.Money) {
-	p.Name = name
-	p.Price = price
-	p.UpdatedAt = time.Now()
-}
-
-// UpdateImageURL updates product image URL
-func (p *Product) UpdateImageURL(imageURL string) {
-	p.ImageURL = imageURL
-	p.UpdatedAt = time.Now()
-}
-
 // Validate validates product data
 func (p *Product) Validate() error {
 	if p.ID == "" {

@@ -20,7 +20,7 @@ type UpdateProductRequest struct {
 // ReserveStockRequest represents a request to reserve stock
 type ReserveStockRequest struct {
 	OrderID string                 `json:"order_id" validate:"required,min=1,max=255"`
-	UserID  string                 `json:"user_id" validate:"required,min=1,max=255"`
+	UserID  string                 `json:"user_id" validate:"omitempty,min=1,max=255"`
 	Items   []StockReservationItem `json:"items" validate:"required,min=1,dive"`
 }
 
@@ -40,13 +40,13 @@ type ListProductsRequest struct {
 // ReleaseStockRequest represents a request to release stock
 type ReleaseStockRequest struct {
 	OrderID string                 `json:"order_id" validate:"required,min=1,max=255"`
-	UserID  string                 `json:"user_id" validate:"required,min=1,max=255"`
+	UserID  string                 `json:"user_id" validate:"omitempty,min=1,max=255"`
 	Items   []StockReservationItem `json:"items" validate:"required,min=1,dive"`
 }
 
 // CommitStockRequest represents a request to commit stock
 type CommitStockRequest struct {
 	OrderID string                 `json:"order_id" validate:"required,min=1,max=255"`
-	UserID  string                 `json:"user_id" validate:"required,min=1,max=255"`
+	UserID  string                 `json:"user_id" validate:"omitempty,min=1,max=255"`
 	Items   []StockReservationItem `json:"items" validate:"required,min=1,dive"`
 }

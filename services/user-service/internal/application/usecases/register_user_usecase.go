@@ -4,13 +4,12 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/common/errors"
+	"ecommerce-platform/pkg/idgenerator"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/user-service/internal/metrics"
-
-	"github.com/google/uuid"
 )
 
 // RegisterUserUseCase handles user registration business logic
@@ -59,7 +58,7 @@ func (uc *RegisterUserUseCase) Execute(ctx context.Context, email, password, fir
 		}
 
 		// Create user entity using constructor directly
-		userID := uuid.New().String()
+		userID := idgenerator.GenerateID("user")
 		user = entities.NewUser(userID, emailVO, passwordVO, firstNameVO, lastNameVO, phoneVO)
 
 		// Save user to repository

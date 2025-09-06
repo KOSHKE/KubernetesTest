@@ -11,9 +11,6 @@ type StockEventsPublisher interface {
 	// PublishStockReserved publishes when stock is successfully reserved
 	PublishStockReserved(ctx context.Context, event *events.StockReserved) error
 
-	// PublishStockReservationFailed publishes when stock reservation fails
-	PublishStockReservationFailed(ctx context.Context, event *events.StockReservationFailed) error
-
 	// PublishStockReleased publishes when reserved stock is released
 	PublishStockReleased(ctx context.Context, event *events.StockReleased) error
 

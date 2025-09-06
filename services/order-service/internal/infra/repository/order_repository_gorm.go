@@ -86,12 +86,24 @@ func convertOrderRecords(orderRecs []OrderRecord) ([]*aggregates.Order, error) {
 	return orders, nil
 }
 
-type GormOrderRepository struct {
-	db *gorm.DB
+// OrderRepositoryGorm implements the OrderRepositoryFacade interface using GORM
+// This facade combines OrderRepository and OutboxRepository functionality
+type OrderRepositoryGorm struct {
+	db                *gorm.DB
+	orderRepoFactory  func(*gorm.DB) repository.OrderRepository
+	outboxRepoFactory func(*gorm.DB) repository.OutboxRepository
 }
 
-func NewGormOrderRepository(db *gorm.DB) *GormOrderRepository {
-	return &GormOrderRepository{db: db}
+func NewOrderRepository(db *gorm.DB) repository.OrderRepositoryFacade {
+	return &OrderRepositoryGorm{
+		db: db,
+		orderRepoFactory: func(db *gorm.DB) repository.OrderRepository {
+			return &GormOrderRepository{db: db}
+		},
+		outboxRepoFactory: func(db *gorm.DB) repository.OutboxRepository {
+			return NewOutboxRepository(db)
+		},
+	}
 }
 
 // WithTransaction executes operations within a database transaction

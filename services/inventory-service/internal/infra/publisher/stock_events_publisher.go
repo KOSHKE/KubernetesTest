@@ -9,21 +9,15 @@ import (
 
 // StockEventsPublisherImpl implements the StockEventsPublisher interface
 type StockEventsPublisherImpl struct {
-	reservedPublisher          *StockReservedPublisher
-	reservationFailedPublisher *StockReservationFailedPublisher
-	releasedPublisher          *StockReleasedPublisher
-	committedPublisher         *StockCommittedPublisher
+	reservedPublisher  *StockReservedPublisher
+	releasedPublisher  *StockReleasedPublisher
+	committedPublisher *StockCommittedPublisher
 }
 
 // NewStockEventsPublisher creates a new stock events publisher
-func NewStockEventsPublisher(brokers []string, reservedTopic, failedTopic, releasedTopic, committedTopic string) (publisher.StockEventsPublisher, error) {
+func NewStockEventsPublisher(brokers []string, reservedTopic, releasedTopic, committedTopic string) (publisher.StockEventsPublisher, error) {
 	// Create individual publishers
 	reservedPublisher, err := NewStockReservedPublisher(brokers[0], reservedTopic)
-	if err != nil {
-		return nil, err
-	}
-
-	failedPublisher, err := NewStockReservationFailedPublisher(brokers[0], failedTopic)
 	if err != nil {
 		return nil, err
 	}
@@ -39,21 +33,15 @@ func NewStockEventsPublisher(brokers []string, reservedTopic, failedTopic, relea
 	}
 
 	return &StockEventsPublisherImpl{
-		reservedPublisher:          reservedPublisher,
-		reservationFailedPublisher: failedPublisher,
-		releasedPublisher:          releasedPublisher,
-		committedPublisher:         committedPublisher,
+		reservedPublisher:  reservedPublisher,
+		releasedPublisher:  releasedPublisher,
+		committedPublisher: committedPublisher,
 	}, nil
 }
 
 // PublishStockReserved publishes when stock is successfully reserved
 func (p *StockEventsPublisherImpl) PublishStockReserved(ctx context.Context, event *events.StockReserved) error {
 	return p.reservedPublisher.PublishStockReserved(ctx, event)
-}
-
-// PublishStockReservationFailed publishes when stock reservation fails
-func (p *StockEventsPublisherImpl) PublishStockReservationFailed(ctx context.Context, event *events.StockReservationFailed) error {
-	return p.reservationFailedPublisher.PublishStockReservationFailed(ctx, event)
 }
 
 // PublishStockReleased publishes when reserved stock is released
@@ -72,12 +60,6 @@ func (p *StockEventsPublisherImpl) Close() error {
 
 	if err := p.reservedPublisher.Close(); err != nil {
 		firstErr = err
-	}
-
-	if err := p.reservationFailedPublisher.Close(); err != nil {
-		if firstErr == nil {
-			firstErr = err
-		}
 	}
 
 	if err := p.releasedPublisher.Close(); err != nil {

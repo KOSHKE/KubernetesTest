@@ -12,6 +12,12 @@ message PaymentProcessed {
   int64 amount = 5;     // minor units
   string currency = 6;  // ISO 4217
   string occurred_at = 7; // RFC3339
+  repeated OrderItem items = 8; // items that were reserved
+}
+
+message OrderItem {
+  string product_id = 1;
+  int32 quantity = 2;
 }
 
 

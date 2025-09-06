@@ -78,6 +78,7 @@ var (
 	ErrInvalidProductName        = errors.New("invalid product name")
 	ErrInvalidProductPrice       = errors.New("invalid product price")
 	ErrProductAlreadyExists      = errors.New("product already exists")
+	ErrProductCreationFailed     = errors.New("failed to create product")
 	ErrProductNotActive          = errors.New("product is not active")
 	ErrProductNotAvailable       = errors.New("product not available for purchase")
 	ErrInsufficientStock         = errors.New("insufficient stock")

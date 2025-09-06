@@ -77,3 +77,22 @@ func (s *Stock) Commit(quantity int32) error {
 func (s *Stock) GetTotalQuantity() int32 {
 	return s.AvailableQuantity + s.ReservedQuantity
 }
+
+// AddQuantity adds quantity to available stock
+func (s *Stock) AddQuantity(quantity int32) {
+	s.AvailableQuantity += quantity
+}
+
+// Validate validates stock data
+func (s *Stock) Validate() error {
+	if s.ProductID == "" {
+		return errors.ErrInvalidProductID
+	}
+	if s.AvailableQuantity < 0 {
+		return errors.ErrInvalidQuantity
+	}
+	if s.ReservedQuantity < 0 {
+		return errors.ErrInvalidQuantity
+	}
+	return nil
+}

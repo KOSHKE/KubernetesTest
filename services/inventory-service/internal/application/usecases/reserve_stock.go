@@ -2,148 +2,105 @@ package usecases
 
 import (
 	"context"
-	"fmt"
 
 	"ecommerce-platform/pkg/common/errors"
+	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
-	"ecommerce-platform/proto-go/events"
+	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
-	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
-	"ecommerce-platform/services/inventory-service/internal/domain/services"
 )
 
 // ReserveStockUseCase handles stock reservation
 type ReserveStockUseCase struct {
-	inventoryRepo repository.InventoryRepository
-	publisher     publisher.StockEventsPublisher
-	domainService *services.InventoryDomainService
+	inventoryRepo repository.InventoryRepositoryFacade
+	outboxService outbox.Service
 	logger        logger.Logger
 }
 
 // NewReserveStockUseCase creates a new reserve stock use case
 func NewReserveStockUseCase(
-	inventoryRepo repository.InventoryRepository,
-	publisher publisher.StockEventsPublisher,
-	domainService *services.InventoryDomainService,
+	inventoryRepo repository.InventoryRepositoryFacade,
+	outboxService outbox.Service,
 	logger logger.Logger,
 ) *ReserveStockUseCase {
 	return &ReserveStockUseCase{
 		inventoryRepo: inventoryRepo,
-		publisher:     publisher,
-		domainService: domainService,
+		outboxService: outboxService,
 		logger:        logger,
 	}
 }
 
 // Execute reserves stock for an order
-func (uc *ReserveStockUseCase) Execute(ctx context.Context, req *dto.ReserveStockRequest) (*dto.ReserveStockResponse, error) {
-	// Validate request
-	if err := uc.validateRequest(req); err != nil {
-		return nil, fmt.Errorf("failed to validate request: %w", err)
-	}
-
-	// Convert DTO to domain service format
-	items := make([]services.StockReservationItem, len(req.Items))
-	for i, item := range req.Items {
-		items[i] = services.StockReservationItem{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
+func (uc *ReserveStockUseCase) Execute(ctx context.Context, orderID string, items []valueobjects.Item) error {
+	// Use transaction to ensure both stock reservation and event are saved atomically
+	err := uc.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
+		// Reserve stock
+		if err := uc.reserveStock(ctx, items); err != nil {
+			return err
 		}
-	}
 
-	// Reserve stock using domain service
-	failedProducts, err := uc.domainService.ReserveStock(ctx, req.OrderID, req.UserID, items)
+		// Save event to outbox table (to be published later)
+		eventData := dto.StockEventDTO{
+			OrderID: orderID,
+			UserID:  "", // UserID not needed for stock operations
+			Items:   items,
+		}
+		event := outbox.Event{
+			Type:    "StockReserved",
+			Payload: eventData,
+		}
+		if err := uc.outboxService.SaveEvent(ctx, event); err != nil {
+			uc.logger.Error("failed to save event to outbox", "orderID", orderID, "error", err)
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to reserve stock: %w", err)
+		uc.logger.Error("failed to reserve stock", "orderID", orderID, "error", err)
+		return err
 	}
 
-	// Determine success
-	success := len(failedProducts) == 0
-	var message string
-	if success {
-		message = "Stock reserved successfully"
-	} else {
-		message = fmt.Sprintf("Stock reservation partially failed. Failed products: %v", failedProducts)
-	}
-
-	// Get reserved products (those that succeeded)
-	var reservedProducts []string
-	for _, item := range req.Items {
-		isFailed := false
-		for _, failed := range failedProducts {
-			if failed == item.ProductID {
-				isFailed = true
-				break
-			}
-		}
-		if !isFailed {
-			reservedProducts = append(reservedProducts, item.ProductID)
-		}
-	}
-
-	// Publish appropriate event
-	if err := uc.publishEvent(ctx, req.OrderID, req.UserID, items, failedProducts); err != nil {
-		uc.logger.Warn("failed to publish stock event", "error", err)
-		// Don't fail the operation if event publishing fails
-	}
-
-	uc.logger.Info("stock reservation completed",
-		"orderID", req.OrderID,
-		"reservedCount", len(reservedProducts),
-		"failedCount", len(failedProducts),
-		"success", success)
-
-	return &dto.ReserveStockResponse{
-		OrderID:       req.OrderID,
-		ReservedItems: reservedProducts,
-		FailedItems:   failedProducts,
-		Success:       success,
-		Message:       message,
-	}, nil
-}
-
-// validateRequest validates the reserve stock request
-func (uc *ReserveStockUseCase) validateRequest(req *dto.ReserveStockRequest) error {
-	if req == nil {
-		return errors.ErrInvalidRequest
-	}
-	if req.OrderID == "" {
-		return errors.ErrInvalidRequest
-	}
-	if req.UserID == "" {
-		return errors.ErrInvalidRequest
-	}
-	if len(req.Items) == 0 {
-		return errors.ErrInvalidRequest
-	}
-	for _, item := range req.Items {
-		if item.ProductID == "" {
-			return errors.ErrInvalidProductID
-		}
-		if item.Quantity <= 0 {
-			return errors.ErrInvalidQuantity
-		}
-	}
 	return nil
 }
 
-// publishEvent publishes the appropriate stock event
-func (uc *ReserveStockUseCase) publishEvent(ctx context.Context, orderID, userID string, items []services.StockReservationItem, failedProducts []string) error {
-	if len(failedProducts) == 0 {
-		// All items reserved successfully
-		event := &events.StockReserved{
-			OrderId: orderID,
-			UserId:  userID,
+// reserveStock performs stock reservation using repository directly
+func (uc *ReserveStockUseCase) reserveStock(ctx context.Context, items []valueobjects.Item) error {
+	// Validate all items first (fail fast)
+	for _, item := range items {
+		// Check stock availability
+		stock, err := uc.inventoryRepo.GetStockByProductID(ctx, item.ProductID)
+		if err != nil {
+			uc.logger.Error("failed to get stock", "productID", item.ProductID, "error", err)
+			return err
 		}
-		return uc.publisher.PublishStockReserved(ctx, event)
-	} else {
-		// Some items failed to reserve
-		event := &events.StockReservationFailed{
-			OrderId: orderID,
-			UserId:  userID,
-			Reason:  fmt.Sprintf("Failed to reserve stock for products: %v", failedProducts),
+
+		if !stock.CanReserve(item.Quantity) {
+			uc.logger.Warn("insufficient stock", "productID", item.ProductID, "requested", item.Quantity, "available", stock.AvailableQuantity)
+			return errors.ErrInsufficientStock
 		}
-		return uc.publisher.PublishStockReservationFailed(ctx, event)
 	}
+
+	// Perform reservations
+	for _, item := range items {
+		stock, err := uc.inventoryRepo.GetStockByProductID(ctx, item.ProductID)
+		if err != nil {
+			uc.logger.Error("failed to get stock for reservation", "productID", item.ProductID, "error", err)
+			return err
+		}
+
+		if err := stock.Reserve(item.Quantity); err != nil {
+			uc.logger.Error("failed to reserve stock", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
+			return err
+		}
+
+		if err := uc.inventoryRepo.UpsertStock(ctx, stock); err != nil {
+			uc.logger.Error("failed to upsert stock after reservation", "productID", item.ProductID, "error", err)
+			return err
+		}
+	}
+
+	return nil
 }

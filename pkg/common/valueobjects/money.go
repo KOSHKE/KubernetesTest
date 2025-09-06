@@ -17,6 +17,15 @@ func NewMoney(amount int64, currency Currency) Money {
 	return Money{Amount: amount, Currency: currency}
 }
 
+// Validate validates money data
+func (m Money) Validate() error {
+	if err := m.Currency.Validate(); err != nil {
+		return err
+	}
+	// Money doesn't have specific validation rules beyond currency
+	return nil
+}
+
 // Add adds another Money amount (must be same currency)
 func (m Money) Add(other Money) (Money, error) {
 	if !m.Currency.Equals(other.Currency) {
