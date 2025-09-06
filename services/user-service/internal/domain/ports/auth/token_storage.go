@@ -19,6 +19,9 @@ type TokenStorage interface {
 	// RevokeAllUserTokens removes all tokens for specific user
 	RevokeAllUserTokens(ctx context.Context, userID string) error
 
+	// Transaction support
+	WithTransaction(ctx context.Context, fn func(context.Context) error) error
+
 	// Close closes the storage connection
 	Close() error
 }

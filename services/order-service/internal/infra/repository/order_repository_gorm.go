@@ -21,9 +21,9 @@ func recordFromEntity(order *aggregates.Order) (OrderRecord, []OrderItemRecord) 
 	orderRec := OrderRecord{
 		ID:              order.ID,
 		UserID:          order.UserID,
-		Status:          order.Status,
+		Status:          string(order.Status),
 		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
+		Currency:        order.Currency.Code,
 		TotalAmount:     order.TotalAmount.Amount,
 		CreatedAt:       order.CreatedAt,
 		UpdatedAt:       order.UpdatedAt,
@@ -37,7 +37,7 @@ func recordFromEntity(order *aggregates.Order) (OrderRecord, []OrderItemRecord) 
 			ProductName: item.ProductName,
 			Quantity:    item.Quantity,
 			UnitPrice:   item.UnitPrice.Amount,
-			Currency:    item.UnitPrice.Currency.Code(),
+			Currency:    item.UnitPrice.Currency.Code,
 		}
 	}
 
@@ -49,6 +49,7 @@ func entityFromRecord(orderRec OrderRecord, itemRecs []OrderItemRecord) (*aggreg
 	currency, _ := valueobjects.NewCurrency(orderRec.Currency)
 	totalAmount := valueobjects.NewMoney(orderRec.TotalAmount, currency)
 	shippingAddress, _ := orderValueObjects.NewShippingAddress(orderRec.ShippingAddress)
+	status := orderValueObjects.OrderStatus(orderRec.Status)
 
 	items := make([]*entities.OrderItem, len(itemRecs))
 	for i, itemRec := range itemRecs {
@@ -66,7 +67,7 @@ func entityFromRecord(orderRec OrderRecord, itemRecs []OrderItemRecord) (*aggreg
 	return &aggregates.Order{
 		ID:              orderRec.ID,
 		UserID:          orderRec.UserID,
-		Status:          orderRec.Status,
+		Status:          status,
 		Items:           items,
 		ShippingAddress: shippingAddress,
 		Currency:        currency,
@@ -93,9 +94,12 @@ func NewGormOrderRepository(db *gorm.DB) *GormOrderRepository {
 	return &GormOrderRepository{db: db}
 }
 
-// WithTx returns a new repository instance with transaction
-func (r *GormOrderRepository) WithTx(tx interface{}) repository.OrderRepository {
-	return &GormOrderRepository{db: tx.(*gorm.DB)}
+// WithTransaction executes operations within a database transaction
+func (r *GormOrderRepository) WithTransaction(ctx context.Context, fn func(repository.OrderRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := &GormOrderRepository{db: tx}
+		return fn(txRepo)
+	})
 }
 
 func (r *GormOrderRepository) Create(ctx context.Context, order *aggregates.Order) error {

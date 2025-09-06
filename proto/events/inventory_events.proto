@@ -29,4 +29,19 @@ message StockReservationFailed {
   string user_id = 4;
 }
 
+message StockReleased {
+  string order_id = 1;
+  string occurred_at = 2; // RFC3339
+  string user_id = 3;
+  string reason = 4; // optional reason for release
+}
+
+message StockCommitted {
+  string order_id = 1;
+  string occurred_at = 2; // RFC3339
+  string user_id = 3;
+  int64 total_amount = 4; // minor units (e.g., cents)
+  string currency = 5; // ISO 4217 currency code
+}
+
 

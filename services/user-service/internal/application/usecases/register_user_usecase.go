@@ -42,25 +42,37 @@ func (uc *RegisterUserUseCase) Execute(ctx context.Context, email, password, fir
 	lastNameVO := valueobjects.NewName(lastName)
 	phoneVO := valueobjects.NewPhone(phone)
 
-	exists, err := uc.userRepo.ExistsByEmail(ctx, emailVO)
+	var user *entities.User
+
+	// Execute all operations within a transaction
+	err := uc.userRepo.WithTransaction(ctx, func(txRepo repository.UserRepository) error {
+		// Check if user already exists
+		exists, err := txRepo.ExistsByEmail(ctx, emailVO)
+		if err != nil {
+			uc.logger.Error("failed to check user existence", "error", err)
+			return errors.ErrDatabaseOperationFailed
+		}
+
+		if exists {
+			uc.logger.Warn("user already exists", "email", email)
+			return errors.ErrEmailAlreadyExists
+		}
+
+		// Create user entity using constructor directly
+		userID := uuid.New().String()
+		user = entities.NewUser(userID, emailVO, passwordVO, firstNameVO, lastNameVO, phoneVO)
+
+		// Save user to repository
+		if err := txRepo.Create(ctx, user); err != nil {
+			uc.logger.Error("failed to save user", "error", err)
+			return errors.ErrUserCreationFailed
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		uc.logger.Error("failed to check user existence", "error", err)
-		return nil, errors.ErrDatabaseOperationFailed
-	}
-
-	if exists {
-		uc.logger.Warn("user already exists", "email", email)
-		return nil, errors.ErrEmailAlreadyExists
-	}
-
-	// Create user entity using constructor directly
-	userID := uuid.New().String()
-	user := entities.NewUser(userID, emailVO, passwordVO, firstNameVO, lastNameVO, phoneVO)
-
-	// Save user to repository
-	if err := uc.userRepo.Create(ctx, user); err != nil {
-		uc.logger.Error("failed to save user", "error", err)
-		return nil, errors.ErrUserCreationFailed
+		return nil, err
 	}
 
 	// Record metrics for successful registration

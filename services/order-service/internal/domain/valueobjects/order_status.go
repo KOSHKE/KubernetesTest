@@ -9,6 +9,8 @@ const (
 	OrderStatusCancelled     OrderStatus = "CANCELLED"
 	OrderStatusPaid          OrderStatus = "PAID"
 	OrderStatusPaymentFailed OrderStatus = "PAYMENT_FAILED"
+	OrderStatusStockReleased OrderStatus = "STOCK_RELEASED"
+	OrderStatusCompleted     OrderStatus = "COMPLETED"
 )
 
 // String returns the string representation of the status

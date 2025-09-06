@@ -56,3 +56,8 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 		UpdatedAt:     payment.UpdatedAt,
 	}, nil
 }
+
+// GetProcessPaymentUseCase returns the process payment use case for external use
+func (s *PaymentApplicationService) GetProcessPaymentUseCase() *usecases.ProcessPaymentUseCase {
+	return s.processPaymentUseCase
+}

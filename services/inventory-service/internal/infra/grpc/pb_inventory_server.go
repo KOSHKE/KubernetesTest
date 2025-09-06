@@ -2,154 +2,239 @@ package grpc
 
 import (
 	"context"
-	"errors"
-	appsvc "ecommerce-platform/services/inventory-service/internal/app/services"
-	"ecommerce-platform/services/inventory-service/internal/domain/models"
-	invpb "ecommerce-platform/proto-go/inventory"
 
-	"go.uber.org/zap"
+	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/proto-go/inventory"
+	"ecommerce-platform/services/inventory-service/internal/application/dto"
+	"ecommerce-platform/services/inventory-service/internal/application/services"
+	domainservices "ecommerce-platform/services/inventory-service/internal/domain/services"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gorm.io/gorm"
 )
 
+// PBInventoryServer implements the gRPC inventory service
 type PBInventoryServer struct {
-	invpb.UnimplementedInventoryServiceServer
-	svc *appsvc.InventoryService
-	log *zap.SugaredLogger
+	inventory.UnimplementedInventoryServiceServer
+	appService *services.InventoryApplicationService
+	logger     logger.Logger
 }
 
-func NewPBInventoryServer(svc *appsvc.InventoryService, log *zap.SugaredLogger) *PBInventoryServer {
-	return &PBInventoryServer{svc: svc, log: log}
+// NewPBInventoryServer creates a new inventory gRPC server
+func NewPBInventoryServer(appService *services.InventoryApplicationService, logger logger.Logger) *PBInventoryServer {
+	return &PBInventoryServer{
+		appService: appService,
+		logger:     logger,
+	}
 }
 
-func (s *PBInventoryServer) GetProducts(ctx context.Context, req *invpb.GetProductsRequest) (*invpb.GetProductsResponse, error) {
-	page := int(req.Page)
-	if page <= 0 {
-		page = 1
+// GetProducts retrieves a paginated list of products
+func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetProductsRequest) (*inventory.GetProductsResponse, error) {
+	s.logger.Info("getting products via gRPC", "page", req.Page, "limit", req.Limit)
+
+	// Convert gRPC request to DTO
+	listReq := &dto.ListProductsRequest{
+		Page:   int(req.Page),
+		Limit:  int(req.Limit),
+		Search: req.Search,
 	}
-	limit := int(req.Limit)
-	if limit <= 0 {
-		limit = 20
-	}
-	products, total, err := s.svc.ListProducts(ctx, req.CategoryId, page, limit, req.Search)
+
+	// List products
+	response, err := s.appService.ListProducts(ctx, listReq)
 	if err != nil {
+		s.logger.Error("failed to list products", "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to list products: %v", err)
 	}
-	out := make([]*invpb.Product, 0, len(products))
-	ids := make([]string, 0, len(products))
-	for _, p := range products {
-		ids = append(ids, p.ID)
-	}
-	stockMap := map[string]*models.Stock{}
-	if len(ids) > 0 {
-		if stocks, e := s.svc.GetStocksByIDs(ctx, ids); e == nil {
-			stockMap = stocks
-		} else {
-			s.log.Warnw("failed to get stocks", "error", e)
+
+	// Convert response to gRPC
+	grpcProducts := make([]*inventory.Product, len(response.Products))
+	for i, product := range response.Products {
+		grpcProducts[i] = &inventory.Product{
+			Id:   product.ID,
+			Name: product.Name,
+			Price: &inventory.Money{
+				Amount:   product.Price.Amount,
+				Currency: product.Price.Currency.String(),
+			},
+			ImageUrl:      product.ImageURL,
+			StockQuantity: product.Stock.AvailableQuantity,
 		}
 	}
-	for _, p := range products {
-		if st, ok := stockMap[p.ID]; ok {
-			out = append(out, mapProductToPB(p, st.AvailableQuantity))
-			continue
-		}
-		// degrade to 0 if no stock or error during batch fetch
-		out = append(out, mapProductToPB(p, 0))
+
+	grpcResponse := &inventory.GetProductsResponse{
+		Products: grpcProducts,
+		Total:    response.Total,
 	}
-	return &invpb.GetProductsResponse{Products: out, Total: int32(total)}, nil
+
+	s.logger.Info("products retrieved successfully via gRPC", "count", len(response.Products), "total", response.Total)
+	return grpcResponse, nil
 }
 
-func (s *PBInventoryServer) GetProduct(ctx context.Context, req *invpb.GetProductRequest) (*invpb.GetProductResponse, error) {
-	p, err := s.svc.GetProduct(ctx, req.Id)
+// GetProduct retrieves a product by ID
+func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetProductRequest) (*inventory.GetProductResponse, error) {
+	s.logger.Info("getting product via gRPC", "productID", req.Id)
+
+	// Get product
+	response, err := s.appService.GetProduct(ctx, req.Id)
 	if err != nil {
-		code := codes.Internal
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			code = codes.NotFound
-		}
-		return nil, status.Errorf(code, "failed to get product: %v", err)
+		s.logger.Error("failed to get product", "productID", req.Id, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get product: %v", err)
 	}
-	q, err := s.svc.GetStockQuantity(ctx, p.ID)
-	if err != nil {
-		return &invpb.GetProductResponse{Product: mapProductToPB(p, 0)}, nil
+
+	// Convert response to gRPC
+	grpcResponse := &inventory.GetProductResponse{
+		Product: &inventory.Product{
+			Id:   response.ID,
+			Name: response.Name,
+			Price: &inventory.Money{
+				Amount:   response.Price.Amount,
+				Currency: response.Price.Currency.String(),
+			},
+			ImageUrl:      response.ImageURL,
+			StockQuantity: response.Stock.AvailableQuantity,
+		},
 	}
-	return &invpb.GetProductResponse{Product: mapProductToPB(p, q)}, nil
+
+	s.logger.Info("product retrieved successfully via gRPC", "productID", req.Id)
+	return grpcResponse, nil
 }
 
-func (s *PBInventoryServer) CheckStock(ctx context.Context, req *invpb.CheckStockRequest) (*invpb.CheckStockResponse, error) {
-	items := make([]appsvc.StockCheckItem, 0, len(req.Items))
-	for _, it := range req.Items {
-		items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
+// CheckStock checks stock availability for products
+func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.CheckStockRequest) (*inventory.CheckStockResponse, error) {
+	s.logger.Info("checking stock via gRPC", "itemsCount", len(req.Items))
+
+	// Convert gRPC request to domain service items
+	items := make([]domainservices.StockReservationItem, len(req.Items))
+	for i, item := range req.Items {
+		items[i] = domainservices.StockReservationItem{
+			ProductID: item.ProductId,
+			Quantity:  item.Quantity,
+		}
 	}
-	results, all, err := s.svc.CheckStock(ctx, items)
+
+	// Check stock availability using application service
+	unavailableProducts, err := s.appService.CheckStockAvailability(ctx, items)
 	if err != nil {
+		s.logger.Error("failed to check stock", "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to check stock: %v", err)
 	}
-	out := make([]*invpb.StockCheckResult, 0, len(results))
-	for _, r := range results {
-		out = append(out, &invpb.StockCheckResult{ProductId: r.ProductID, RequestedQuantity: r.RequestedQuantity, AvailableQuantity: r.AvailableQuantity, IsAvailable: r.IsAvailable})
+
+	// Convert response to gRPC
+	results := make([]*inventory.StockCheckResult, len(req.Items))
+	allAvailable := len(unavailableProducts) == 0
+
+	for i, item := range req.Items {
+		isAvailable := true
+		for _, unavailable := range unavailableProducts {
+			if unavailable == item.ProductId {
+				isAvailable = false
+				break
+			}
+		}
+
+		// Get actual available quantity
+		availableQuantity := int32(0)
+		if isAvailable {
+			stock, err := s.appService.GetStockByProductID(ctx, item.ProductId)
+			if err == nil && stock != nil {
+				availableQuantity = stock.AvailableQuantity
+			}
+		}
+
+		results[i] = &inventory.StockCheckResult{
+			ProductId:         item.ProductId,
+			RequestedQuantity: item.Quantity,
+			AvailableQuantity: availableQuantity,
+			IsAvailable:       isAvailable,
+		}
 	}
-	return &invpb.CheckStockResponse{Results: out, AllAvailable: all}, nil
+
+	grpcResponse := &inventory.CheckStockResponse{
+		Results:      results,
+		AllAvailable: allAvailable,
+	}
+
+	s.logger.Info("stock check completed via gRPC", "allAvailable", allAvailable)
+	return grpcResponse, nil
 }
 
-func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *invpb.ReserveStockRequest) (*invpb.ReserveStockResponse, error) {
-	items := make([]appsvc.StockCheckItem, 0, len(req.Items))
-	for _, it := range req.Items {
-		items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
+// ReserveStock reserves stock for an order
+func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.ReserveStockRequest) (*inventory.ReserveStockResponse, error) {
+	s.logger.Info("reserving stock via gRPC", "orderID", req.OrderId, "itemsCount", len(req.Items))
+
+	// Convert gRPC request to DTO
+	reserveReq := &dto.ReserveStockRequest{
+		OrderID: req.OrderId,
+		UserID:  req.UserId,
+		Items:   make([]dto.StockReservationItem, len(req.Items)),
 	}
-	failed, err := s.svc.ReserveStock(ctx, req.OrderId, req.UserId, items)
+
+	for i, item := range req.Items {
+		reserveReq.Items[i] = dto.StockReservationItem{
+			ProductID: item.ProductId,
+			Quantity:  item.Quantity,
+		}
+	}
+
+	// Reserve stock
+	response, err := s.appService.ReserveStock(ctx, reserveReq)
 	if err != nil {
+		s.logger.Error("failed to reserve stock", "orderID", req.OrderId, "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to reserve stock: %v", err)
 	}
-	ok := len(failed) == 0
-	msg := "Reservation successful"
-	if !ok {
-		msg = "Reservation partial failure"
+
+	// Convert response to gRPC
+	grpcResponse := &inventory.ReserveStockResponse{
+		Success:        response.Success,
+		Message:        response.Message,
+		FailedProducts: response.FailedItems,
 	}
-	return &invpb.ReserveStockResponse{Success: ok, Message: msg, FailedProducts: failed}, nil
+
+	s.logger.Info("stock reservation completed via gRPC",
+		"orderID", req.OrderId,
+		"success", response.Success,
+		"reservedCount", len(response.ReservedItems),
+		"failedCount", len(response.FailedItems))
+
+	return grpcResponse, nil
 }
 
-func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *invpb.ReleaseStockRequest) (*invpb.ReleaseStockResponse, error) {
-	items := make([]appsvc.StockCheckItem, 0, len(req.Items))
-	for _, it := range req.Items {
-		items = append(items, appsvc.StockCheckItem{ProductID: it.ProductId, Quantity: it.Quantity})
+// ReleaseStock releases reserved stock
+func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.ReleaseStockRequest) (*inventory.ReleaseStockResponse, error) {
+	s.logger.Info("releasing stock via gRPC", "orderID", req.OrderId, "itemsCount", len(req.Items))
+
+	// Convert gRPC request to domain service items
+	items := make([]domainservices.StockReservationItem, len(req.Items))
+	for i, item := range req.Items {
+		items[i] = domainservices.StockReservationItem{
+			ProductID: item.ProductId,
+			Quantity:  item.Quantity,
+		}
 	}
-	if err := s.svc.ReleaseStock(ctx, req.OrderId, items); err != nil {
+
+	// Convert to DTO and release stock using application service
+	releaseReq := &dto.ReleaseStockRequest{
+		OrderID: req.OrderId,
+		Items:   make([]dto.StockReservationItem, len(items)),
+	}
+	for i, item := range items {
+		releaseReq.Items[i] = dto.StockReservationItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+		}
+	}
+
+	_, err := s.appService.ReleaseStock(ctx, releaseReq)
+	if err != nil {
+		s.logger.Error("failed to release stock", "orderID", req.OrderId, "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to release stock: %v", err)
 	}
-	return &invpb.ReleaseStockResponse{Success: true, Message: "Released"}, nil
-}
 
-// mapping helpers
-func mapProductToPB(p *models.Product, stockQty int32) *invpb.Product {
-	return &invpb.Product{
-		Id:            p.ID,
-		Name:          p.Name,
-		Description:   p.Description,
-		Price:         &invpb.Money{Amount: p.PriceMinor, Currency: p.Currency},
-		CategoryId:    p.CategoryID,
-		CategoryName:  p.CategoryName,
-		StockQuantity: stockQty,
-		ImageUrl:      p.ImageURL,
-		IsActive:      p.IsActive,
+	grpcResponse := &inventory.ReleaseStockResponse{
+		Success: true,
+		Message: "Stock released successfully",
 	}
-}
 
-func (s *PBInventoryServer) GetCategories(ctx context.Context, req *invpb.GetCategoriesRequest) (*invpb.GetCategoriesResponse, error) {
-	categories, err := s.svc.GetCategories(ctx, req.ActiveOnly)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get categories: %v", err)
-	}
-	
-	out := make([]*invpb.Category, 0, len(categories))
-	for _, c := range categories {
-		out = append(out, &invpb.Category{
-			Id:          c.ID,
-			Name:        c.Name,
-			Description: c.Description,
-			IsActive:    c.IsActive,
-		})
-	}
-	
-	return &invpb.GetCategoriesResponse{Categories: out}, nil
+	s.logger.Info("stock released successfully via gRPC", "orderID", req.OrderId)
+	return grpcResponse, nil
 }

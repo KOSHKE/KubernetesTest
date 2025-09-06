@@ -7,6 +7,7 @@ import (
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/usecases"
+	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/inventory-service/internal/domain/services"
@@ -18,39 +19,50 @@ type InventoryApplicationService struct {
 	createProductUseCase *usecases.CreateProductUseCase
 	getProductUseCase    *usecases.GetProductUseCase
 	reserveStockUseCase  *usecases.ReserveStockUseCase
+	releaseStockUseCase  *usecases.ReleaseStockUseCase
+	commitStockUseCase   *usecases.CommitStockUseCase
 
 	// Domain service
 	domainService *services.InventoryDomainService
 
 	// Dependencies
-	repo      repository.InventoryRepository
-	publisher publisher.StockEventsPublisher
-	logger    logger.Logger
+	inventoryRepo repository.InventoryRepository
+	publisher     publisher.StockEventsPublisher
+	logger        logger.Logger
 }
 
 // NewInventoryApplicationService creates a new inventory application service
 func NewInventoryApplicationService(
-	repo repository.InventoryRepository,
+	inventoryRepo repository.InventoryRepository,
 	publisher publisher.StockEventsPublisher,
 	logger logger.Logger,
 ) *InventoryApplicationService {
 	// Create domain service
-	domainService := services.NewInventoryDomainService(repo, logger)
+	domainService := services.NewInventoryDomainService(inventoryRepo, logger)
 
 	// Create use cases
-	createProductUseCase := usecases.NewCreateProductUseCase(repo, logger)
-	getProductUseCase := usecases.NewGetProductUseCase(repo, logger)
-	reserveStockUseCase := usecases.NewReserveStockUseCase(repo, publisher, domainService, logger)
+	createProductUseCase := usecases.NewCreateProductUseCase(inventoryRepo, logger)
+	getProductUseCase := usecases.NewGetProductUseCase(inventoryRepo, logger)
+	reserveStockUseCase := usecases.NewReserveStockUseCase(inventoryRepo, publisher, domainService, logger)
+	releaseStockUseCase := usecases.NewReleaseStockUseCase(inventoryRepo, publisher, domainService, logger)
+	commitStockUseCase := usecases.NewCommitStockUseCase(inventoryRepo, publisher, domainService, logger)
 
 	return &InventoryApplicationService{
 		createProductUseCase: createProductUseCase,
 		getProductUseCase:    getProductUseCase,
 		reserveStockUseCase:  reserveStockUseCase,
+		releaseStockUseCase:  releaseStockUseCase,
+		commitStockUseCase:   commitStockUseCase,
 		domainService:        domainService,
-		repo:                 repo,
+		inventoryRepo:        inventoryRepo,
 		publisher:            publisher,
 		logger:               logger,
 	}
+}
+
+// GetStockByProductID gets stock information for a product
+func (s *InventoryApplicationService) GetStockByProductID(ctx context.Context, productID string) (*entities.Stock, error) {
+	return s.inventoryRepo.GetStockByProductID(ctx, productID)
 }
 
 // CreateProduct creates a new product
@@ -116,7 +128,7 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 	}
 
 	// Get products from repository
-	products, total, err := s.repo.ListProducts(ctx, req.Page, req.Limit, req.Search)
+	products, total, err := s.inventoryRepo.ListProducts(ctx, req.Page, req.Limit, req.Search)
 	if err != nil {
 		s.logger.Error("failed to list products", "error", err)
 		return nil, fmt.Errorf("failed to list products: %w", err)
@@ -125,18 +137,30 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 	// Convert to response DTOs
 	productResponses := make([]dto.ProductResponse, len(products))
 	for i, product := range products {
+		// Get stock information for this product
+		stock, err := s.inventoryRepo.GetStockByProductID(ctx, product.ID)
+		var stockInfo dto.StockInfo
+		if err != nil {
+			s.logger.Warn("failed to get stock info for product", "productID", product.ID, "error", err)
+			stockInfo = dto.StockInfo{
+				AvailableQuantity: 0,
+				ReservedQuantity:  0,
+				TotalQuantity:     0,
+			}
+		} else {
+			stockInfo = dto.StockInfo{
+				AvailableQuantity: stock.AvailableQuantity,
+				ReservedQuantity:  stock.ReservedQuantity,
+				TotalQuantity:     stock.AvailableQuantity + stock.ReservedQuantity,
+			}
+		}
+
 		productResponses[i] = dto.ProductResponse{
-			ID:          product.ID,
-			Name:        product.Name,
-			Description: product.Description,
-			Price:       product.Price,
-			ImageURL:    product.ImageURL,
-			IsActive:    product.IsActive,
-			Stock: dto.StockInfo{
-				AvailableQuantity: product.GetAvailableQuantity(),
-				ReservedQuantity:  product.GetReservedQuantity(),
-				TotalQuantity:     product.GetTotalQuantity(),
-			},
+			ID:        product.ID,
+			Name:      product.Name,
+			Price:     product.Price,
+			ImageURL:  product.ImageURL,
+			Stock:     stockInfo,
 			CreatedAt: product.CreatedAt,
 			UpdatedAt: product.UpdatedAt,
 		}
@@ -152,7 +176,35 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 	}, nil
 }
 
-// GetDomainService returns the domain service for external use
-func (s *InventoryApplicationService) GetDomainService() *services.InventoryDomainService {
-	return s.domainService
+// ReleaseStock releases stock for an order
+func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto.ReleaseStockRequest) (*dto.ReleaseStockResponse, error) {
+	s.logger.Info("releasing stock", "orderID", req.OrderID, "itemsCount", len(req.Items))
+
+	response, err := s.releaseStockUseCase.Execute(ctx, req)
+	if err != nil {
+		s.logger.Error("failed to release stock", "orderID", req.OrderID, "error", err)
+		return nil, err
+	}
+
+	s.logger.Info("stock released successfully", "orderID", req.OrderID)
+	return response, nil
+}
+
+// CommitStock commits stock for an order
+func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.CommitStockRequest) (*dto.CommitStockResponse, error) {
+	s.logger.Info("committing stock", "orderID", req.OrderID, "itemsCount", len(req.Items))
+
+	response, err := s.commitStockUseCase.Execute(ctx, req)
+	if err != nil {
+		s.logger.Error("failed to commit stock", "orderID", req.OrderID, "error", err)
+		return nil, err
+	}
+
+	s.logger.Info("stock committed successfully", "orderID", req.OrderID)
+	return response, nil
+}
+
+// CheckStockAvailability checks if products have sufficient stock
+func (s *InventoryApplicationService) CheckStockAvailability(ctx context.Context, items []services.StockReservationItem) ([]string, error) {
+	return s.domainService.CheckStockAvailability(ctx, items)
 }

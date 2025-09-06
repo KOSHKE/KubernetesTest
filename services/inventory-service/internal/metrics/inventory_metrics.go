@@ -2,48 +2,66 @@ package metrics
 
 import (
 	"ecommerce-platform/pkg/metrics"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
-// InventoryMetrics defines inventory-specific metrics
-type InventoryMetrics struct {
+// InventoryMetrics interface defines inventory service specific metrics
+type InventoryMetrics interface {
+	// Product business metrics
+	ProductCreated()
+	ProductCreationFailed(reason string)
+
+	// Stock management metrics
+	StockReserved()
+	StockReservationFailed(reason string)
+	StockReleased()
+	StockCommitted()
+
+	// HTTP metrics (reused from pkg/metrics)
+	metrics.Metrics
+}
+
+// InventoryPrometheusMetrics implements InventoryMetrics interface
+type InventoryPrometheusMetrics struct {
 	*metrics.PrometheusMetrics
 }
 
-// NewInventoryMetrics creates new inventory metrics
-func NewInventoryMetrics() *InventoryMetrics {
-	return &InventoryMetrics{
-		PrometheusMetrics: metrics.NewPrometheusMetrics("inventory_service", prometheus.DefaultRegisterer),
+// NewInventoryMetrics creates new inventory service metrics instance
+func NewInventoryMetrics() InventoryMetrics {
+	baseMetrics := metrics.NewPrometheusMetrics("inventory-service", nil)
+
+	inventoryMetrics := &InventoryPrometheusMetrics{
+		PrometheusMetrics: baseMetrics,
 	}
+
+	return inventoryMetrics
 }
 
-// RecordProductCreated records a product creation
-func (m *InventoryMetrics) RecordProductCreated() {
-	m.RecordHTTPRequest("POST", "/products", 200)
+// ProductCreated increments product creation counter
+func (m *InventoryPrometheusMetrics) ProductCreated() {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionCreated, "")
 }
 
-// RecordProductCreationFailed records a product creation failure
-func (m *InventoryMetrics) RecordProductCreationFailed() {
-	m.RecordHTTPRequest("POST", "/products", 500)
+// ProductCreationFailed increments product creation failure counter with reason
+func (m *InventoryPrometheusMetrics) ProductCreationFailed(reason string) {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionFailed, reason)
 }
 
-// RecordStockReserved records a stock reservation
-func (m *InventoryMetrics) RecordStockReserved() {
-	m.RecordHTTPRequest("POST", "/stock/reserve", 200)
+// StockReserved increments stock reservation counter
+func (m *InventoryPrometheusMetrics) StockReserved() {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockReserved, "")
 }
 
-// RecordStockReservationFailed records a stock reservation failure
-func (m *InventoryMetrics) RecordStockReservationFailed() {
-	m.RecordHTTPRequest("POST", "/stock/reserve", 500)
+// StockReservationFailed increments stock reservation failure counter with reason
+func (m *InventoryPrometheusMetrics) StockReservationFailed(reason string) {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionFailed, reason)
 }
 
-// RecordStockReleased records a stock release
-func (m *InventoryMetrics) RecordStockReleased() {
-	m.RecordHTTPRequest("POST", "/stock/release", 200)
+// StockReleased increments stock release counter
+func (m *InventoryPrometheusMetrics) StockReleased() {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockReleased, "")
 }
 
-// RecordStockCommitted records a stock commit
-func (m *InventoryMetrics) RecordStockCommitted() {
-	m.RecordHTTPRequest("POST", "/stock/commit", 200)
+// StockCommitted increments stock commit counter
+func (m *InventoryPrometheusMetrics) StockCommitted() {
+	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockCommitted, "")
 }

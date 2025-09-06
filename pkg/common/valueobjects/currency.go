@@ -8,7 +8,7 @@ import (
 
 // Currency represents an ISO 4217 currency code
 type Currency struct {
-	code string `json:"code"`
+	Code string `json:"code" gorm:"type:varchar(3);not null;default:'USD'"`
 }
 
 // Common currency codes
@@ -31,7 +31,7 @@ func NewCurrency(code string) (Currency, error) {
 	if !isAlpha(code) {
 		return Currency{}, errors.ErrInvalidCurrencyFormat
 	}
-	return Currency{code: strings.ToUpper(code)}, nil
+	return Currency{Code: strings.ToUpper(code)}, nil
 }
 
 // isAlpha checks if string contains only letters
@@ -44,22 +44,17 @@ func isAlpha(s string) bool {
 	return true
 }
 
-// Code returns the currency code
-func (c Currency) Code() string {
-	return c.code
-}
-
 // String returns the currency code as string
 func (c Currency) String() string {
-	return c.code
+	return c.Code
 }
 
 // Equals checks if two currencies are equal
 func (c Currency) Equals(other Currency) bool {
-	return c.code == other.code
+	return c.Code == other.Code
 }
 
 // IsZero checks if currency is empty
 func (c Currency) IsZero() bool {
-	return c.code == ""
+	return c.Code == ""
 }

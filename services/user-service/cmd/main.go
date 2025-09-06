@@ -2,33 +2,55 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"ecommerce-platform/pkg/logger"
-	app "ecommerce-platform/services/user-service/internal/app"
+	"ecommerce-platform/pkg/config"
+	"ecommerce-platform/services/user-service/internal/server"
 
 	"go.uber.org/zap"
 )
 
+var (
+	Version   = "dev"
+	Commit    = "none"
+	BuildDate = "unknown"
+)
+
 func main() {
-	zapLogger, _ := zap.NewProduction()
-	defer zapLogger.Sync()
-
-	// Convert to our unified logger interface
-	logger := logger.NewZapLogger(zapLogger.Sugar())
-
-	cfg, err := app.LoadConfigFromEnv()
+	log, err := zap.NewProduction()
 	if err != nil {
-		zapLogger.Fatal("failed to load configuration", zap.Error(err))
+		panic("failed to init logger: " + err.Error())
+	}
+	defer log.Sync()
+
+	log.Info("starting user-service",
+		zap.String("version", Version),
+		zap.String("commit", Commit),
+		zap.String("build_date", BuildDate),
+	)
+
+	cfg, err := config.LoadUserConfig()
+	if err != nil {
+		log.Fatal("failed to load configuration", zap.Error(err))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	if err := app.Run(ctx, cfg, logger); err != nil {
-		zapLogger.Fatal("application failed", zap.Error(err))
-		os.Exit(1)
+	// General timeout for graceful shutdown
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	srv, err := server.New(cfg, log)
+	if err != nil {
+		log.Fatal("failed to build server", zap.Error(err))
 	}
+
+	if err := srv.Run(ctx); err != nil {
+		log.Fatal("server terminated with error", zap.Error(err))
+	}
+
+	log.Info("user-service stopped gracefully")
 }

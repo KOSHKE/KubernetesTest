@@ -29,23 +29,35 @@ func NewAddItemToOrderUseCase(
 
 // Execute adds an item to an existing order
 func (uc *AddItemToOrderUseCase) Execute(ctx context.Context, orderID, productID, productName string, quantity int32, price valueobjects.Money) (*aggregates.Order, error) {
-	// Get order from repository
-	order, err := uc.orderRepo.GetByID(ctx, orderID)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := uc.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepository) error {
+		// Get order from repository
+		var err error
+		order, err = txRepo.GetByID(ctx, orderID)
+		if err != nil {
+			uc.logger.Error("Failed to retrieve order", "order_id", orderID, "error", err)
+			return errors.ErrOrderRetrievalFailed
+		}
+
+		// Add item to order
+		if err := order.AddItem(productID, productName, quantity, price); err != nil {
+			uc.logger.Error("Failed to add item to order", "order_id", orderID, "product_id", productID, "error", err)
+			return errors.ErrOrderItemAdditionFailed
+		}
+
+		// Save updated order
+		if err := txRepo.Update(ctx, order); err != nil {
+			uc.logger.Error("Failed to update order", "order_id", orderID, "error", err)
+			return errors.ErrOrderPersistenceFailed
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		uc.logger.Error("Failed to retrieve order", "order_id", orderID, "error", err)
-		return nil, errors.ErrOrderRetrievalFailed
-	}
-
-	// Add item to order
-	if err := order.AddItem(productID, productName, quantity, price); err != nil {
-		uc.logger.Error("Failed to add item to order", "order_id", orderID, "product_id", productID, "error", err)
-		return nil, errors.ErrOrderItemAdditionFailed
-	}
-
-	// Save updated order
-	if err := uc.orderRepo.Update(ctx, order); err != nil {
-		uc.logger.Error("Failed to update order", "order_id", orderID, "error", err)
-		return nil, errors.ErrOrderPersistenceFailed
+		return nil, err
 	}
 
 	return order, nil

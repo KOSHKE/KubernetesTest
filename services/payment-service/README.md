@@ -12,6 +12,26 @@ The Payment Service is a core microservice within the e-commerce platform respon
 
 ## Architecture
 
+### Simplified Server Architecture
+
+The service follows a **compositional root pattern** with a single `Server` object managing all components and their lifecycle. This approach eliminates unnecessary abstraction layers and provides a clear, maintainable structure.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Server (Compositional Root)              │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │   gRPC      │ │    HTTP     │ │    pprof    │          │
+│  │   Server    │ │  (metrics/  │ │  (debug)    │          │
+│  │             │ │   health)   │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │   Kafka     │ │   Business  │ │   Metrics   │          │
+│  │ Publishers  │ │   Logic     │ │             │          │
+│  │ Consumers   │ │             │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Layered Architecture
 
 The service follows Domain-Driven Design (DDD) principles with clear separation of concerns:
@@ -48,28 +68,63 @@ The service follows Domain-Driven Design (DDD) principles with clear separation 
 - **Metrics**: Prometheus-compatible metrics with HTTP endpoint
 - **Logging**: Structured logging with Zap
 - **Configuration**: Environment-based configuration management
+- **Debugging**: pprof profiling on localhost:6060
+
+### Server Components
+
+**Location**: `internal/server/server.go`
+
+The `Server` struct is the compositional root that manages all service components:
+
+```go
+type Server struct {
+    cfg          *config.PaymentConfig
+    log          *zap.Logger
+    grpcServer   *grpc.Server
+    httpSrv      *http.Server
+    pprofSrv     *http.Server
+    ready        atomic.Bool
+
+    // business deps
+    paymentProcessedPub publisher.PaymentProcessedPublisher
+    paymentSvc          *appsvc.PaymentApplicationService
+
+    // metrics
+    pm *metrics.MetricsServer
+}
+```
+
+**Key Methods:**
+- `New(cfg, log)` - Creates and initializes all dependencies
+- `Run(ctx)` - Starts all servers and waits for shutdown signal
+- `shutdown(ctx)` - Gracefully shuts down all components
 
 ### Dependency Organization
 
 ```
 Payment Service
-├── Domain Layer
-│   ├── Entities (Payment)
-│   ├── Value Objects (PaymentMethod, PaymentStatus)
-│   └── Ports (Publisher interfaces)
-├── Application Layer
-│   ├── Use Cases (ProcessPayment)
-│   ├── Application Services (PaymentApplicationService, StockEventService)
-│   └── DTOs (Request/Response models)
-├── Infrastructure Layer
-│   ├── gRPC Server
-│   ├── Kafka Publisher (PaymentProcessed)
-│   ├── Kafka Consumer (StockReserved)
-│   └── Event Handlers
-└── Cross-cutting Concerns
-    ├── Metrics (Prometheus)
-    ├── Logging (Zap)
-    └── Error Handling (domain-specific errors)
+├── cmd/
+│   └── main.go (thin entry point with build info)
+├── internal/
+│   ├── server/
+│   │   └── server.go (compositional root)
+│   ├── Domain Layer
+│   │   ├── Entities (Payment)
+│   │   ├── Value Objects (PaymentMethod, PaymentStatus)
+│   │   └── Ports (Publisher interfaces)
+│   ├── Application Layer
+│   │   ├── Use Cases (ProcessPayment)
+│   │   ├── Application Services (PaymentApplicationService, StockEventService)
+│   │   └── DTOs (Request/Response models)
+│   ├── Infrastructure Layer
+│   │   ├── gRPC Server
+│   │   ├── Kafka Publisher (PaymentProcessed)
+│   │   ├── Kafka Consumer (StockReserved)
+│   │   └── Event Handlers
+│   └── Cross-cutting Concerns
+│       ├── Metrics (Prometheus)
+│       ├── Logging (Zap)
+│       └── Error Handling (domain-specific errors)
 ```
 
 ## Data Flow
@@ -95,6 +150,29 @@ Payment Processed → Payment Service (PaymentProcessed event) → Order Service
 ```
 
 ## Components
+
+### Server Lifecycle Management
+
+**Location**: `internal/server/server.go`
+
+The Server object manages the complete lifecycle of all service components:
+
+**Initialization:**
+1. **Publisher**: Kafka publisher for PaymentProcessed events
+2. **Metrics**: Prometheus metrics server
+3. **Application Service**: Payment application service with use cases
+4. **gRPC Server**: Protocol Buffer-based gRPC server with health checks
+5. **Health Checks**: gRPC health service and reflection
+
+**Runtime:**
+- **gRPC Server**: Handles payment processing requests
+- **HTTP Server**: Serves metrics (`/metrics`) and health checks (`/healthz`, `/readyz`)
+- **pprof Server**: Provides debugging endpoints on localhost:6060
+
+**Shutdown:**
+1. **gRPC Server**: Graceful stop with 5-second timeout
+2. **HTTP Servers**: Shutdown with context timeout
+3. **Publisher**: Close Kafka publisher
 
 ### Payment Entity
 
@@ -225,37 +303,39 @@ The Payment entity represents the payment aggregate root:
 ### Application Initialization
 
 ```
-main() → Run() → initialize() → start() → waitForShutdown()
+main() → server.New() → Server.Run() → waitForShutdown()
 ```
 
-**Initialize Phase**:
-1. **Infrastructure**: Metrics server, gRPC server
-2. **Business Logic**: Application services, use cases
-3. **Kafka Components**: Publishers and consumers
+**Server.New() Phase:**
+1. **Publisher**: Kafka publisher setup
+2. **Metrics**: Prometheus metrics server
+3. **Application Service**: Payment service with use cases
 4. **gRPC Server**: Server setup, service registration, health checks
+5. **Health Checks**: gRPC health service and reflection
 
-**Start Phase**:
+**Server.Run() Phase:**
 - Start gRPC server on configured port
-- Start metrics HTTP server in background
-- Start Kafka consumers in background
-- Application ready to serve requests
+- Start HTTP server for metrics and health checks
+- Start pprof server on localhost:6060
+- Set readiness flag after warmup
+- Wait for shutdown signal
 
 ### Graceful Shutdown
 
-**Shutdown Sequence**:
+**Shutdown Sequence:**
 1. **Signal Handling**: OS interrupt signals (SIGTERM, SIGINT, SIGHUP)
 2. **gRPC Server**: Graceful stop with 5-second timeout
-3. **Kafka Components**: Close publishers and consumers
-4. **Resource Cleanup**: Close all closers
-5. **Context Cancellation**: Cancel all background operations
+3. **HTTP Servers**: Shutdown with context timeout
+4. **Publisher**: Close Kafka publisher
 
-**Shutdown Timeout**:
+**Shutdown Timeout:**
 - gRPC graceful shutdown: 5 seconds
 - Force stop if graceful shutdown fails
+- Overall shutdown timeout: 30 seconds
 
 ## Configuration Management
 
-**Environment Variables**:
+**Environment Variables:**
 - `PAYMENT_SERVICE_PORT`: gRPC server port (default: 50054)
 - `PAYMENT_SERVICE_METRICS_PORT`: Metrics HTTP port (default: 9097)
 - `KAFKA_BROKERS`: Kafka broker addresses (comma-separated)
@@ -276,7 +356,7 @@ main() → Run() → initialize() → start() → waitForShutdown()
 - `PAYMENT_SUPPORTED_METHODS`: Supported payment methods (default: CREDIT_CARD,DEBIT_CARD,BANK_TRANSFER)
 - `ORDER_TOTAL_TTL`: Order total TTL (default: 30m)
 
-**Validation**:
+**Validation:**
 - Required Redis configuration
 - Positive timeout values
 - Valid currency codes
@@ -325,28 +405,36 @@ go test -cover ./...
 
 ### Metrics
 
-**Business Metrics**:
+**Business Metrics:**
 - `payment_succeeded_total` - Successful payments
 - `payment_failed_total` - Failed payments by reason
 - Entity events with payment entity type and actions
 
-**HTTP Metrics**:
+**HTTP Metrics:**
 - Request count and duration
 - Error rates and status codes
 - Response time percentiles
 
 ### Health Checks
 
-- gRPC health check service
-- Kafka connectivity verification
-- Redis storage availability
+- **gRPC Health Check**: `grpc_health_v1` service
+- **HTTP Health Check**: `/healthz` endpoint (always 200)
+- **Readiness Check**: `/readyz` endpoint (200 after warmup)
+- **Metrics Endpoint**: `/metrics` for Prometheus
 
 ### Logging
 
-- Structured JSON logging
+- Structured JSON logging with Zap
 - Request correlation IDs
 - Error context and stack traces
 - Performance metrics integration
+- Build info logging (version, commit, build date)
+
+### Debugging
+
+- **pprof Server**: Available on localhost:6060
+- **Debug Endpoints**: `/debug/pprof/*` for profiling
+- **Goroutine Analysis**: Runtime profiling capabilities
 
 ## Integration Points
 
@@ -369,7 +457,7 @@ go test -cover ./...
 
 ## Error Handling
 
-**Domain Errors**:
+**Domain Errors:**
 - `ErrPaymentAlreadyProcessed` - Payment already processed
 - `ErrPaymentProcessingFailed` - Payment processing failed
 - `ErrPaymentNotFound` - Payment not found
@@ -378,7 +466,7 @@ go test -cover ./...
 - `ErrPaymentTimeout` - Payment processing timeout
 - `ErrPaymentRetryExceeded` - Maximum retries exceeded
 
-**Error Recovery**:
+**Error Recovery:**
 - Automatic retry with exponential backoff
 - Dead letter queue for failed events
 - Circuit breaker pattern for external services
@@ -391,3 +479,27 @@ go test -cover ./...
 - Input validation for all payment requests
 - Rate limiting for payment processing
 - Audit logging for payment operations
+
+## Architecture Benefits
+
+### Simplified Structure
+
+- **Single Compositional Root**: All components managed in one place
+- **Clear Lifecycle**: Easy to understand start/stop sequence
+- **Explicit Dependencies**: No hidden magic or complex DI frameworks
+- **Maintainable**: One file shows all running components
+
+### Production Ready
+
+- **Graceful Shutdown**: Proper cleanup of all resources
+- **Health Checks**: Kubernetes-ready liveness and readiness probes
+- **Metrics**: Prometheus-compatible metrics collection
+- **Debugging**: pprof integration for production debugging
+- **Logging**: Structured logging with build information
+
+### Developer Experience
+
+- **Fast Startup**: Minimal initialization overhead
+- **Easy Debugging**: Clear component boundaries
+- **Simple Testing**: Easy to mock dependencies
+- **Clear Errors**: Explicit error handling and logging

@@ -57,8 +57,6 @@ var (
 	ErrOrderCancellationFailed   = errors.New("failed to cancel order")
 	ErrOrderRetrievalFailed      = errors.New("failed to retrieve order")
 	ErrOrderEventPublishFailed   = errors.New("failed to publish order event")
-	ErrInvalidProductID          = errors.New("invalid product ID")
-	ErrInvalidQuantity           = errors.New("invalid quantity")
 
 	// Order value object domain errors
 	ErrEmptyShippingAddress         = errors.New("shipping address cannot be empty")
@@ -76,19 +74,19 @@ var (
 	ErrPaymentProcessingFailed   = errors.New("failed to process payment")
 
 	// Inventory domain errors
-	ErrProductNotFound       = errors.New("product not found")
-	ErrInvalidProductID      = errors.New("invalid product ID")
-	ErrInvalidProductName    = errors.New("invalid product name")
-	ErrInvalidProductPrice   = errors.New("invalid product price")
-	ErrProductAlreadyExists  = errors.New("product already exists")
-	ErrProductNotActive      = errors.New("product is not active")
-	ErrInsufficientStock     = errors.New("insufficient stock")
-	ErrInvalidStock          = errors.New("invalid stock")
-	ErrStockNotFound         = errors.New("stock not found")
-	ErrInvalidQuantity       = errors.New("invalid quantity")
-	ErrReservationNotFound   = errors.New("reservation not found")
-	ErrReservationExpired    = errors.New("reservation expired")
-	ErrInventoryUpdateFailed = errors.New("inventory update failed")
+	ErrProductNotFound           = errors.New("product not found")
+	ErrInvalidProductName        = errors.New("invalid product name")
+	ErrInvalidProductPrice       = errors.New("invalid product price")
+	ErrProductAlreadyExists      = errors.New("product already exists")
+	ErrProductNotActive          = errors.New("product is not active")
+	ErrProductNotAvailable       = errors.New("product not available for purchase")
+	ErrInsufficientStock         = errors.New("insufficient stock")
+	ErrInsufficientReservedStock = errors.New("insufficient reserved stock")
+	ErrInvalidStock              = errors.New("invalid stock")
+	ErrStockNotFound             = errors.New("stock not found")
+	ErrReservationNotFound       = errors.New("reservation not found")
+	ErrReservationExpired        = errors.New("reservation expired")
+	ErrInventoryUpdateFailed     = errors.New("inventory update failed")
 
 	// Category domain errors
 	ErrCategoryNotFound      = errors.New("category not found")
@@ -119,4 +117,6 @@ var (
 	ErrInvalidRequest     = errors.New("invalid request")
 	ErrOperationFailed    = errors.New("operation failed")
 	ErrEventPublishFailed = errors.New("failed to publish event")
+	ErrInvalidProductID   = errors.New("invalid product ID")
+	ErrInvalidQuantity    = errors.New("invalid quantity")
 )

@@ -75,6 +75,13 @@ type LoggingConfig struct {
 	Compress   bool
 }
 
+// GracefulShutdownConfig holds graceful shutdown configuration
+type GracefulShutdownConfig struct {
+	Enabled     bool
+	Timeout     time.Duration
+	WaitTimeout time.Duration
+}
+
 // LoadBaseConfig loads common configuration from environment variables
 func LoadBaseConfig(serviceName string) *BaseConfig {
 	cfg := &BaseConfig{}

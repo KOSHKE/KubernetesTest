@@ -8,8 +8,8 @@ import (
 
 // Money represents currency in minor units to avoid float inaccuracies
 type Money struct {
-	Amount   int64    `json:"amount"`   // e.g., cents
-	Currency Currency `json:"currency"` // ISO 4217
+	Amount   int64    `json:"amount" gorm:"type:bigint;not null"`                     // e.g., cents
+	Currency Currency `json:"currency" gorm:"type:varchar(3);not null;default:'USD'"` // ISO 4217
 }
 
 // NewMoney creates a new Money instance

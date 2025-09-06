@@ -9,15 +9,13 @@ import (
 
 // ProductResponse represents a product response
 type ProductResponse struct {
-	ID          string              `json:"id"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Price       *valueobjects.Money `json:"price"`
-	ImageURL    string              `json:"image_url"`
-	IsActive    bool                `json:"is_active"`
-	Stock       StockInfo           `json:"stock"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	ID        string             `json:"id"`
+	Name      string             `json:"name"`
+	Price     valueobjects.Money `json:"price"`
+	ImageURL  string             `json:"image_url"`
+	Stock     StockInfo          `json:"stock"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
 }
 
 // StockInfo represents stock information
@@ -44,16 +42,28 @@ type ReserveStockResponse struct {
 	Message       string   `json:"message"`
 }
 
+// ReleaseStockResponse represents a response to stock release
+type ReleaseStockResponse struct {
+	OrderID string `json:"order_id"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// CommitStockResponse represents a response to stock commit
+type CommitStockResponse struct {
+	OrderID string `json:"order_id"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 // FromProductEntity converts a product entity to response DTO
 func FromProductEntity(product *entities.Product) ProductResponse {
 	return ProductResponse{
-		ID:          product.ID,
-		Name:        product.Name,
-		Description: product.Description,
-		Price:       product.Price,
-		ImageURL:    product.ImageURL,
-		IsActive:    product.IsActive,
-		CreatedAt:   product.CreatedAt,
-		UpdatedAt:   product.UpdatedAt,
+		ID:        product.ID,
+		Name:      product.Name,
+		Price:     product.Price,
+		ImageURL:  product.ImageURL,
+		CreatedAt: product.CreatedAt,
+		UpdatedAt: product.UpdatedAt,
 	}
 }

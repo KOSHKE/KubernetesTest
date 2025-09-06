@@ -13,5 +13,5 @@ type OrderRepository interface {
 	Update(ctx context.Context, order *aggregates.Order) error
 
 	// Transaction support
-	WithTx(tx interface{}) OrderRepository
+	WithTransaction(ctx context.Context, fn func(OrderRepository) error) error
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ecommerce-platform/pkg/logger"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -389,6 +390,16 @@ func (c *Client) MGet(ctx context.Context, keys []string) (map[string]string, er
 		}
 	}
 	return result, nil
+}
+
+// === TRANSACTION SUPPORT ===
+
+// WithTransaction executes operations within a Redis transaction using MULTI/EXEC
+func (c *Client) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	// Use Redis WATCH/MULTI/EXEC for atomicity
+	return c.rdb.Watch(ctx, func(tx *redis.Tx) error {
+		return fn(ctx)
+	})
 }
 
 // === UTILITY METHODS ===

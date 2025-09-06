@@ -71,28 +71,33 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, userID, shippingAddre
 		}
 	}
 
-	// Save order to repository
-	if err := uc.orderRepo.Create(ctx, order); err != nil {
-		uc.logger.Error("Failed to save order", "error", err)
-		uc.metrics.OrderCreationFailed("persistence_failed")
-		return nil, errors.ErrOrderPersistenceFailed
-	}
+	// Execute order creation and event publishing within a transaction
+	if err := uc.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepository) error {
+		// Save order to repository
+		if err := txRepo.Create(ctx, order); err != nil {
+			uc.logger.Error("Failed to save order", "error", err)
+			uc.metrics.OrderCreationFailed("persistence_failed")
+			return errors.ErrOrderPersistenceFailed
+		}
 
-	// Publish OrderCreated event - CRITICAL: must succeed
-	if uc.orderPublisher != nil {
-		event := &events.OrderCreated{
-			OrderId:     order.ID,
-			UserId:      order.UserID,
-			TotalAmount: order.TotalAmount.Amount,
-			Currency:    order.Currency.String(),
+		// Publish OrderCreated event - CRITICAL: must succeed
+		if uc.orderPublisher != nil {
+			event := &events.OrderCreated{
+				OrderId:     order.ID,
+				UserId:      order.UserID,
+				TotalAmount: order.TotalAmount.Amount,
+				Currency:    order.Currency.String(),
+			}
+			if err := uc.orderPublisher.PublishOrderCreated(ctx, event); err != nil {
+				uc.logger.Error("Failed to publish OrderCreated event", "error", err, "orderID", order.ID)
+				// If event publishing fails, the transaction will be rolled back
+				return errors.ErrOrderEventPublishFailed
+			}
 		}
-		if err := uc.orderPublisher.PublishOrderCreated(ctx, event); err != nil {
-			uc.logger.Error("Failed to publish OrderCreated event", "error", err, "orderID", order.ID)
-			// This is a critical error - the order was created but event failed
-			// In a real system, you might want to implement a compensation pattern
-			// or use a saga pattern to handle this scenario
-			return nil, errors.ErrOrderEventPublishFailed
-		}
+
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	// Record success metrics

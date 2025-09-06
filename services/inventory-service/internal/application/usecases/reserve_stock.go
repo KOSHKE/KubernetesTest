@@ -15,7 +15,7 @@ import (
 
 // ReserveStockUseCase handles stock reservation
 type ReserveStockUseCase struct {
-	repo          repository.InventoryRepository
+	inventoryRepo repository.InventoryRepository
 	publisher     publisher.StockEventsPublisher
 	domainService *services.InventoryDomainService
 	logger        logger.Logger
@@ -23,13 +23,13 @@ type ReserveStockUseCase struct {
 
 // NewReserveStockUseCase creates a new reserve stock use case
 func NewReserveStockUseCase(
-	repo repository.InventoryRepository,
+	inventoryRepo repository.InventoryRepository,
 	publisher publisher.StockEventsPublisher,
 	domainService *services.InventoryDomainService,
 	logger logger.Logger,
 ) *ReserveStockUseCase {
 	return &ReserveStockUseCase{
-		repo:          repo,
+		inventoryRepo: inventoryRepo,
 		publisher:     publisher,
 		domainService: domainService,
 		logger:        logger,
@@ -135,50 +135,15 @@ func (uc *ReserveStockUseCase) publishEvent(ctx context.Context, orderID, userID
 		event := &events.StockReserved{
 			OrderId: orderID,
 			UserId:  userID,
-			Items:   uc.convertItemsToProto(items),
 		}
 		return uc.publisher.PublishStockReserved(ctx, event)
 	} else {
 		// Some items failed to reserve
 		event := &events.StockReservationFailed{
-			OrderId:       orderID,
-			UserId:        userID,
-			FailedItems:   failedProducts,
-			ReservedItems: uc.getReservedItems(items, failedProducts),
+			OrderId: orderID,
+			UserId:  userID,
+			Reason:  fmt.Sprintf("Failed to reserve stock for products: %v", failedProducts),
 		}
 		return uc.publisher.PublishStockReservationFailed(ctx, event)
 	}
-}
-
-// convertItemsToProto converts domain items to proto items
-func (uc *ReserveStockUseCase) convertItemsToProto(items []services.StockReservationItem) []*events.StockItem {
-	protoItems := make([]*events.StockItem, len(items))
-	for i, item := range items {
-		protoItems[i] = &events.StockItem{
-			ProductId: item.ProductID,
-			Quantity:  item.Quantity,
-		}
-	}
-	return protoItems
-}
-
-// getReservedItems gets the list of successfully reserved items
-func (uc *ReserveStockUseCase) getReservedItems(items []services.StockReservationItem, failedProducts []string) []*events.StockItem {
-	var reservedItems []*events.StockItem
-	for _, item := range items {
-		isFailed := false
-		for _, failed := range failedProducts {
-			if failed == item.ProductID {
-				isFailed = true
-				break
-			}
-		}
-		if !isFailed {
-			reservedItems = append(reservedItems, &events.StockItem{
-				ProductId: item.ProductID,
-				Quantity:  item.Quantity,
-			})
-		}
-	}
-	return reservedItems
 }

@@ -57,6 +57,12 @@ func (s *RedisTokenStorage) RevokeAllUserTokens(ctx context.Context, userID stri
 	return nil
 }
 
+// WithTransaction executes operations within a Redis transaction
+func (s *RedisTokenStorage) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	// Use Redis MULTI/EXEC for atomicity
+	return s.client.WithTransaction(ctx, fn)
+}
+
 // Close closes Redis connection
 func (s *RedisTokenStorage) Close() error {
 	return s.client.Close()

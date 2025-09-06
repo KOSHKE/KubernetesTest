@@ -24,4 +24,7 @@ type AuthService interface {
 
 	// RevokeRefreshToken removes refresh token from Redis
 	RevokeRefreshToken(ctx context.Context, refreshToken string) error
+
+	// Transaction support
+	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 }

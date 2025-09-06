@@ -6,7 +6,7 @@ import (
 
 // ShippingAddress represents a shipping address for orders
 type ShippingAddress struct {
-	Value string
+	Value string `gorm:"type:text;not null"`
 }
 
 // NewShippingAddress creates a new ShippingAddress instance

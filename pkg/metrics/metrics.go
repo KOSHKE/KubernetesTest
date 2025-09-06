@@ -8,14 +8,17 @@ import (
 
 // Entity action constants
 const (
-	ActionCreated      = "created"
-	ActionUpdated      = "updated"
-	ActionDeleted      = "deleted"
-	ActionLoginSuccess = "login_success"
-	ActionLoginFailed  = "login_failed"
-	ActionLogout       = "logout"
-	ActionSucceeded    = "succeeded"
-	ActionFailed       = "failed"
+	ActionCreated        = "created"
+	ActionUpdated        = "updated"
+	ActionDeleted        = "deleted"
+	ActionLoginSuccess   = "login_success"
+	ActionLoginFailed    = "login_failed"
+	ActionLogout         = "logout"
+	ActionSucceeded      = "succeeded"
+	ActionFailed         = "failed"
+	ActionStockReserved  = "stock_reserved"
+	ActionStockReleased  = "stock_released"
+	ActionStockCommitted = "stock_committed"
 )
 
 // Common reason constants

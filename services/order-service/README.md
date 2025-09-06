@@ -12,6 +12,26 @@ The Order Service is a core microservice within the e-commerce platform responsi
 
 ## Architecture
 
+### Simplified Server Architecture
+
+The service follows a **compositional root pattern** with a single `Server` object managing all components and their lifecycle. This approach eliminates unnecessary abstraction layers and provides a clear, maintainable structure.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Server (Compositional Root)              │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │   gRPC      │ │    HTTP     │ │    pprof    │          │
+│  │   Server    │ │  (metrics/  │ │  (debug)    │          │
+│  │             │ │   health)   │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │  Database   │ │   Kafka     │ │  Business   │          │
+│  │ (PostgreSQL)│ │ Publishers  │ │   Logic     │          │
+│  │             │ │ Consumers   │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Layered Architecture
 
 The service follows Domain-Driven Design (DDD) principles with clear separation of concerns:
@@ -51,31 +71,74 @@ The service follows Domain-Driven Design (DDD) principles with clear separation 
 - **Metrics**: Prometheus-compatible metrics with HTTP endpoint
 - **Logging**: Structured logging with Zap
 - **Configuration**: Environment-based configuration management
+- **Debugging**: pprof profiling on localhost:6060
+
+### Server Components
+
+**Location**: `internal/server/server.go`
+
+The `Server` struct is the compositional root that manages all service components:
+
+```go
+type Server struct {
+    cfg        *config.OrderConfig
+    log        *zap.Logger
+    grpcServer *grpc.Server
+    httpSrv    *http.Server
+    pprofSrv   *http.Server
+    ready      atomic.Bool
+
+    // database
+    db *gorm.DB
+
+    // business dependencies
+    orderRepo      repository.OrderRepository
+    orderPublisher publisher.OrderCreatedPublisher
+    orderSvc       *appsvc.OrderApplicationService
+
+    // metrics
+    pm      *metrics.MetricsServer
+    metrics ordermetrics.OrderMetrics
+
+    // Kafka consumers
+    consumers []interface{ Close() error }
+}
+```
+
+**Key Methods:**
+- `New(cfg, log)` - Creates and initializes all dependencies
+- `Run(ctx)` - Starts all servers and waits for shutdown signal
+- `shutdown(ctx)` - Gracefully shuts down all components
 
 ### Dependency Organization
 
 ```
 Order Service
-├── Domain Layer
-│   ├── Aggregates (Order aggregate with business rules)
-│   ├── Entities (OrderItem entity)
-│   ├── Value Objects (OrderItem, OrderStatus, ShippingAddress)
-│   ├── Ports (Repository, Publisher, Consumer interfaces)
-│   └── Services (OrderDomainService for business logic)
-├── Application Layer
-│   ├── Use Cases (Create, Get, Update, Cancel, AddItem, RemoveItem)
-│   ├── Services (OrderApplicationService, PaymentEventService, StockEventService)
-│   └── DTOs (Request/Response models)
-├── Infrastructure Layer
-│   ├── Repository (GORM implementation)
-│   ├── Kafka Publisher (event publishing)
-│   ├── Kafka Consumers (event processing)
-│   ├── gRPC Server
-│   └── Migration Service
-└── Cross-cutting Concerns
-    ├── Metrics (Prometheus)
-    ├── Logging (Zap)
-    └── Error Handling (domain-specific errors)
+├── cmd/
+│   └── main.go (thin entry point with build info)
+├── internal/
+│   ├── server/
+│   │   └── server.go (compositional root)
+│   ├── Domain Layer
+│   │   ├── Aggregates (Order aggregate with business rules)
+│   │   ├── Entities (OrderItem entity)
+│   │   ├── Value Objects (OrderItem, OrderStatus, ShippingAddress)
+│   │   ├── Ports (Repository, Publisher, Consumer interfaces)
+│   │   └── Services (OrderDomainService for business logic)
+│   ├── Application Layer
+│   │   ├── Use Cases (Create, Get, Update, Cancel, AddItem, RemoveItem)
+│   │   ├── Services (OrderApplicationService, PaymentEventService, StockEventService)
+│   │   └── DTOs (Request/Response models)
+│   ├── Infrastructure Layer
+│   │   ├── Repository (GORM implementation)
+│   │   ├── Kafka Publisher (event publishing)
+│   │   ├── Kafka Consumers (event processing)
+│   │   ├── gRPC Server
+│   │   └── Migration Service
+│   └── Cross-cutting Concerns
+│       ├── Metrics (Prometheus)
+│       ├── Logging (Zap)
+│       └── Error Handling (domain-specific errors)
 ```
 
 ## Data Flow
@@ -113,6 +176,34 @@ StockReserved Event → StockEventService → OrderDomainService → Update Orde
 ```
 
 ## Components
+
+### Server Lifecycle Management
+
+**Location**: `internal/server/server.go`
+
+The Server object manages the complete lifecycle of all service components:
+
+**Initialization:**
+1. **Database**: PostgreSQL connection with GORM and migrations
+2. **Repository**: GORM-based order repository
+3. **Publisher**: Kafka publisher for OrderCreated events
+4. **Metrics**: Prometheus metrics server
+5. **Application Service**: Order application service with all use cases
+6. **gRPC Server**: Protocol Buffer-based gRPC server with health checks
+7. **Kafka Consumers**: Payment and stock event consumers (if configured)
+
+**Runtime:**
+- **gRPC Server**: Handles order management requests
+- **HTTP Server**: Serves metrics (`/metrics`) and health checks (`/healthz`, `/readyz`)
+- **pprof Server**: Provides debugging endpoints on localhost:6060
+- **Kafka Consumers**: Process payment and stock events in background
+
+**Shutdown:**
+1. **gRPC Server**: Graceful stop with 5-second timeout
+2. **HTTP Servers**: Shutdown with context timeout
+3. **Kafka Consumers**: Close all consumer connections
+4. **Publisher**: Close Kafka publisher
+5. **Database**: Close database connection
 
 ### Order Aggregate
 
@@ -331,32 +422,39 @@ The OrderItem entity represents individual items within an order:
 ### Application Initialization
 
 ```
-main() → Run() → initialize() → start() → waitForShutdown()
+main() → server.New() → Server.Run() → waitForShutdown()
 ```
 
-**Initialize Phase:**
-1. **Infrastructure**: Database connection, migrations, Kafka publisher, metrics server
-2. **Business Logic**: Repository, use cases, application service
-3. **Kafka Components**: Publishers and consumers initialization
-4. **gRPC Server**: Server setup, service registration, health checks
+**Server.New() Phase:**
+1. **Database**: Connection, migrations, repository initialization
+2. **Publisher**: Kafka publisher setup
+3. **Metrics**: Prometheus metrics server
+4. **Application Service**: Order service with all use cases
+5. **gRPC Server**: Server setup, service registration, health checks
+6. **Kafka Consumers**: Consumer initialization (if configured)
 
-**Start Phase:**
+**Server.Run() Phase:**
 - Start gRPC server on configured port
-- Start metrics HTTP server in background
+- Start HTTP server for metrics and health checks
+- Start pprof server on localhost:6060
 - Start Kafka consumers in background
-- Application ready to serve requests
+- Set readiness flag after warmup
+- Wait for shutdown signal
 
 ### Graceful Shutdown
 
 **Shutdown Sequence:**
 1. **Signal Handling**: OS interrupt signals (SIGTERM, SIGINT, SIGHUP)
 2. **gRPC Server**: Graceful stop with 5-second timeout
-3. **Resource Cleanup**: Close database connections, Kafka connections
-4. **Context Cancellation**: Cancel all background operations
+3. **HTTP Servers**: Shutdown with context timeout
+4. **Kafka Consumers**: Close all consumer connections
+5. **Publisher**: Close Kafka publisher
+6. **Database**: Close database connection
 
 **Shutdown Timeout:**
 - gRPC graceful shutdown: 5 seconds
 - Force stop if graceful shutdown fails
+- Overall shutdown timeout: 30 seconds
 
 ## Business Rules & Domain Logic
 
@@ -392,6 +490,13 @@ PAID → CONFIRMED (stock reserved)
 ```
 
 ## Extensibility & Design Patterns
+
+### Compositional Root Pattern
+
+- **Single Server Object**: Manages all components and their lifecycle
+- **Explicit Dependencies**: Clear dependency injection without magic
+- **Simple Lifecycle**: Easy to understand start/stop sequence
+- **Maintainable**: One place to see all running components
 
 ### Domain-Driven Design (DDD)
 
@@ -518,17 +623,25 @@ go test -cover ./...
 
 ### Health Checks
 
-- gRPC health check service
-- Database connectivity verification
-- Kafka connectivity verification
+- **gRPC Health Check**: `grpc_health_v1` service
+- **HTTP Health Check**: `/healthz` endpoint (always 200)
+- **Readiness Check**: `/readyz` endpoint (200 after warmup)
+- **Metrics Endpoint**: `/metrics` for Prometheus
 
 ### Logging
 
-- Structured JSON logging
+- Structured JSON logging with Zap
 - Request correlation IDs
 - Error context and stack traces
 - Performance metrics integration
 - Event publishing logs
+- Build info logging (version, commit, build date)
+
+### Debugging
+
+- **pprof Server**: Available on localhost:6060
+- **Debug Endpoints**: `/debug/pprof/*` for profiling
+- **Goroutine Analysis**: Runtime profiling capabilities
 
 ## Integration Points
 
@@ -596,3 +709,27 @@ go test -cover ./...
 - Order data caching for frequently accessed orders
 - User order list caching
 - Status-based filtering optimization
+
+## Architecture Benefits
+
+### Simplified Structure
+
+- **Single Compositional Root**: All components managed in one place
+- **Clear Lifecycle**: Easy to understand start/stop sequence
+- **Explicit Dependencies**: No hidden magic or complex DI frameworks
+- **Maintainable**: One file shows all running components
+
+### Production Ready
+
+- **Graceful Shutdown**: Proper cleanup of all resources
+- **Health Checks**: Kubernetes-ready liveness and readiness probes
+- **Metrics**: Prometheus-compatible metrics collection
+- **Debugging**: pprof integration for production debugging
+- **Logging**: Structured logging with build information
+
+### Developer Experience
+
+- **Fast Startup**: Minimal initialization overhead
+- **Easy Debugging**: Clear component boundaries
+- **Simple Testing**: Easy to mock dependencies
+- **Clear Errors**: Explicit error handling and logging

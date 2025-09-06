@@ -12,6 +12,26 @@ The User Service is a core microservice within the e-commerce platform responsib
 
 ## Architecture
 
+### Simplified Server Architecture
+
+The service follows a **compositional root pattern** with a single `Server` object managing all components and their lifecycle. This approach eliminates unnecessary abstraction layers and provides a clear, maintainable structure.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Server (Compositional Root)              │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │   gRPC      │ │    HTTP     │ │    pprof    │          │
+│  │   Server    │ │  (metrics/  │ │  (debug)    │          │
+│  │             │ │   health)   │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
+│  │  Database   │ │    Auth     │ │  Business   │          │
+│  │ (PostgreSQL)│ │  Service    │ │   Logic     │          │
+│  │             │ │   (Redis)   │ │             │          │
+│  └─────────────┘ └─────────────┘ └─────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Layered Architecture
 
 The service follows Domain-Driven Design (DDD) principles with clear separation of concerns:
@@ -51,28 +71,68 @@ The service follows Domain-Driven Design (DDD) principles with clear separation 
 - **Metrics**: Prometheus-compatible metrics with HTTP endpoint
 - **Logging**: Structured logging with Zap
 - **Configuration**: Environment-based configuration management
+- **Debugging**: pprof profiling on localhost:6060
+
+### Server Components
+
+**Location**: `internal/server/server.go`
+
+The `Server` struct is the compositional root that manages all service components:
+
+```go
+type Server struct {
+    cfg        *config.UserConfig
+    log        *zap.Logger
+    grpcServer *grpc.Server
+    httpSrv    *http.Server
+    pprofSrv   *http.Server
+    ready      atomic.Bool
+
+    // database
+    db *gorm.DB
+
+    // business dependencies
+    userRepo    repository.UserRepository
+    authService authPorts.AuthService
+    userSvc     *appsvc.UserApplicationService
+
+    // metrics
+    pm      *metrics.MetricsServer
+    metrics usermetrics.UserMetrics
+}
+```
+
+**Key Methods:**
+- `New(cfg, log)` - Creates and initializes all dependencies
+- `Run(ctx)` - Starts all servers and waits for shutdown signal
+- `shutdown(ctx)` - Gracefully shuts down all components
 
 ### Dependency Organization
 
 ```
 User Service
-├── Domain Layer
-│   ├── Entities (User aggregate)
-│   ├── Value Objects (Email, Password, Name, Phone, TokenPair)
-│   └── Ports (Repository, Auth Service interfaces)
-├── Application Layer
-│   ├── Use Cases (Register, Login, GetUser, RefreshToken, Logout)
-│   ├── Application Service (orchestrates use cases)
-│   └── DTOs (Request/Response models)
-├── Infrastructure Layer
-│   ├── Repository (GORM implementation)
-│   ├── Auth Service (JWT implementation with Redis)
-│   ├── gRPC Server
-│   └── Migration Service
-└── Cross-cutting Concerns
-    ├── Metrics (Prometheus)
-    ├── Logging (Zap)
-    └── Error Handling (domain-specific errors)
+├── cmd/
+│   └── main.go (thin entry point with build info)
+├── internal/
+│   ├── server/
+│   │   └── server.go (compositional root)
+│   ├── Domain Layer
+│   │   ├── Entities (User aggregate)
+│   │   ├── Value Objects (Email, Password, Name, Phone, TokenPair)
+│   │   └── Ports (Repository, Auth Service interfaces)
+│   ├── Application Layer
+│   │   ├── Use Cases (Register, Login, GetUser, RefreshToken, Logout)
+│   │   ├── Application Service (orchestrates use cases)
+│   │   └── DTOs (Request/Response models)
+│   ├── Infrastructure Layer
+│   │   ├── Repository (GORM implementation)
+│   │   ├── Auth Service (JWT implementation with Redis)
+│   │   ├── gRPC Server
+│   │   └── Migration Service
+│   └── Cross-cutting Concerns
+│       ├── Metrics (Prometheus)
+│       ├── Logging (Zap)
+│       └── Error Handling (domain-specific errors)
 ```
 
 ## Data Flow
@@ -102,6 +162,31 @@ Response ← gRPC Server ← Application Service ← Use Case ← Repository ←
 - **Health Checks**: gRPC health check service for service discovery
 
 ## Components
+
+### Server Lifecycle Management
+
+**Location**: `internal/server/server.go`
+
+The Server object manages the complete lifecycle of all service components:
+
+**Initialization:**
+1. **Database**: PostgreSQL connection with GORM and migrations
+2. **Repository**: GORM-based user repository
+3. **Auth Service**: JWT authentication with Redis token storage
+4. **Metrics**: Prometheus metrics server
+5. **Application Service**: User application service with all use cases
+6. **gRPC Server**: Protocol Buffer-based gRPC server with health checks
+
+**Runtime:**
+- **gRPC Server**: Handles user management and authentication requests
+- **HTTP Server**: Serves metrics (`/metrics`) and health checks (`/healthz`, `/readyz`)
+- **pprof Server**: Provides debugging endpoints on localhost:6060
+
+**Shutdown:**
+1. **gRPC Server**: Graceful stop with 5-second timeout
+2. **HTTP Servers**: Shutdown with context timeout
+3. **Auth Service**: Close Redis connections
+4. **Database**: Close database connection
 
 ### User Entity
 
@@ -154,7 +239,7 @@ The User entity represents the user aggregate root:
 
 ### User Repository (GORM)
 
-**Location**: `internal/infra/repository/gorm_user_repository.go`
+**Location**: `internal/infra/repository/user_repository_gorm.go`
 
 - Implements `UserRepository` interface
 - Uses GORM for database operations
@@ -299,32 +384,45 @@ The User entity represents the user aggregate root:
 ### Application Initialization
 
 ```
-main() → Run() → initialize() → start() → waitForShutdown()
+main() → server.New() → Server.Run() → waitForShutdown()
 ```
 
-**Initialize Phase**:
-1. **Infrastructure**: Database connection, migrations, metrics server
-2. **Business Logic**: Repository, auth service, use cases, application service
-3. **gRPC Server**: Server setup, service registration, health checks
+**Server.New() Phase:**
+1. **Database**: Connection, migrations, repository initialization
+2. **Auth Service**: JWT authentication with Redis token storage
+3. **Metrics**: Prometheus metrics server
+4. **Application Service**: User service with all use cases
+5. **gRPC Server**: Server setup, service registration, health checks
 
-**Start Phase**:
+**Server.Run() Phase:**
 - Start gRPC server on configured port
-- Start metrics HTTP server in background
-- Application ready to serve requests
+- Start HTTP server for metrics and health checks
+- Start pprof server on localhost:6060
+- Set readiness flag after warmup
+- Wait for shutdown signal
 
 ### Graceful Shutdown
 
-**Shutdown Sequence**:
+**Shutdown Sequence:**
 1. **Signal Handling**: OS interrupt signals (SIGTERM, SIGINT, SIGHUP)
 2. **gRPC Server**: Graceful stop with 5-second timeout
-3. **Resource Cleanup**: Close database connections, Redis connections
-4. **Context Cancellation**: Cancel all background operations
+3. **HTTP Servers**: Shutdown with context timeout
+4. **Auth Service**: Close Redis connections
+5. **Database**: Close database connection
 
-**Shutdown Timeout**:
+**Shutdown Timeout:**
 - gRPC graceful shutdown: 5 seconds
 - Force stop if graceful shutdown fails
+- Overall shutdown timeout: 30 seconds
 
 ## Extensibility & Design Patterns
+
+### Compositional Root Pattern
+
+- **Single Server Object**: Manages all components and their lifecycle
+- **Explicit Dependencies**: Clear dependency injection without magic
+- **Simple Lifecycle**: Easy to understand start/stop sequence
+- **Maintainable**: One place to see all running components
 
 ### Domain-Driven Design (DDD)
 
@@ -462,13 +560,45 @@ go test -cover ./...
 
 ### Health Checks
 
-- gRPC health check service
-- Database connectivity verification
-- Redis storage availability
+- **gRPC Health Check**: `grpc_health_v1` service
+- **HTTP Health Check**: `/healthz` endpoint (always 200)
+- **Readiness Check**: `/readyz` endpoint (200 after warmup)
+- **Metrics Endpoint**: `/metrics` for Prometheus
 
 ### Logging
 
-- Structured JSON logging
+- Structured JSON logging with Zap
 - Request correlation IDs
 - Error context and stack traces
 - Performance metrics integration
+- Build info logging (version, commit, build date)
+
+### Debugging
+
+- **pprof Server**: Available on localhost:6060
+- **Debug Endpoints**: `/debug/pprof/*` for profiling
+- **Goroutine Analysis**: Runtime profiling capabilities
+
+## Architecture Benefits
+
+### Simplified Structure
+
+- **Single Compositional Root**: All components managed in one place
+- **Clear Lifecycle**: Easy to understand start/stop sequence
+- **Explicit Dependencies**: No hidden magic or complex DI frameworks
+- **Maintainable**: One file shows all running components
+
+### Production Ready
+
+- **Graceful Shutdown**: Proper cleanup of all resources
+- **Health Checks**: Kubernetes-ready liveness and readiness probes
+- **Metrics**: Prometheus-compatible metrics collection
+- **Debugging**: pprof integration for production debugging
+- **Logging**: Structured logging with build information
+
+### Developer Experience
+
+- **Fast Startup**: Minimal initialization overhead
+- **Easy Debugging**: Clear component boundaries
+- **Simple Testing**: Easy to mock dependencies
+- **Clear Errors**: Explicit error handling and logging

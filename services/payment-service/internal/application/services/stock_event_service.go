@@ -70,3 +70,21 @@ func (s *StockEventService) ProcessStockReserved(ctx context.Context, evt *event
 
 	return nil
 }
+
+// ProcessStockReleased processes StockReleased events
+func (s *StockEventService) ProcessStockReleased(ctx context.Context, evt *events.StockReleased) error {
+	// Basic nil check only
+	if evt == nil {
+		return fmt.Errorf("event is nil")
+	}
+
+	// Handle stock release - could involve refunding or canceling payment
+	s.logger.Info("handling stock release for order", "orderID", evt.OrderId)
+
+	// For now, just log the event. In a real implementation, you might:
+	// 1. Cancel pending payments
+	// 2. Initiate refunds
+	// 3. Update payment status
+
+	return nil
+}

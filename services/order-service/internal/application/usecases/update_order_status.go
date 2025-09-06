@@ -29,23 +29,35 @@ func NewUpdateOrderStatusUseCase(
 
 // Execute updates the status of an order
 func (uc *UpdateOrderStatusUseCase) Execute(ctx context.Context, orderID string, status valueobjects.OrderStatus) (*aggregates.Order, error) {
-	// Get order from repository
-	order, err := uc.orderRepo.GetByID(ctx, orderID)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := uc.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepository) error {
+		// Get order from repository
+		var err error
+		order, err = txRepo.GetByID(ctx, orderID)
+		if err != nil {
+			uc.logger.Error("Failed to retrieve order for status update", "order_id", orderID, "error", err)
+			return errors.ErrOrderRetrievalFailed
+		}
+
+		// Use domain method to update order status
+		if err := order.SetStatus(status); err != nil {
+			uc.logger.Error("Failed to set order status", "order_id", orderID, "new_status", status, "error", err)
+			return errors.ErrOrderStatusUpdateFailed
+		}
+
+		// Save updated order
+		if err := txRepo.Update(ctx, order); err != nil {
+			uc.logger.Error("Failed to save updated order status", "order_id", orderID, "error", err)
+			return errors.ErrOrderPersistenceFailed
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		uc.logger.Error("Failed to retrieve order for status update", "order_id", orderID, "error", err)
-		return nil, errors.ErrOrderRetrievalFailed
-	}
-
-	// Use domain method to update order status
-	if err := order.SetStatus(status); err != nil {
-		uc.logger.Error("Failed to set order status", "order_id", orderID, "new_status", status, "error", err)
-		return nil, errors.ErrOrderStatusUpdateFailed
-	}
-
-	// Save updated order
-	if err := uc.orderRepo.Update(ctx, order); err != nil {
-		uc.logger.Error("Failed to save updated order status", "order_id", orderID, "error", err)
-		return nil, errors.ErrOrderPersistenceFailed
+		return nil, err
 	}
 
 	return order, nil

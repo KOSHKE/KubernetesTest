@@ -25,15 +25,13 @@ service InventoryService {
 message Product {
   string id = 1;
   string name = 2;
-  string description = 3;
-  Money price = 4;
-  string category_id = 5;
-  string category_name = 6;
-  int32 stock_quantity = 7;
-  string image_url = 8;
-  bool is_active = 9;
-  google.protobuf.Timestamp created_at = 10;
-  google.protobuf.Timestamp updated_at = 11;
+  Money price = 3;
+  string category_id = 4;
+  string category_name = 5;
+  int32 stock_quantity = 6;
+  string image_url = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
 }
 
 message Category {

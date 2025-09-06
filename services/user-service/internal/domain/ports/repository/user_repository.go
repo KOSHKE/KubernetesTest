@@ -15,7 +15,7 @@ type UserRepository interface {
 	Delete(ctx context.Context, id string) error
 	ExistsByEmail(ctx context.Context, email valueobjects.Email) (bool, error)
 	ExistsByID(ctx context.Context, id string) (bool, error)
-	
+
 	// Transaction support
-	WithTx(tx interface{}) UserRepository
+	WithTransaction(ctx context.Context, fn func(UserRepository) error) error
 }

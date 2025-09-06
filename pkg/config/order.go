@@ -47,11 +47,6 @@ type OrderItemConfig struct {
 	SupportedCurrencies []string
 }
 
-// GracefulShutdownConfig holds graceful shutdown configuration
-type GracefulShutdownConfig struct {
-	Timeout time.Duration
-}
-
 // LoadOrderConfig loads order service configuration from environment variables
 func LoadOrderConfig() (*OrderConfig, error) {
 	// Load base configuration

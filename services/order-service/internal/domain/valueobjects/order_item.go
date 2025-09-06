@@ -6,10 +6,10 @@ import (
 
 // OrderItem represents an item in an order as a value object
 type OrderItem struct {
-	ProductID   string
-	ProductName string
-	Quantity    int32
-	Price       valueobjects.Money
+	ProductID   string             `gorm:"type:varchar(255);not null"`
+	ProductName string             `gorm:"type:varchar(500);not null"`
+	Quantity    int32              `gorm:"type:int;not null"`
+	Price       valueobjects.Money `gorm:"embedded;embeddedPrefix:price_"`
 }
 
 // NewOrderItem creates a new OrderItem value object

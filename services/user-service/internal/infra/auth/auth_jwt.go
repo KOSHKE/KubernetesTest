@@ -280,6 +280,13 @@ func (s *JWTAuthService) RevokeAllUserTokens(ctx context.Context, userID string)
 	return s.tokenStorage.RevokeAllUserTokens(timeoutCtx, userID)
 }
 
+// WithTransaction executes operations within a transaction
+func (s *JWTAuthService) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	// For Redis operations, we'll use MULTI/EXEC for atomicity
+	// This is a simplified implementation - in production you might want more sophisticated transaction handling
+	return s.tokenStorage.WithTransaction(ctx, fn)
+}
+
 // Close closes token storage connection
 func (s *JWTAuthService) Close() error {
 	return s.tokenStorage.Close()

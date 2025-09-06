@@ -36,3 +36,45 @@ func (s *StockEventService) ProcessStockReserved(ctx context.Context, evt *event
 
 	return nil
 }
+
+// ProcessStockReservationFailed processes StockReservationFailed events
+func (s *StockEventService) ProcessStockReservationFailed(ctx context.Context, evt *events.StockReservationFailed) error {
+	// Basic nil check only
+	if evt == nil {
+		return fmt.Errorf("event is nil")
+	}
+
+	if err := s.orderDomainService.CancelOrder(ctx, evt.OrderId, evt.Reason); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ProcessStockReleased processes StockReleased events
+func (s *StockEventService) ProcessStockReleased(ctx context.Context, evt *events.StockReleased) error {
+	// Basic nil check only
+	if evt == nil {
+		return fmt.Errorf("event is nil")
+	}
+
+	if err := s.orderDomainService.HandleStockReleased(ctx, evt.OrderId); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ProcessStockCommitted processes StockCommitted events
+func (s *StockEventService) ProcessStockCommitted(ctx context.Context, evt *events.StockCommitted) error {
+	// Basic nil check only
+	if evt == nil {
+		return fmt.Errorf("event is nil")
+	}
+
+	if err := s.orderDomainService.CompleteOrder(ctx, evt.OrderId); err != nil {
+		return err
+	}
+
+	return nil
+}

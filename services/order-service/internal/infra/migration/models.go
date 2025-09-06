@@ -2,8 +2,6 @@ package migration
 
 import (
 	"time"
-
-	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 )
 
 // MigrationRecord tracks applied migrations
@@ -16,14 +14,14 @@ type MigrationRecord struct {
 
 // OrderRecord is a GORM model for orders
 type OrderRecord struct {
-	ID              string                        `gorm:"primaryKey;type:varchar(255)"`
-	UserID          string                        `gorm:"type:varchar(255);not null;index:idx_user_id"`
-	Status          orderValueObjects.OrderStatus `gorm:"type:varchar(50);not null;default:'PENDING'"`
-	ShippingAddress string                        `gorm:"type:text;not null"`
-	Currency        string                        `gorm:"type:varchar(3);not null;default:'USD'"`
-	TotalAmount     int64                         `gorm:"type:bigint;not null;default:0"`
-	CreatedAt       time.Time                     `gorm:"autoCreateTime"`
-	UpdatedAt       time.Time                     `gorm:"autoUpdateTime"`
+	ID              string    `gorm:"primaryKey;type:varchar(255)"`
+	UserID          string    `gorm:"type:varchar(255);not null;index:idx_user_id"`
+	Status          string    `gorm:"type:varchar(50);not null;default:'PENDING'"`
+	ShippingAddress string    `gorm:"type:text;not null"`
+	Currency        string    `gorm:"type:varchar(3);not null;default:'USD'"`
+	TotalAmount     int64     `gorm:"type:bigint;not null;default:0"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
 
 	// GORM relationships
 	Items []OrderItemRecord `gorm:"foreignKey:OrderID"`

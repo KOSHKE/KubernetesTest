@@ -56,26 +56,37 @@ func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string)
 		return nil, nil, errors.ErrInvalidCredentials
 	}
 
-	// Generate authentication tokens
-	tokenPair, err := uc.authService.GenerateTokenPair(user.ID, user.Email.Value())
-	if err != nil {
-		uc.logger.Error("failed to generate tokens", "error", err)
-		return nil, nil, errors.ErrTokenGenerationFailed
-	}
+	var domainTokenPair *valueobjects.TokenPair
 
-	// Store refresh token
-	if err := uc.authService.StoreRefreshToken(ctx, tokenPair.RefreshToken, user.ID); err != nil {
-		uc.logger.Error("failed to store refresh token", "error", err)
-		return nil, nil, errors.ErrTokenStorageFailed
+	// Execute token generation and storage within a transaction
+	err = uc.authService.WithTransaction(ctx, func(txCtx context.Context) error {
+		// Generate authentication tokens
+		tokenPair, err := uc.authService.GenerateTokenPair(user.ID, user.Email.Value())
+		if err != nil {
+			uc.logger.Error("failed to generate tokens", "error", err)
+			return errors.ErrTokenGenerationFailed
+		}
+
+		// Store refresh token
+		if err := uc.authService.StoreRefreshToken(txCtx, tokenPair.RefreshToken, user.ID); err != nil {
+			uc.logger.Error("failed to store refresh token", "error", err)
+			return errors.ErrTokenStorageFailed
+		}
+
+		// Create domain token pair
+		domainTokenPair = valueobjects.NewTokenPair(tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Record metrics for successful login
 	if uc.metrics != nil {
 		uc.metrics.UserLoginSuccess()
 	}
-
-	// Create domain token pair
-	domainTokenPair := valueobjects.NewTokenPair(tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
 
 	return user, domainTokenPair, nil
 }
