@@ -43,12 +43,12 @@ func (uc *ReserveStockUseCase) Execute(ctx context.Context, orderID string, item
 		// Save event to outbox table (to be published later)
 		eventData := dto.StockEventDTO{
 			OrderID: orderID,
-			UserID:  "", // UserID not needed for stock operations
 			Items:   items,
 		}
 		event := outbox.Event{
-			Type:    "StockReserved",
-			Payload: eventData,
+			AggregateID: orderID,
+			Type:        "StockReserved",
+			Payload:     eventData,
 		}
 		if err := uc.outboxService.SaveEvent(ctx, event); err != nil {
 			uc.logger.Error("failed to save event to outbox", "orderID", orderID, "error", err)

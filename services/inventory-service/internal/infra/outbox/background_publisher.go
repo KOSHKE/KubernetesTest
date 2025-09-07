@@ -2,66 +2,40 @@ package outbox
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
-	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
+	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 )
 
-// BackgroundPublisher handles background publishing of outbox events using hybrid approach
+// BackgroundPublisher handles background publishing of outbox events
 type BackgroundPublisher struct {
-	// Dependencies
-	outboxRepo repository.OutboxRepository
-	publisher  outbox.Publisher
-	logger     logger.Logger
+	repo      outbox.Repository
+	publisher publisher.StockEventsPublisher
+	logger    logger.Logger
 
-	// Configuration
-	workers    int           // Number of worker goroutines
-	interval   time.Duration // How often to check for new events
-	batchSize  int           // Maximum events to process per batch
-	maxRetries int           // Maximum retry attempts for failed events
-	retryDelay time.Duration // Delay between retries
-
-	// Internal channels
-	jobQueue   chan outbox.Event
-	errorQueue chan EventError
-
-	// Control
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	interval  time.Duration
+	batchSize int
 }
 
-// EventError represents an error that occurred while processing an event
-type EventError struct {
-	Event outbox.Event
-	Error error
-	Retry int
-}
-
-// NewBackgroundPublisher creates a new background publisher
-func NewBackgroundPublisher(
-	outboxRepo repository.OutboxRepository,
-	publisher outbox.Publisher,
-	logger logger.Logger,
-) *BackgroundPublisher {
+// NewBackgroundPublisher creates a new publisher
+func NewBackgroundPublisher(repo outbox.Repository, stockPublisher publisher.StockEventsPublisher, logger logger.Logger, interval time.Duration, batchSize int) *BackgroundPublisher {
 	return &BackgroundPublisher{
-		outboxRepo: outboxRepo,
-		publisher:  publisher,
-		logger:     logger,
-		interval:   5 * time.Second, // Check every 5 seconds
-		batchSize:  100,             // Process up to 100 events per batch
+		repo:      repo,
+		publisher: stockPublisher,
+		logger:    logger,
+		interval:  interval,
+		batchSize: batchSize,
 	}
 }
 
-// Start begins the background publishing process
+// Start runs the publisher loop until the context is canceled
 func (bp *BackgroundPublisher) Start(ctx context.Context) {
-	bp.logger.Info("starting background outbox publisher", "interval", bp.interval, "batchSize", bp.batchSize)
-
 	ticker := time.NewTicker(bp.interval)
 	defer ticker.Stop()
+
+	bp.logger.Info("starting background outbox publisher", "interval", bp.interval, "batchSize", bp.batchSize)
 
 	for {
 		select {
@@ -69,51 +43,39 @@ func (bp *BackgroundPublisher) Start(ctx context.Context) {
 			bp.logger.Info("background outbox publisher stopped", "reason", ctx.Err())
 			return
 		case <-ticker.C:
-			if err := bp.processOutboxEvents(ctx); err != nil {
-				bp.logger.Error("failed to process outbox events", "error", err)
+			if err := bp.processBatch(ctx); err != nil {
+				bp.logger.Error("failed to process batch", "error", err)
 			}
 		}
 	}
 }
 
-// processOutboxEvents processes unprocessed events from outbox
-func (bp *BackgroundPublisher) processOutboxEvents(ctx context.Context) error {
-	// Get unprocessed events
-	events, err := bp.outboxRepo.GetUnprocessedEvents(ctx, bp.batchSize)
+// processBatch fetches unprocessed events and publishes them
+func (bp *BackgroundPublisher) processBatch(ctx context.Context) error {
+	events, err := bp.repo.GetUnprocessedEvents(ctx, bp.batchSize)
 	if err != nil {
 		return err
 	}
 
 	if len(events) == 0 {
-		return nil // No events to process
+		return nil
 	}
 
 	bp.logger.Info("processing outbox events", "count", len(events))
 
-	// Process events in batches
-	for _, event := range events {
-		if err := bp.publishEvent(ctx, event); err != nil {
-			bp.logger.Error("failed to publish event", "eventID", event.ID, "error", err)
-			continue // Continue with next event
+	for _, e := range events {
+		// Publish using direct publisher
+		if err := bp.publisher.PublishFromOutbox(ctx, e); err != nil {
+			bp.logger.Error("failed to publish event", "eventID", e.ID, "eventType", e.Type, "err", err)
+			_ = bp.repo.MarkAsFailed(ctx, e.ID, err.Error())
+			continue
 		}
 
-		// Mark event as processed
-		if err := bp.outboxRepo.MarkAsProcessed(ctx, event.ID); err != nil {
-			bp.logger.Error("failed to mark event as processed", "eventID", event.ID, "error", err)
+		// Mark processed
+		if err := bp.repo.MarkAsProcessed(ctx, e.ID); err != nil {
+			bp.logger.Error("failed to mark event as processed", "eventID", e.ID, "err", err)
 		}
 	}
 
-	bp.logger.Info("outbox events processed successfully", "count", len(events))
-	return nil
-}
-
-// publishEvent publishes a single event
-func (bp *BackgroundPublisher) publishEvent(ctx context.Context, event outbox.Event) error {
-	// Publish event using the publisher
-	if err := bp.publisher.Publish(ctx, event); err != nil {
-		return err
-	}
-
-	bp.logger.Debug("event published successfully", "eventID", event.ID, "type", event.Type)
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
+	"ecommerce-platform/services/inventory-service/internal/infra/migration"
 
 	"gorm.io/gorm"
 )
@@ -15,16 +16,6 @@ import (
 // GormOutboxRepository implements OutboxRepository using GORM
 type GormOutboxRepository struct {
 	db *gorm.DB
-}
-
-// OutboxRecordGorm represents an outbox record in the database with GORM tags
-type OutboxRecordGorm struct {
-	ID        uint      `gorm:"primaryKey"`
-	Type      string    `gorm:"not null"`
-	Payload   string    `gorm:"type:json;not null"`
-	Processed bool      `gorm:"default:false;not null"`
-	CreatedAt time.Time `gorm:"autoCreateTime"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
 // NewOutboxRepository creates a new outbox repository
@@ -40,18 +31,23 @@ func (r *GormOutboxRepository) SaveEvent(ctx context.Context, event outbox.Event
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	record := OutboxRecordGorm{
-		Type:      event.Type,
-		Payload:   string(payloadJSON),
-		Processed: false,
+	record := migration.OutboxRecord{
+		AggregateID: event.AggregateID,
+		Type:        event.Type,
+		Payload:     string(payloadJSON),
+		RetryCount:  event.RetryCount,
+		Processed:   false,
+		ProcessedAt: event.ProcessedAt,
+		FailedAt:    event.FailedAt,
+		Error:       event.Error,
 	}
 
 	return r.db.WithContext(ctx).Create(&record).Error
 }
 
 // GetUnprocessedEvents returns unprocessed events
-func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([]outbox.OutboxRecord, error) {
-	var records []OutboxRecordGorm
+func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([]outbox.Event, error) {
+	var records []migration.OutboxRecord
 	err := r.db.WithContext(ctx).
 		Where("processed = ?", false).
 		Order("created_at ASC").
@@ -62,26 +58,56 @@ func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit i
 		return nil, err
 	}
 
-	// Convert to outbox.OutboxRecord
-	result := make([]outbox.OutboxRecord, len(records))
+	// Convert to outbox.Event
+	result := make([]outbox.Event, len(records))
 	for i, record := range records {
-		result[i] = outbox.OutboxRecord{
-			ID:        record.ID,
-			Type:      record.Type,
-			Payload:   record.Payload,
-			CreatedAt: record.CreatedAt,
-			UpdatedAt: record.UpdatedAt,
-			Processed: record.Processed,
+		// Parse payload back to interface{}
+		var payload interface{}
+		if err := json.Unmarshal([]byte(record.Payload), &payload); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal payload for record %d: %w", record.ID, err)
+		}
+
+		result[i] = outbox.Event{
+			ID:          record.ID,
+			AggregateID: record.AggregateID,
+			Type:        record.Type,
+			Payload:     payload,
+			RetryCount:  record.RetryCount,
+			CreatedAt:   record.CreatedAt,
+			ProcessedAt: record.ProcessedAt,
+			FailedAt:    record.FailedAt,
+			Error:       record.Error,
 		}
 	}
 
 	return result, nil
 }
 
-// MarkAsProcessed marks events as processed
-func (r *GormOutboxRepository) MarkAsProcessed(ctx context.Context, ids []uint) error {
+// MarkAsProcessed marks an event as processed
+func (r *GormOutboxRepository) MarkAsProcessed(ctx context.Context, id uint) error {
+	now := time.Now()
 	return r.db.WithContext(ctx).
-		Model(&OutboxRecordGorm{}).
-		Where("id IN ?", ids).
-		Update("processed", true).Error
+		Model(&migration.OutboxRecord{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"processed":    true,
+			"processed_at": &now,
+			"failed_at":    nil,
+			"error":        "",
+		}).Error
+}
+
+// MarkAsFailed marks an event as failed
+func (r *GormOutboxRepository) MarkAsFailed(ctx context.Context, id uint, err string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).
+		Model(&migration.OutboxRecord{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"processed":    false,
+			"failed_at":    &now,
+			"processed_at": nil,
+			"error":        err,
+			"retry_count":  gorm.Expr("retry_count + 1"),
+		}).Error
 }

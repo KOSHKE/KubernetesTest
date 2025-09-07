@@ -56,11 +56,11 @@ func (tc *TypedConsumer[T]) Close() error {
 
 // Run starts consuming messages with type-safe event handling
 func (tc *TypedConsumer[T]) Run(ctx context.Context, topics []string) error {
-	return tc.base.RunValueLoop(ctx, topics, func(hctx context.Context, value []byte) error {
+	return tc.base.Run(ctx, topics, func(value []byte) error {
 		evt, err := tc.unmarshal(value)
 		if err != nil {
 			return err
 		}
-		return tc.handler.Handle(hctx, evt)
+		return tc.handler.Handle(ctx, evt)
 	})
 }

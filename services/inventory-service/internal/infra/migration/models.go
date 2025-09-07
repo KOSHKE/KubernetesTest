@@ -39,3 +39,23 @@ type StockRecord struct {
 func (StockRecord) TableName() string {
 	return "stocks"
 }
+
+// OutboxRecord represents the outbox table structure
+type OutboxRecord struct {
+	ID          uint   `gorm:"primaryKey"`
+	AggregateID string `gorm:"not null"`
+	Type        string `gorm:"not null"`
+	Payload     string `gorm:"type:json;not null"`
+	RetryCount  int    `gorm:"default:0"`
+	Processed   bool   `gorm:"default:false;not null"`
+	ProcessedAt *time.Time
+	FailedAt    *time.Time
+	Error       string    `gorm:"type:text"`
+	CreatedAt   time.Time `gorm:"autoCreateTime"`
+	UpdatedAt   time.Time `gorm:"autoUpdateTime"`
+}
+
+// TableName returns the table name for OutboxRecord
+func (OutboxRecord) TableName() string {
+	return "outbox_records"
+}

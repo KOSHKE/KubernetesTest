@@ -80,7 +80,6 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetP
 		Total:    response.Total,
 	}
 
-	s.logger.Info("products retrieved successfully via gRPC", "count", len(response.Products), "total", response.Total)
 	return grpcResponse, nil
 }
 
@@ -109,7 +108,6 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 		},
 	}
 
-	s.logger.Info("product retrieved successfully via gRPC", "productID", req.Id)
 	return grpcResponse, nil
 }
 
@@ -167,7 +165,6 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.Check
 		AllAvailable: allAvailable,
 	}
 
-	s.logger.Info("stock check completed via gRPC", "allAvailable", allAvailable)
 	return grpcResponse, nil
 }
 
@@ -178,7 +175,6 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 	// Convert gRPC request to DTO
 	reserveReq := &dto.ReserveStockRequest{
 		OrderID: req.OrderId,
-		UserID:  req.UserId,
 		Items:   make([]dto.StockReservationItem, len(req.Items)),
 	}
 
@@ -203,12 +199,6 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 		FailedProducts: response.FailedItems,
 	}
 
-	s.logger.Info("stock reservation completed via gRPC",
-		"orderID", req.OrderId,
-		"success", response.Success,
-		"reservedCount", len(response.ReservedItems),
-		"failedCount", len(response.FailedItems))
-
 	return grpcResponse, nil
 }
 
@@ -230,7 +220,6 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.Rel
 	// Convert to DTO and release stock using application service
 	releaseReq := &dto.ReleaseStockRequest{
 		OrderID: req.OrderId,
-		UserID:  "", // ReleaseStockRequest doesn't have UserId field
 		Items:   make([]dto.StockReservationItem, len(items)),
 	}
 	for i, item := range items {
@@ -251,6 +240,5 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.Rel
 		Message: "Stock released successfully",
 	}
 
-	s.logger.Info("stock released successfully via gRPC", "orderID", req.OrderId)
 	return grpcResponse, nil
 }

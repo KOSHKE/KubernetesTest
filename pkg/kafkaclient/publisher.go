@@ -2,57 +2,32 @@ package kafkaclient
 
 import (
 	"context"
-	"time"
+
+	"ecommerce-platform/pkg/logger"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"ecommerce-platform/pkg/logger"
 )
 
-// Publisher defines interface for publishing messages
+// Publisher defines minimal interface for sending messages
 type Publisher interface {
 	Publish(ctx context.Context, topic string, value []byte) error
-	WithLogger(l logger.Logger) Publisher
 	Close() error
 }
 
-// PublisherConfig holds publisher configuration
-type PublisherConfig struct {
-	BootstrapServers string
-	ClientID         string
-	Acks             string
-	DeliveryTimeout  time.Duration
-	FlushTimeout     time.Duration
-}
-
-// KafkaPublisher implements Publisher interface with optimized delivery handling
+// KafkaPublisher is a simplified Kafka publisher
 type KafkaPublisher struct {
-	p        *kafka.Producer
-	delivery chan kafka.Event
+	producer *kafka.Producer
 	log      logger.Logger
-	config   PublisherConfig
 }
 
-// NewKafkaPublisher creates new publisher with optimized config
-func NewKafkaPublisher(config PublisherConfig) (*KafkaPublisher, error) {
-	if config.Acks == "" {
-		config.Acks = "all"
-	}
-	if config.DeliveryTimeout == 0 {
-		config.DeliveryTimeout = 30 * time.Second
-	}
-	if config.FlushTimeout == 0 {
-		config.FlushTimeout = 5 * time.Second
-	}
-
+// NewKafkaPublisher creates a minimal KafkaPublisher
+func NewKafkaPublisher(bootstrapServers string, clientID string, log logger.Logger) (*KafkaPublisher, error) {
 	conf := &kafka.ConfigMap{
-		"bootstrap.servers":   config.BootstrapServers,
-		"client.id":           config.ClientID,
-		"acks":                config.Acks,
-		"delivery.timeout.ms": int(config.DeliveryTimeout.Milliseconds()),
-		"request.timeout.ms":  int(config.DeliveryTimeout.Milliseconds()),
-		"linger.ms":           5,        // Batch messages for 5ms
-		"batch.size":          16384,    // 16KB batch size
-		"compression.type":    "snappy", // Enable compression
+		"bootstrap.servers": bootstrapServers,
+		"client.id":         clientID,
+		"acks":              "all",
+		"linger.ms":         5,
+		"compression.type":  "snappy",
 	}
 
 	p, err := kafka.NewProducer(conf)
@@ -60,124 +35,47 @@ func NewKafkaPublisher(config PublisherConfig) (*KafkaPublisher, error) {
 		return nil, err
 	}
 
-	kp := &KafkaPublisher{
-		p:        p,
-		delivery: make(chan kafka.Event, 1000), // Increased buffer
-		config:   config,
-	}
-
-	// Start delivery monitoring goroutine
-	go kp.monitorDelivery()
-
-	return kp, nil
+	return &KafkaPublisher{
+		producer: p,
+		log:      log,
+	}, nil
 }
 
-// WithLogger sets logger for publisher
-func (k *KafkaPublisher) WithLogger(l logger.Logger) Publisher {
-	k.log = l
-	return k
-}
-
-// Close gracefully shuts down publisher
-func (k *KafkaPublisher) Close() error {
-	// Flush remaining messages
-	remaining := k.p.Flush(int(k.config.FlushTimeout.Milliseconds()))
-	if remaining > 0 && k.log != nil {
-		k.log.Warn("failed to flush messages during shutdown", "remaining", remaining)
-	}
-
-	// Close delivery channel
-	close(k.delivery)
-
-	// Close producer
-	k.p.Close()
-
-	return nil
-}
-
-// Publish sends message asynchronously with delivery confirmation
+// Publish sends a message asynchronously
 func (k *KafkaPublisher) Publish(ctx context.Context, topic string, value []byte) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		// Continue with publish
 	}
 
 	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: kafka.PartitionAny,
-		},
-		Value: value,
-		Headers: []kafka.Header{
-			{Key: "timestamp", Value: []byte(time.Now().Format(time.RFC3339))},
-		},
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          value,
 	}
 
-	if err := k.p.Produce(msg, k.delivery); err != nil {
+	if err := k.producer.Produce(msg, nil); err != nil {
 		if k.log != nil {
-			k.log.Error("failed to produce message", "error", err, "topic", topic)
+			k.log.Error("failed to produce message", "topic", topic, "error", err)
 		}
 		return err
 	}
 
 	if k.log != nil {
-		k.log.Debug("message queued for delivery", "topic", topic, "size", len(value))
+		k.log.Debug("message queued for delivery", "topic", topic)
 	}
-
 	return nil
 }
 
-// monitorDelivery handles delivery confirmations and errors
-func (k *KafkaPublisher) monitorDelivery() {
-	for evt := range k.delivery {
-		switch e := evt.(type) {
-		case *kafka.Message:
-			if e.TopicPartition.Error != nil {
-				k.logDeliveryError(e)
-			} else {
-				k.logDeliverySuccess(e)
-			}
-		case *kafka.Error:
-			if k.log != nil {
-				k.log.Error("kafka producer error", "error", e.Error(), "code", e.Code())
-			}
-		}
-	}
+// WithLogger sets logger for publisher
+func (k *KafkaPublisher) WithLogger(l logger.Logger) *KafkaPublisher {
+	k.log = l
+	return k
 }
 
-// logDeliveryError logs failed message delivery
-func (k *KafkaPublisher) logDeliveryError(msg *kafka.Message) {
-	if k.log == nil {
-		return
-	}
-
-	topic := ""
-	if msg.TopicPartition.Topic != nil {
-		topic = *msg.TopicPartition.Topic
-	}
-
-	k.log.Error("message delivery failed",
-		"topic", topic,
-		"partition", msg.TopicPartition.Partition,
-		"offset", msg.TopicPartition.Offset,
-		"error", msg.TopicPartition.Error)
-}
-
-// logDeliverySuccess logs successful message delivery
-func (k *KafkaPublisher) logDeliverySuccess(msg *kafka.Message) {
-	if k.log == nil {
-		return
-	}
-
-	topic := ""
-	if msg.TopicPartition.Topic != nil {
-		topic = *msg.TopicPartition.Topic
-	}
-
-	k.log.Debug("message delivered successfully",
-		"topic", topic,
-		"partition", msg.TopicPartition.Partition,
-		"offset", msg.TopicPartition.Offset)
+// Close flushes and closes the producer
+func (k *KafkaPublisher) Close() error {
+	k.producer.Flush(5000) // wait up to 5s for delivery
+	k.producer.Close()
+	return nil
 }

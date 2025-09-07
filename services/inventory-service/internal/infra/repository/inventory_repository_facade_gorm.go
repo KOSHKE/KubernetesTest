@@ -83,12 +83,16 @@ func (r *InventoryRepositoryFacadeGorm) SaveEvent(ctx context.Context, event out
 	return r.outboxRepoFactory(r.db).SaveEvent(ctx, event)
 }
 
-func (r *InventoryRepositoryFacadeGorm) GetUnprocessedEvents(ctx context.Context, limit int) ([]outbox.OutboxRecord, error) {
+func (r *InventoryRepositoryFacadeGorm) GetUnprocessedEvents(ctx context.Context, limit int) ([]outbox.Event, error) {
 	return r.outboxRepoFactory(r.db).GetUnprocessedEvents(ctx, limit)
 }
 
-func (r *InventoryRepositoryFacadeGorm) MarkAsProcessed(ctx context.Context, ids []uint) error {
-	return r.outboxRepoFactory(r.db).MarkAsProcessed(ctx, ids)
+func (r *InventoryRepositoryFacadeGorm) MarkAsProcessed(ctx context.Context, id uint) error {
+	return r.outboxRepoFactory(r.db).MarkAsProcessed(ctx, id)
+}
+
+func (r *InventoryRepositoryFacadeGorm) MarkAsFailed(ctx context.Context, id uint, err string) error {
+	return r.outboxRepoFactory(r.db).MarkAsFailed(ctx, id, err)
 }
 
 // Transaction support - all repositories participate in the same transaction

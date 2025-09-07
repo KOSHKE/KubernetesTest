@@ -6,6 +6,12 @@ import (
 	"ecommerce-platform/pkg/logger"
 )
 
+// PublisherConfig holds configuration for publisher
+type PublisherConfig struct {
+	BootstrapServers string
+	ClientID         string
+}
+
 // EventPublisher defines interface for publishing typed events
 type EventPublisher[T any] interface {
 	Publish(ctx context.Context, evt T) error
@@ -22,7 +28,7 @@ func (f EventPublisherFunc[T]) Publish(ctx context.Context, evt T) error {
 
 // TypedPublisher is a type-safe wrapper around base Publisher for specific event types
 type TypedPublisher[T any] struct {
-	base    Publisher
+	base    *KafkaPublisher
 	topic   string
 	marshal func(T) ([]byte, error)
 }
@@ -32,8 +38,9 @@ func NewTypedPublisher[T any](
 	config PublisherConfig,
 	topic string,
 	marshal func(T) ([]byte, error),
+	log logger.Logger,
 ) (*TypedPublisher[T], error) {
-	base, err := NewKafkaPublisher(config)
+	base, err := NewKafkaPublisher(config.BootstrapServers, config.ClientID, log)
 	if err != nil {
 		return nil, err
 	}

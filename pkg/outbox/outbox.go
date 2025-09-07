@@ -2,60 +2,41 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"ecommerce-platform/pkg/logger"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-// Event represents an event to be published via outbox pattern
+// Event represents a record in the outbox table
 type Event struct {
-	ID           uint       `json:"id"`
-	EventID      string     `json:"event_id"` // UUID for deduplication
-	Type         string     `json:"type"`
-	Payload      any        `json:"payload"`
-	PayloadHash  string     `json:"payload_hash"` // Hash for fast deduplication
-	Priority     int        `json:"priority"`     // Higher = more critical
-	RetryCount   int        `json:"retry_count"`
-	LastAttempt  time.Time  `json:"last_attempt"`
-	CreatedAt    time.Time  `json:"created_at"`
-	ProcessedAt  *time.Time `json:"processed_at,omitempty"`
-	FailedAt     *time.Time `json:"failed_at,omitempty"`
-	ErrorMessage string     `json:"error_message,omitempty"`
+	ID          uint
+	AggregateID string
+	Type        string
+	Payload     interface{}
+	RetryCount  int
+	CreatedAt   time.Time
+	ProcessedAt *time.Time
+	FailedAt    *time.Time
+	Error       string
 }
 
-// Repository interface for outbox operations
+// Repository describes work with the outbox table
 type Repository interface {
-	SaveEvent(ctx context.Context, event Event) error
+	SaveEvent(ctx context.Context, e Event) error
 	GetUnprocessedEvents(ctx context.Context, limit int) ([]Event, error)
 	MarkAsProcessed(ctx context.Context, id uint) error
-	MarkAsFailed(ctx context.Context, id uint, retryCount int, err error) error
-	GetFailedEvents(ctx context.Context, limit int) ([]Event, error)
-	MoveToDeadLetter(ctx context.Context, event Event, reason string) error
-	GetDeadLetterEvents(ctx context.Context, limit int) ([]Event, error)
-	RepublishFromDeadLetter(ctx context.Context, id uint) error
+	MarkAsFailed(ctx context.Context, id uint, err string) error
 }
 
-// Publisher interface for publishing events
-type Publisher interface {
-	Publish(ctx context.Context, event Event) error
-}
-
-// OutboxRecord represents an outbox record in the database
-type OutboxRecord struct {
-	ID        uint
-	Type      string
-	Payload   string
-	Processed bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-// Service interface for outbox operations
+// Service provides high-level outbox operations
 type Service interface {
-	SaveEvent(ctx context.Context, event Event) error
+	SaveEvent(ctx context.Context, e Event) error
 }
 
-// OutboxService implements the Service interface
+// OutboxService implements Service interface
 type OutboxService struct {
 	repo   Repository
 	logger logger.Logger
@@ -69,13 +50,104 @@ func NewService(repo Repository, logger logger.Logger) Service {
 	}
 }
 
-// SaveEvent saves event to outbox table for later publishing
-func (s *OutboxService) SaveEvent(ctx context.Context, event Event) error {
-	err := s.repo.SaveEvent(ctx, event)
-	if err != nil {
-		s.logger.Error("failed to save event to outbox", "eventType", event.Type, "error", err)
+// SaveEvent saves an event to the outbox
+func (s *OutboxService) SaveEvent(ctx context.Context, e Event) error {
+	if err := s.repo.SaveEvent(ctx, e); err != nil {
+		s.logger.Error("failed to save event to outbox", "eventType", e.Type, "err", err)
 		return err
 	}
-
 	return nil
+}
+
+// Publisher publishes events from outbox to Kafka via confluent-kafka-go
+type Publisher struct {
+	repo      Repository
+	producer  *kafka.Producer
+	topic     string
+	logger    logger.Logger
+	batchSize int
+	interval  time.Duration
+}
+
+func NewPublisher(repo Repository, producer *kafka.Producer, topic string, logger logger.Logger, batchSize int, interval time.Duration) *Publisher {
+	return &Publisher{
+		repo:      repo,
+		producer:  producer,
+		topic:     topic,
+		logger:    logger,
+		batchSize: batchSize,
+		interval:  interval,
+	}
+}
+
+// Start runs the background worker
+func (p *Publisher) Start(ctx context.Context) {
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.processBatch(ctx)
+		}
+	}
+}
+
+// processBatch selects events from outbox and publishes them to Kafka
+func (p *Publisher) processBatch(ctx context.Context) {
+	events, err := p.repo.GetUnprocessedEvents(ctx, p.batchSize)
+	if err != nil {
+		p.logger.Error("failed to fetch events", "err", err)
+		return
+	}
+
+	for _, e := range events {
+		// Serialize payload to bytes
+		payloadBytes, err := json.Marshal(e.Payload)
+		if err != nil {
+			p.logger.Error("failed to marshal payload", "eventID", e.ID, "err", err)
+			_ = p.repo.MarkAsFailed(ctx, e.ID, err.Error())
+			continue
+		}
+
+		msg := &kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &p.topic, Partition: kafka.PartitionAny},
+			Key:            []byte(e.AggregateID),
+			Value:          payloadBytes,
+		}
+
+		// Produce asynchronously, wait for delivery report via Events channel
+		deliveryChan := make(chan kafka.Event, 1)
+		err := p.producer.Produce(msg, deliveryChan)
+		if err != nil {
+			p.logger.Error("failed to produce", "eventID", e.ID, "err", err)
+			_ = p.repo.MarkAsFailed(ctx, e.ID, err.Error())
+			close(deliveryChan)
+			continue
+		}
+
+		// Wait for confirmation from Kafka
+		ev := <-deliveryChan
+		m, ok := ev.(*kafka.Message)
+		close(deliveryChan)
+
+		if !ok {
+			p.logger.Error("unexpected delivery report type", "eventID", e.ID)
+			_ = p.repo.MarkAsFailed(ctx, e.ID, "unexpected delivery report")
+			continue
+		}
+
+		if m.TopicPartition.Error != nil {
+			p.logger.Error("delivery failed", "eventID", e.ID, "err", m.TopicPartition.Error)
+			_ = p.repo.MarkAsFailed(ctx, e.ID, m.TopicPartition.Error.Error())
+			continue
+		}
+
+		// Successfully delivered
+		if err := p.repo.MarkAsProcessed(ctx, e.ID); err != nil {
+			p.logger.Error("failed to mark processed", "eventID", e.ID, "err", err)
+		}
+	}
 }
