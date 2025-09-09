@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/services/inventory-service/internal/domain/aggregates"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/infra/migration"
 
@@ -106,4 +107,58 @@ func (r *GormProductRepository) ProductExistsByID(ctx context.Context, id string
 	var count int64
 	result := r.db.WithContext(ctx).Model(&migration.ProductRecord{}).Where("id = ?", id).Count(&count)
 	return count > 0, result.Error
+}
+
+// ListProductsWithStock retrieves products with their stock information using GORM Preload
+// This method solves the N+1 problem by fetching all data in one database call
+func (r *GormProductRepository) ListProductsWithStock(ctx context.Context, page, limit int, search string) ([]*aggregates.ProductInventory, int32, error) {
+	var productRecords []migration.ProductRecord
+	var total int64
+
+	// Build the query
+	query := r.db.WithContext(ctx).Model(&migration.ProductRecord{})
+
+	// Apply search filter if provided
+	if search != "" {
+		query = query.Where("name ILIKE ?", "%"+search+"%")
+	}
+
+	// Get total count
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated results with preloaded stock
+	offset := (page - 1) * limit
+	if err := query.Preload("Stock").Offset(offset).Limit(limit).Find(&productRecords).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Convert to ProductInventory aggregates
+	productInventories := make([]*aggregates.ProductInventory, 0, len(productRecords))
+	for _, record := range productRecords {
+		// Convert product record to entity
+		product, err := productFromRecord(record)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// Convert stock record to entity (if exists)
+		var stock *entities.Stock
+		if record.Stock != nil {
+			stock = &entities.Stock{
+				ProductID:         record.Stock.ProductID,
+				AvailableQuantity: record.Stock.AvailableQuantity,
+				ReservedQuantity:  record.Stock.ReservedQuantity,
+				CreatedAt:         record.Stock.CreatedAt,
+				UpdatedAt:         record.Stock.UpdatedAt,
+			}
+		}
+
+		// Create aggregate
+		aggregate := aggregates.NewProductInventory(product, stock)
+		productInventories = append(productInventories, aggregate)
+	}
+
+	return productInventories, int32(total), nil
 }

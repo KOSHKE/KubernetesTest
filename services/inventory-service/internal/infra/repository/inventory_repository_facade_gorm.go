@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/outbox"
+	"ecommerce-platform/services/inventory-service/internal/domain/aggregates"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 
@@ -60,6 +61,11 @@ func (r *InventoryRepositoryFacadeGorm) ProductExistsByID(ctx context.Context, i
 	return r.productRepoFactory(r.db).ProductExistsByID(ctx, id)
 }
 
+// ListProductsWithStock retrieves products with their stock information using a single query
+func (r *InventoryRepositoryFacadeGorm) ListProductsWithStock(ctx context.Context, page, limit int, search string) ([]*aggregates.ProductInventory, int32, error) {
+	return r.productRepoFactory(r.db).ListProductsWithStock(ctx, page, limit, search)
+}
+
 // Stock operations - automatically inherited from StockRepository via interface composition
 
 func (r *InventoryRepositoryFacadeGorm) GetStockByID(ctx context.Context, id string) (*entities.Stock, error) {
@@ -76,6 +82,14 @@ func (r *InventoryRepositoryFacadeGorm) GetStockByProductID(ctx context.Context,
 
 func (r *InventoryRepositoryFacadeGorm) UpsertStock(ctx context.Context, stock *entities.Stock) error {
 	return r.stockRepoFactory(r.db).UpsertStock(ctx, stock)
+}
+
+func (r *InventoryRepositoryFacadeGorm) GetStocksByProductIDs(ctx context.Context, productIDs []string, forUpdate bool) (map[string]*entities.Stock, error) {
+	return r.stockRepoFactory(r.db).GetStocksByProductIDs(ctx, productIDs, forUpdate)
+}
+
+func (r *InventoryRepositoryFacadeGorm) UpsertStocks(ctx context.Context, stocks []*entities.Stock) error {
+	return r.stockRepoFactory(r.db).UpsertStocks(ctx, stocks)
 }
 
 // Outbox operations - automatically inherited from OutboxRepository via interface composition

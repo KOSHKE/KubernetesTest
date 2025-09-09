@@ -35,8 +35,15 @@ func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quanti
 		return nil, errors.ErrProductNotFound
 	}
 
-	// Create new stock with the quantity to add
-	stock := entities.NewStock(productID, quantity, 0)
+	// Get existing stock or create new one
+	stock, err := uc.inventoryRepo.GetStockByProductID(ctx, productID)
+	if err != nil {
+		// If stock doesn't exist, create new one
+		stock = entities.NewStock(productID, 0, 0)
+	}
+
+	// Add quantity to existing stock
+	stock.AddQuantity(quantity)
 
 	// Validate stock
 	if err := stock.Validate(); err != nil {

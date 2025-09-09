@@ -30,7 +30,6 @@ func NewPBInventoryServer(appService *services.InventoryApplicationService, logg
 
 // GetProducts retrieves a paginated list of products
 func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetProductsRequest) (*inventory.GetProductsResponse, error) {
-	s.logger.Info("getting products via gRPC", "page", req.Page, "limit", req.Limit)
 
 	// Validate and set defaults
 	page := int(req.Page)
@@ -85,7 +84,6 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetP
 
 // GetProduct retrieves a product by ID
 func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetProductRequest) (*inventory.GetProductResponse, error) {
-	s.logger.Info("getting product via gRPC", "productID", req.Id)
 
 	// Get product
 	response, err := s.appService.GetProduct(ctx, req.Id)
@@ -113,7 +111,6 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 
 // CheckStock checks stock availability for products
 func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.CheckStockRequest) (*inventory.CheckStockResponse, error) {
-	s.logger.Info("checking stock via gRPC", "itemsCount", len(req.Items))
 
 	// Convert gRPC request to domain value objects
 	items := make([]valueobjects.Item, len(req.Items))
@@ -126,34 +123,39 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.Check
 		items[i] = *stockItem
 	}
 
-	// Check stock availability using application service
-	err := s.appService.CheckStockAvailability(ctx, items)
-	allAvailable := err == nil
+	// Get all product IDs for batch query
+	productIDs := make([]string, len(items))
+	for i, item := range items {
+		productIDs[i] = item.ProductID
+	}
+
+	// Fetch all stocks in a single query
+	stocks, err := s.appService.GetStocksByProductIDs(ctx, productIDs, false)
+	if err != nil {
+		s.logger.Error("failed to get stocks", "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get stocks: %v", err)
+	}
+	allAvailable := true
 
 	// Convert response to gRPC
 	results := make([]*inventory.StockCheckResult, len(req.Items))
 
-	for i, item := range req.Items {
-		isAvailable := true
-		if err != nil {
-			// If there's an error, check individual items
-			stock, stockErr := s.appService.GetStockByProductID(ctx, item.ProductId)
-			if stockErr != nil || !stock.CanReserve(item.Quantity) {
-				isAvailable = false
-			}
+	for i, item := range items {
+		stock, exists := stocks[item.ProductID]
+		isAvailable := exists && stock.CanReserve(item.Quantity)
+
+		if !isAvailable {
+			allAvailable = false
 		}
 
 		// Get actual available quantity
 		availableQuantity := int32(0)
-		if isAvailable {
-			stock, err := s.appService.GetStockByProductID(ctx, item.ProductId)
-			if err == nil && stock != nil {
-				availableQuantity = stock.AvailableQuantity
-			}
+		if exists {
+			availableQuantity = stock.AvailableQuantity
 		}
 
 		results[i] = &inventory.StockCheckResult{
-			ProductId:         item.ProductId,
+			ProductId:         item.ProductID,
 			RequestedQuantity: item.Quantity,
 			AvailableQuantity: availableQuantity,
 			IsAvailable:       isAvailable,
@@ -170,7 +172,6 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.Check
 
 // ReserveStock reserves stock for an order
 func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.ReserveStockRequest) (*inventory.ReserveStockResponse, error) {
-	s.logger.Info("reserving stock via gRPC", "orderID", req.OrderId, "itemsCount", len(req.Items))
 
 	// Convert gRPC request to DTO
 	reserveReq := &dto.ReserveStockRequest{
@@ -204,7 +205,6 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 
 // ReleaseStock releases reserved stock
 func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.ReleaseStockRequest) (*inventory.ReleaseStockResponse, error) {
-	s.logger.Info("releasing stock via gRPC", "orderID", req.OrderId, "itemsCount", len(req.Items))
 
 	// Convert gRPC request to domain value objects
 	items := make([]valueobjects.Item, len(req.Items))

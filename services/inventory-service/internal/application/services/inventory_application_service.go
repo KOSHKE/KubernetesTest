@@ -63,6 +63,11 @@ func (s *InventoryApplicationService) GetStockByProductID(ctx context.Context, p
 	return s.inventoryRepo.GetStockByProductID(ctx, productID)
 }
 
+// GetStocksByProductIDs gets stock information for multiple products
+func (s *InventoryApplicationService) GetStocksByProductIDs(ctx context.Context, productIDs []string, forUpdate bool) (map[string]*entities.Stock, error) {
+	return s.inventoryRepo.GetStocksByProductIDs(ctx, productIDs, forUpdate)
+}
+
 // AddStock adds stock to a product
 func (s *InventoryApplicationService) AddStock(ctx context.Context, productID string, quantity int32) (*dto.StockInfo, error) {
 
@@ -196,43 +201,36 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 	return response, nil
 }
 
-// ListProducts retrieves a paginated list of products
+// ListProducts retrieves a paginated list of products with stock information
+// This method uses ProductInventory aggregate to solve N+1 problem
 func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto.ListProductsRequest) (*dto.ListProductsResponse, error) {
-
-	// Get products from repository
-	products, total, err := s.inventoryRepo.ListProducts(ctx, req.Page, req.Limit, req.Search)
+	// Get products with stock information using single query
+	productInventories, total, err := s.inventoryRepo.ListProductsWithStock(ctx, req.Page, req.Limit, req.Search)
 	if err != nil {
 		return nil, err
 	}
 
 	// Convert to response DTOs
-	productResponses := make([]dto.ProductResponse, len(products))
-	for i, product := range products {
-		// Get stock information for this product
-		stock, err := s.inventoryRepo.GetStockByProductID(ctx, product.ID)
+	productResponses := make([]dto.ProductResponse, len(productInventories))
+	for i, productInventory := range productInventories {
+		// Handle stock information safely
 		var stockInfo dto.StockInfo
-		if err != nil {
+		if productInventory.Stock != nil {
 			stockInfo = dto.StockInfo{
-				AvailableQuantity: 0,
-				ReservedQuantity:  0,
-				TotalQuantity:     0,
-			}
-		} else {
-			stockInfo = dto.StockInfo{
-				AvailableQuantity: stock.AvailableQuantity,
-				ReservedQuantity:  stock.ReservedQuantity,
-				TotalQuantity:     stock.AvailableQuantity + stock.ReservedQuantity,
+				AvailableQuantity: productInventory.Stock.AvailableQuantity,
+				ReservedQuantity:  productInventory.Stock.ReservedQuantity,
+				TotalQuantity:     productInventory.GetTotalQuantity(),
 			}
 		}
 
 		productResponses[i] = dto.ProductResponse{
-			ID:        product.ID,
-			Name:      product.Name,
-			Price:     product.Price,
-			ImageURL:  product.ImageURL,
+			ID:        productInventory.Product.ID,
+			Name:      productInventory.Product.Name,
+			Price:     productInventory.Product.Price,
+			ImageURL:  productInventory.Product.ImageURL,
 			Stock:     stockInfo,
-			CreatedAt: product.CreatedAt,
-			UpdatedAt: product.UpdatedAt,
+			CreatedAt: productInventory.Product.CreatedAt,
+			UpdatedAt: productInventory.Product.UpdatedAt,
 		}
 	}
 
@@ -296,10 +294,23 @@ func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.
 
 // CheckStockAvailability checks if products have sufficient stock
 func (s *InventoryApplicationService) CheckStockAvailability(ctx context.Context, items []valueobjects.Item) error {
+	// Get all product IDs for batch query
+	productIDs := make([]string, len(items))
+	for i, item := range items {
+		productIDs[i] = item.ProductID
+	}
+
+	// Fetch all stocks in a single query
+	stocks, err := s.inventoryRepo.GetStocksByProductIDs(ctx, productIDs, false)
+	if err != nil {
+		return err
+	}
+
+	// Check availability for all items
 	for _, item := range items {
-		stock, err := s.inventoryRepo.GetStockByProductID(ctx, item.ProductID)
-		if err != nil {
-			return err
+		stock, exists := stocks[item.ProductID]
+		if !exists {
+			return errors.ErrProductNotFound
 		}
 		if !stock.CanReserve(item.Quantity) {
 			return errors.ErrInsufficientStock

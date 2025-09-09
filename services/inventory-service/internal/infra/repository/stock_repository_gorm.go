@@ -54,9 +54,17 @@ func (r *GormStockRepository) GetStockByProductID(ctx context.Context, productID
 	return stockFromRecord(rec), nil
 }
 
-func (r *GormStockRepository) GetByProductIDs(ctx context.Context, productIDs []string) (map[string]*entities.Stock, error) {
+func (r *GormStockRepository) GetStocksByProductIDs(ctx context.Context, productIDs []string, forUpdate bool) (map[string]*entities.Stock, error) {
 	var recs []migration.StockRecord
-	result := r.db.WithContext(ctx).Where("product_id IN ?", productIDs).Find(&recs)
+
+	query := r.db.WithContext(ctx).Where("product_id IN ?", productIDs)
+
+	// Add FOR UPDATE clause if requested
+	if forUpdate {
+		query = query.Set("gorm:query_option", "FOR UPDATE")
+	}
+
+	result := query.Find(&recs)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -67,6 +75,29 @@ func (r *GormStockRepository) GetByProductIDs(ctx context.Context, productIDs []
 	}
 
 	return stocks, nil
+}
+
+// UpsertStocks performs batch upsert of multiple stocks
+func (r *GormStockRepository) UpsertStocks(ctx context.Context, stocks []*entities.Stock) error {
+	if len(stocks) == 0 {
+		return nil
+	}
+
+	recs := make([]migration.StockRecord, len(stocks))
+	for i, stock := range stocks {
+		recs[i] = recordFromStock(stock)
+	}
+
+	return r.db.WithContext(ctx).Clauses(
+		clause.OnConflict{
+			Columns: []clause.Column{{Name: "product_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"available_quantity": gorm.Expr("excluded.available_quantity"),
+				"reserved_quantity":  gorm.Expr("excluded.reserved_quantity"),
+				"updated_at":         gorm.Expr("excluded.updated_at"),
+			}),
+		},
+	).Create(&recs).Error
 }
 
 func (r *GormStockRepository) StockExistsByID(ctx context.Context, id string) (bool, error) {

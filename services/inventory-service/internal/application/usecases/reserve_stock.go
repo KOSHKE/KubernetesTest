@@ -8,6 +8,7 @@ import (
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
+	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 )
 
@@ -35,8 +36,8 @@ func NewReserveStockUseCase(
 func (uc *ReserveStockUseCase) Execute(ctx context.Context, orderID string, items []valueobjects.Item) error {
 	// Use transaction to ensure both stock reservation and event are saved atomically
 	err := uc.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
-		// Reserve stock
-		if err := uc.reserveStock(ctx, items); err != nil {
+		// Reserve stock using the repository from transaction context
+		if err := uc.reserveStock(ctx, repo, items); err != nil {
 			return err
 		}
 
@@ -66,15 +67,27 @@ func (uc *ReserveStockUseCase) Execute(ctx context.Context, orderID string, item
 	return nil
 }
 
-// reserveStock performs stock reservation using repository directly
-func (uc *ReserveStockUseCase) reserveStock(ctx context.Context, items []valueobjects.Item) error {
+// reserveStock performs stock reservation using the provided repository (within transaction)
+func (uc *ReserveStockUseCase) reserveStock(ctx context.Context, repo repository.InventoryRepositoryFacade, items []valueobjects.Item) error {
+	// Get all product IDs for batch query
+	productIDs := make([]string, len(items))
+	for i, item := range items {
+		productIDs[i] = item.ProductID
+	}
+
+	// Fetch all stocks in a single query with FOR UPDATE to prevent race conditions
+	stocks, err := repo.GetStocksByProductIDs(ctx, productIDs, true)
+	if err != nil {
+		uc.logger.Error("failed to get stocks", "productIDs", productIDs, "error", err)
+		return err
+	}
+
 	// Validate all items first (fail fast)
 	for _, item := range items {
-		// Check stock availability
-		stock, err := uc.inventoryRepo.GetStockByProductID(ctx, item.ProductID)
-		if err != nil {
-			uc.logger.Error("failed to get stock", "productID", item.ProductID, "error", err)
-			return err
+		stock, exists := stocks[item.ProductID]
+		if !exists {
+			uc.logger.Warn("product not found", "productID", item.ProductID)
+			return errors.ErrProductNotFound
 		}
 
 		if !stock.CanReserve(item.Quantity) {
@@ -83,23 +96,21 @@ func (uc *ReserveStockUseCase) reserveStock(ctx context.Context, items []valueob
 		}
 	}
 
-	// Perform reservations
+	// Perform reservations on all stocks
+	updatedStocks := make([]*entities.Stock, 0, len(items))
 	for _, item := range items {
-		stock, err := uc.inventoryRepo.GetStockByProductID(ctx, item.ProductID)
-		if err != nil {
-			uc.logger.Error("failed to get stock for reservation", "productID", item.ProductID, "error", err)
-			return err
-		}
-
+		stock := stocks[item.ProductID]
 		if err := stock.Reserve(item.Quantity); err != nil {
 			uc.logger.Error("failed to reserve stock", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
 			return err
 		}
+		updatedStocks = append(updatedStocks, stock)
+	}
 
-		if err := uc.inventoryRepo.UpsertStock(ctx, stock); err != nil {
-			uc.logger.Error("failed to upsert stock after reservation", "productID", item.ProductID, "error", err)
-			return err
-		}
+	// Save all stock changes in a single batch operation
+	if err := repo.UpsertStocks(ctx, updatedStocks); err != nil {
+		uc.logger.Error("failed to save stock reservations", "error", err)
+		return err
 	}
 
 	return nil

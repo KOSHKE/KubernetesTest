@@ -8,6 +8,7 @@ import (
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
+	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 )
 
@@ -35,32 +36,48 @@ func NewReleaseStockUseCase(
 func (uc *ReleaseStockUseCase) Execute(ctx context.Context, orderID string, items []valueobjects.Item) error {
 	// Use transaction to ensure both stock release and event are saved atomically
 	err := uc.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
-		// Release stock for each item
+		// Get all product IDs for batch query
+		productIDs := make([]string, len(items))
+		for i, item := range items {
+			productIDs[i] = item.ProductID
+		}
+
+		// Fetch all stocks in a single query with FOR UPDATE to prevent race conditions
+		stocks, err := repo.GetStocksByProductIDs(ctx, productIDs, true)
+		if err != nil {
+			uc.logger.Error("failed to get stocks", "productIDs", productIDs, "error", err)
+			return err
+		}
+
+		// Validate all items first (fail fast)
 		for _, item := range items {
-			// Get stock by product ID
-			stock, err := repo.GetStockByProductID(ctx, item.ProductID)
-			if err != nil {
-				uc.logger.Error("failed to get stock", "productID", item.ProductID, "error", err)
-				return err
+			stock, exists := stocks[item.ProductID]
+			if !exists {
+				uc.logger.Warn("product not found", "productID", item.ProductID)
+				return errors.ErrProductNotFound
 			}
 
-			// Check if stock can be released
 			if !stock.CanRelease(item.Quantity) {
 				uc.logger.Warn("insufficient reserved stock to release", "productID", item.ProductID, "requested", item.Quantity, "reserved", stock.ReservedQuantity)
 				return errors.ErrInsufficientReservedStock
 			}
+		}
 
-			// Release the stock
+		// Perform releases on all stocks
+		updatedStocks := make([]*entities.Stock, 0, len(items))
+		for _, item := range items {
+			stock := stocks[item.ProductID]
 			if err := stock.Release(item.Quantity); err != nil {
 				uc.logger.Error("failed to release stock", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
 				return err
 			}
+			updatedStocks = append(updatedStocks, stock)
+		}
 
-			// Update stock in repository using upsert
-			if err := repo.UpsertStock(ctx, stock); err != nil {
-				uc.logger.Error("failed to upsert stock after release", "productID", item.ProductID, "error", err)
-				return err
-			}
+		// Save all stock changes in a single batch operation
+		if err := repo.UpsertStocks(ctx, updatedStocks); err != nil {
+			uc.logger.Error("failed to save stock releases", "error", err)
+			return err
 		}
 
 		// Save event to outbox table (to be published later)

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 
+	"ecommerce-platform/services/inventory-service/internal/domain/aggregates"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 )
 
@@ -15,4 +16,7 @@ type ProductRepository interface {
 	DeleteProduct(ctx context.Context, id string) error
 	ListProducts(ctx context.Context, page, limit int, search string) ([]*entities.Product, int32, error)
 	ProductExistsByID(ctx context.Context, id string) (bool, error)
+
+	// Aggregate methods for solving N+1 problem
+	ListProductsWithStock(ctx context.Context, page, limit int, search string) ([]*aggregates.ProductInventory, int32, error)
 }

@@ -120,7 +120,7 @@ func (p *Publisher) processBatch(ctx context.Context) {
 
 		// Produce asynchronously, wait for delivery report via Events channel
 		deliveryChan := make(chan kafka.Event, 1)
-		err := p.producer.Produce(msg, deliveryChan)
+		err = p.producer.Produce(msg, deliveryChan)
 		if err != nil {
 			p.logger.Error("failed to produce", "eventID", e.ID, "err", err)
 			_ = p.repo.MarkAsFailed(ctx, e.ID, err.Error())
