@@ -33,7 +33,7 @@ dev-down: ## Stop local development environment
 
 generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 	@echo "Generating mocks with gomock (via $(GO_TEST_IMAGE))..."
-	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service/tests/testdata/interfaces $(GO_TEST_IMAGE) sh -c "go install go.uber.org/mock/mockgen@latest && go generate"
+	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service $(GO_TEST_IMAGE) sh -c "go install go.uber.org/mock/mockgen@latest && go generate ./tests/mocks/generate.go"
 	@echo "Mocks generated successfully!"
 
 test: ## Run all tests across all services (Docker-based)

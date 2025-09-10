@@ -219,7 +219,7 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 			stockInfo = dto.StockInfo{
 				AvailableQuantity: productInventory.Stock.AvailableQuantity,
 				ReservedQuantity:  productInventory.Stock.ReservedQuantity,
-				TotalQuantity:     productInventory.GetTotalQuantity(),
+				TotalQuantity:     productInventory.Stock.GetTotalQuantity(),
 			}
 		}
 

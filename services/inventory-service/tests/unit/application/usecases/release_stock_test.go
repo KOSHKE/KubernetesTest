@@ -1,0 +1,237 @@
+package usecases_test
+
+import (
+	"context"
+	"testing"
+
+	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/services/inventory-service/internal/application/usecases"
+	"ecommerce-platform/services/inventory-service/internal/domain/entities"
+	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
+	"ecommerce-platform/services/inventory-service/tests/mocks"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
+)
+
+func TestReleaseStockUseCase_Execute_Success(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 10},
+		{ProductID: "product-2", Quantity: 5},
+	}
+
+	// Setup mocks
+	stocks := map[string]*entities.Stock{
+		"product-1": entities.NewStock("product-1", 50, 10), // 10 reserved
+		"product-2": entities.NewStock("product-2", 30, 5),  // 5 reserved
+	}
+
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1", "product-2"}, true).Return(stocks, nil)
+	mockRepo.EXPECT().UpsertStocks(ctx, gomock.Any()).Return(nil)
+	mockOutbox.EXPECT().SaveEvent(ctx, gomock.Any()).Return(nil)
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.NoError(t, err)
+}
+
+func TestReleaseStockUseCase_Execute_ProductNotFound(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 10},
+	}
+
+	// Setup mocks - product not found
+	stocks := map[string]*entities.Stock{}
+
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
+	mockLogger.EXPECT().Warn("product not found", "productID", "product-1")
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.Error(t, err)
+}
+
+func TestReleaseStockUseCase_Execute_InsufficientReservedStock(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 15}, // Requesting 15 but only 10 reserved
+	}
+
+	// Setup mocks
+	stocks := map[string]*entities.Stock{
+		"product-1": entities.NewStock("product-1", 50, 10), // Only 10 reserved
+	}
+
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
+	mockLogger.EXPECT().Warn("insufficient reserved stock to release", "productID", "product-1", "requested", int32(15), "reserved", int32(10))
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.Error(t, err)
+}
+
+func TestReleaseStockUseCase_Execute_GetStocksError(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 10},
+	}
+
+	// Setup mocks - repository error
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(nil, assert.AnError)
+	mockLogger.EXPECT().Error("failed to get stocks", "productIDs", []string{"product-1"}, "error", assert.AnError)
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.Error(t, err)
+}
+
+func TestReleaseStockUseCase_Execute_UpsertStocksError(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 10},
+	}
+
+	// Setup mocks
+	stocks := map[string]*entities.Stock{
+		"product-1": entities.NewStock("product-1", 50, 10),
+	}
+
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
+	mockRepo.EXPECT().UpsertStocks(ctx, gomock.Any()).Return(assert.AnError)
+	mockLogger.EXPECT().Error("failed to save stock releases", "error", assert.AnError)
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.Error(t, err)
+}
+
+func TestReleaseStockUseCase_Execute_OutboxError(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+	mockOutbox := mocks.NewMockService(ctrl)
+	mockLogger := mocks.NewMockLogger(ctrl)
+
+	useCase := usecases.NewReleaseStockUseCase(mockRepo, mockOutbox, mockLogger)
+
+	ctx := context.Background()
+	orderID := "order-123"
+	items := []valueobjects.Item{
+		{ProductID: "product-1", Quantity: 10},
+	}
+
+	// Setup mocks
+	stocks := map[string]*entities.Stock{
+		"product-1": entities.NewStock("product-1", 50, 10),
+	}
+
+	mockRepo.EXPECT().WithTransaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(repository.InventoryRepositoryFacade) error) error {
+			return fn(mockRepo)
+		},
+	)
+	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
+	mockRepo.EXPECT().UpsertStocks(ctx, gomock.Any()).Return(nil)
+	mockOutbox.EXPECT().SaveEvent(ctx, gomock.Any()).Return(assert.AnError)
+	mockLogger.EXPECT().Error("failed to save event to outbox", "orderID", orderID, "error", assert.AnError)
+
+	// Act
+	err := useCase.Execute(ctx, orderID, items)
+
+	// Assert
+	assert.Error(t, err)
+}

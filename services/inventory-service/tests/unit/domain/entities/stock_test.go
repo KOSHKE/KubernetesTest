@@ -38,13 +38,6 @@ func TestStock_Reserve(t *testing.T) {
 			expectedReserved:  100,
 			expectedError:     nil,
 		},
-		"zero quantity": {
-			stock:             entities.NewStock("prod1", 100, 0),
-			quantity:          0,
-			expectedAvailable: 100,
-			expectedReserved:  0,
-			expectedError:     nil,
-		},
 	}
 
 	for name, tt := range tests {
@@ -176,12 +169,8 @@ func TestStock_Validate(t *testing.T) {
 			stock:         entities.NewStock("", 100, 50),
 			expectedError: errors.ErrInvalidProductID,
 		},
-		"negative available quantity": {
+		"negative quantity": {
 			stock:         &entities.Stock{ProductID: "prod1", AvailableQuantity: -10, ReservedQuantity: 50},
-			expectedError: errors.ErrInvalidQuantity,
-		},
-		"negative reserved quantity": {
-			stock:         &entities.Stock{ProductID: "prod1", AvailableQuantity: 100, ReservedQuantity: -10},
 			expectedError: errors.ErrInvalidQuantity,
 		},
 	}

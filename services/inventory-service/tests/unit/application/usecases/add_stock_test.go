@@ -7,7 +7,7 @@ import (
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/services/inventory-service/internal/application/usecases"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
-	"ecommerce-platform/services/inventory-service/tests/testdata/mocks"
+	"ecommerce-platform/services/inventory-service/tests/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
