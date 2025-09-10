@@ -2,15 +2,10 @@ syntax = "proto3";
 
 package order;
 
-option go_package = "proto/order";
+option go_package = "ecommerce-platform/proto-go/order";
 
 import "google/protobuf/timestamp.proto";
-
-// Value object for money in minor units
-message Money {
-  int64 amount = 1;    // minor units
-  string currency = 2; // ISO 4217
-}
+import "common/common.proto";
 
 // Order Service
 service OrderService {
@@ -27,7 +22,7 @@ message Order {
   string user_id = 2;
   OrderStatus status = 3;
   repeated OrderItem items = 4;
-  Money total_amount = 5;
+  common.Money total_amount = 5;
   string shipping_address = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
@@ -38,8 +33,8 @@ message OrderItem {
   string product_id = 2;
   string product_name = 3;
   int32 quantity = 4;
-  Money price = 5;     
-  Money total = 6;    
+  common.Money price = 5;     
+  common.Money total = 6;    
 }
 
 enum OrderStatus {

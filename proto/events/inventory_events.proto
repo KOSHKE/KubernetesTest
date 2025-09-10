@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package events.inventory;
 
-option go_package = "proto-go/events";
+option go_package = "ecommerce-platform/proto-go/events";
+
+import "common/common.proto";
 
 message StockReserved {
   string order_id = 1;
@@ -11,15 +13,7 @@ message StockReserved {
   int64 total_amount = 4; // minor units (e.g., cents)
   string currency = 5; // ISO 4217 currency code
   string payment_method = 6; // payment method (e.g., "CREDIT_CARD", "DEBIT_CARD")
-  PaymentDetails payment_details = 7; // payment card details
-}
-
-message PaymentDetails {
-  string card_number = 1;
-  string card_holder = 2;
-  string expiry_month = 3;
-  string expiry_year = 4;
-  string cvv = 5;
+  common.PaymentDetails payment_details = 7; // payment card details
 }
 
 

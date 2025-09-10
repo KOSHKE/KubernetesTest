@@ -3,14 +3,13 @@ package grpc
 import (
 	"context"
 
+	"ecommerce-platform/pkg/common/grpcutils"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/inventory"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // PBInventoryServer implements the gRPC inventory service
@@ -56,7 +55,7 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetP
 	response, err := s.appService.ListProducts(ctx, listReq)
 	if err != nil {
 		s.logger.Error("failed to list products", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to list products: %v", err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
 	// Convert response to gRPC
@@ -65,7 +64,7 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetP
 		grpcProducts[i] = &inventory.Product{
 			Id:   product.ID,
 			Name: product.Name,
-			Price: &inventory.Money{
+			Price: &common.Money{
 				Amount:   product.Price.Amount,
 				Currency: product.Price.Currency.String(),
 			},
@@ -89,7 +88,7 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 	response, err := s.appService.GetProduct(ctx, req.Id)
 	if err != nil {
 		s.logger.Error("failed to get product", "productID", req.Id, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get product: %v", err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
 	// Convert response to gRPC
@@ -97,7 +96,7 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 		Product: &inventory.Product{
 			Id:   response.ID,
 			Name: response.Name,
-			Price: &inventory.Money{
+			Price: &common.Money{
 				Amount:   response.Price.Amount,
 				Currency: response.Price.Currency.String(),
 			},
@@ -117,8 +116,8 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.Check
 	for i, item := range req.Items {
 		stockItem, err := valueobjects.NewItem(item.ProductId, item.Quantity)
 		if err != nil {
-			s.logger.Error("invalid item data", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
-			return nil, status.Errorf(codes.InvalidArgument, "invalid item data: %v", err)
+			s.logger.Error("failed to create item", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
+			return nil, grpcutils.MapErrorToStatus(err)
 		}
 		items[i] = *stockItem
 	}
@@ -133,7 +132,7 @@ func (s *PBInventoryServer) CheckStock(ctx context.Context, req *inventory.Check
 	stocks, err := s.appService.GetStocksByProductIDs(ctx, productIDs, false)
 	if err != nil {
 		s.logger.Error("failed to get stocks", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get stocks: %v", err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	allAvailable := true
 
@@ -190,7 +189,7 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 	response, err := s.appService.ReserveStock(ctx, reserveReq)
 	if err != nil {
 		s.logger.Error("failed to reserve stock", "orderID", req.OrderId, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to reserve stock: %v", err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
 	// Convert response to gRPC
@@ -211,8 +210,8 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.Rel
 	for i, item := range req.Items {
 		stockItem, err := valueobjects.NewItem(item.ProductId, item.Quantity)
 		if err != nil {
-			s.logger.Error("invalid item data", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
-			return nil, status.Errorf(codes.InvalidArgument, "invalid item data: %v", err)
+			s.logger.Error("failed to create item", "productID", item.ProductId, "quantity", item.Quantity, "error", err)
+			return nil, grpcutils.MapErrorToStatus(err)
 		}
 		items[i] = *stockItem
 	}
@@ -232,7 +231,7 @@ func (s *PBInventoryServer) ReleaseStock(ctx context.Context, req *inventory.Rel
 	_, err := s.appService.ReleaseStock(ctx, releaseReq)
 	if err != nil {
 		s.logger.Error("failed to release stock", "orderID", req.OrderId, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to release stock: %v", err)
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
 	grpcResponse := &inventory.ReleaseStockResponse{

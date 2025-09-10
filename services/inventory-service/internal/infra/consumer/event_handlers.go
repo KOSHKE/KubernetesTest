@@ -5,6 +5,7 @@ import (
 
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/events"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
@@ -89,7 +90,7 @@ func (h *EventHandlers) releaseStock(ctx context.Context, orderID string, items 
 }
 
 // convertToValueObjects converts protobuf items to domain value objects
-func (h *EventHandlers) convertToValueObjects(items []*events.OrderItem) []valueobjects.Item {
+func (h *EventHandlers) convertToValueObjects(items []*common.OrderItem) []valueobjects.Item {
 	result := make([]valueobjects.Item, len(items))
 	for i, item := range items {
 		stockItem, err := valueobjects.NewItem(item.ProductId, item.Quantity)

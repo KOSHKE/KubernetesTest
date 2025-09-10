@@ -2,14 +2,10 @@ syntax = "proto3";
 
 package inventory;
 
-option go_package = "proto/inventory";
+option go_package = "ecommerce-platform/proto-go/inventory";
 
 import "google/protobuf/timestamp.proto";
-
-message Money {
-  int64 amount = 1;    // minor units
-  string currency = 2; // ISO 4217
-}
+import "common/common.proto";
 
 // Inventory Service
 service InventoryService {
@@ -25,7 +21,7 @@ service InventoryService {
 message Product {
   string id = 1;
   string name = 2;
-  Money price = 3;
+  common.Money price = 3;
   string category_id = 4;
   string category_name = 5;
   int32 stock_quantity = 6;
