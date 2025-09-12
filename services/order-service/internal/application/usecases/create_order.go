@@ -2,16 +2,20 @@ package usecases
 
 import (
 	"context"
+	"time"
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/events"
 	"ecommerce-platform/services/order-service/internal/domain/aggregates"
 	"ecommerce-platform/services/order-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/order-service/internal/metrics"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // CreateOrderUseCase handles order creation business logic
@@ -82,11 +86,31 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, userID, shippingAddre
 
 		// Publish OrderCreated event - CRITICAL: must succeed
 		if uc.orderPublisher != nil {
+			// Convert order items to event items
+			eventItems := make([]*common.OrderItem, len(order.Items))
+			for i, item := range order.Items {
+				eventItems[i] = &common.OrderItem{
+					ProductId:   item.ProductID,
+					ProductName: item.ProductName,
+					Quantity:    item.Quantity,
+					Price: &common.Money{
+						Amount:   item.UnitPrice.Amount,
+						Currency: item.UnitPrice.Currency.Code(),
+					},
+					Total: &common.Money{
+						Amount:   item.TotalPrice().Amount,
+						Currency: item.TotalPrice().Currency.Code(),
+					},
+				}
+			}
+
 			event := &events.OrderCreated{
 				OrderId:     order.ID,
 				UserId:      order.UserID,
+				Items:       eventItems,
 				TotalAmount: order.TotalAmount.Amount,
 				Currency:    order.Currency.String(),
+				OccurredAt:  timestamppb.New(time.Now()),
 			}
 			if err := uc.orderPublisher.PublishOrderCreated(ctx, event); err != nil {
 				uc.logger.Error("Failed to publish OrderCreated event", "error", err, "orderID", order.ID)

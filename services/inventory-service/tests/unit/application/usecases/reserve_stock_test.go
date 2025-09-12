@@ -21,9 +21,8 @@ func TestReserveStockUseCase_Execute_Success(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -61,9 +60,8 @@ func TestReserveStockUseCase_Execute_ProductNotFound(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -80,7 +78,6 @@ func TestReserveStockUseCase_Execute_ProductNotFound(t *testing.T) {
 		},
 	)
 	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
-	mockLogger.EXPECT().Warn("product not found", "productID", "product-1")
 
 	// Act
 	err := useCase.Execute(ctx, orderID, items)
@@ -96,9 +93,8 @@ func TestReserveStockUseCase_Execute_InsufficientStock(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -117,7 +113,6 @@ func TestReserveStockUseCase_Execute_InsufficientStock(t *testing.T) {
 		},
 	)
 	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
-	mockLogger.EXPECT().Warn("insufficient stock", "productID", "product-1", "requested", int32(100), "available", int32(50))
 
 	// Act
 	err := useCase.Execute(ctx, orderID, items)
@@ -133,9 +128,8 @@ func TestReserveStockUseCase_Execute_GetStocksError(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -150,7 +144,6 @@ func TestReserveStockUseCase_Execute_GetStocksError(t *testing.T) {
 		},
 	)
 	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(nil, assert.AnError)
-	mockLogger.EXPECT().Error("failed to get stocks", "productIDs", []string{"product-1"}, "error", assert.AnError)
 
 	// Act
 	err := useCase.Execute(ctx, orderID, items)
@@ -166,9 +159,8 @@ func TestReserveStockUseCase_Execute_UpsertStocksError(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -188,7 +180,6 @@ func TestReserveStockUseCase_Execute_UpsertStocksError(t *testing.T) {
 	)
 	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
 	mockRepo.EXPECT().UpsertStocks(ctx, gomock.Any()).Return(assert.AnError)
-	mockLogger.EXPECT().Error("failed to save stock reservations", "error", assert.AnError)
 
 	// Act
 	err := useCase.Execute(ctx, orderID, items)
@@ -204,9 +195,8 @@ func TestReserveStockUseCase_Execute_OutboxError(t *testing.T) {
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
 	mockOutbox := mocks.NewMockService(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox, mockLogger)
+	useCase := usecases.NewReserveStockUseCase(mockRepo, mockOutbox)
 
 	ctx := context.Background()
 	orderID := "order-123"
@@ -227,7 +217,6 @@ func TestReserveStockUseCase_Execute_OutboxError(t *testing.T) {
 	mockRepo.EXPECT().GetStocksByProductIDs(ctx, []string{"product-1"}, true).Return(stocks, nil)
 	mockRepo.EXPECT().UpsertStocks(ctx, gomock.Any()).Return(nil)
 	mockOutbox.EXPECT().SaveEvent(ctx, gomock.Any()).Return(assert.AnError)
-	mockLogger.EXPECT().Error("failed to save event to outbox", "orderID", orderID, "error", assert.AnError)
 
 	// Act
 	err := useCase.Execute(ctx, orderID, items)

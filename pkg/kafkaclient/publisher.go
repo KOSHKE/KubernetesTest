@@ -2,10 +2,11 @@ package kafkaclient
 
 import (
 	"context"
+	"sync"
 
 	"ecommerce-platform/pkg/logger"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/segmentio/kafka-go"
 )
 
 // Publisher defines minimal interface for sending messages
@@ -14,34 +15,30 @@ type Publisher interface {
 	Close() error
 }
 
-// KafkaPublisher is a simplified Kafka publisher
+// KafkaPublisher is a simplified Kafka publisher with thread-safe writers
 type KafkaPublisher struct {
-	producer *kafka.Producer
-	log      logger.Logger
+	writers          map[string]*kafka.Writer
+	bootstrapServers string
+	log              logger.Logger
+	mu               sync.Mutex // protects writers map
 }
 
 // NewKafkaPublisher creates a minimal KafkaPublisher
-func NewKafkaPublisher(bootstrapServers string, clientID string, log logger.Logger) (*KafkaPublisher, error) {
-	conf := &kafka.ConfigMap{
-		"bootstrap.servers": bootstrapServers,
-		"client.id":         clientID,
-		"acks":              "all",
-		"linger.ms":         5,
-		"compression.type":  "snappy",
-	}
-
-	p, err := kafka.NewProducer(conf)
-	if err != nil {
-		return nil, err
-	}
-
+func NewKafkaPublisher(bootstrapServers string, clientID string, log logger.Logger) *KafkaPublisher {
 	return &KafkaPublisher{
-		producer: p,
-		log:      log,
-	}, nil
+		writers:          make(map[string]*kafka.Writer),
+		bootstrapServers: bootstrapServers,
+		log:              log,
+	}
 }
 
-// Publish sends a message asynchronously
+// WithLogger sets a custom logger
+func (k *KafkaPublisher) WithLogger(l logger.Logger) *KafkaPublisher {
+	k.log = l
+	return k
+}
+
+// Publish sends a message to the specified topic in a thread-safe way
 func (k *KafkaPublisher) Publish(ctx context.Context, topic string, value []byte) error {
 	select {
 	case <-ctx.Done():
@@ -49,12 +46,29 @@ func (k *KafkaPublisher) Publish(ctx context.Context, topic string, value []byte
 	default:
 	}
 
-	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-		Value:          value,
+	// Thread-safe access to the writers map
+	k.mu.Lock()
+	writer, exists := k.writers[topic]
+	if !exists {
+		// Create a new writer for this topic if it doesn't exist
+		writer = &kafka.Writer{
+			Addr:         kafka.TCP(k.bootstrapServers),
+			Topic:        topic,
+			Balancer:     &kafka.LeastBytes{},
+			BatchSize:    1,                // immediate send, low latency
+			RequiredAcks: kafka.RequireAll, // wait for all replicas
+			Compression:  kafka.Snappy,     // compress messages
+		}
+		k.writers[topic] = writer
+	}
+	k.mu.Unlock()
+
+	msg := kafka.Message{
+		Value: value,
 	}
 
-	if err := k.producer.Produce(msg, nil); err != nil {
+	// Synchronous send
+	if err := writer.WriteMessages(ctx, msg); err != nil {
 		if k.log != nil {
 			k.log.Error("failed to produce message", "topic", topic, "error", err)
 		}
@@ -64,18 +78,25 @@ func (k *KafkaPublisher) Publish(ctx context.Context, topic string, value []byte
 	if k.log != nil {
 		k.log.Debug("message queued for delivery", "topic", topic)
 	}
+
 	return nil
 }
 
-// WithLogger sets logger for publisher
-func (k *KafkaPublisher) WithLogger(l logger.Logger) *KafkaPublisher {
-	k.log = l
-	return k
-}
-
-// Close flushes and closes the producer
+// Close flushes and closes all writers safely
 func (k *KafkaPublisher) Close() error {
-	k.producer.Flush(5000) // wait up to 5s for delivery
-	k.producer.Close()
-	return nil
+	var firstErr error
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	for topic, writer := range k.writers {
+		if err := writer.Close(); err != nil {
+			if k.log != nil {
+				k.log.Error("failed to close writer", "topic", topic, "error", err)
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }

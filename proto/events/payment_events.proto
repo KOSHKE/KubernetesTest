@@ -5,6 +5,7 @@ package events.payment;
 option go_package = "ecommerce-platform/proto-go/events";
 
 import "common/common.proto";
+import "google/protobuf/timestamp.proto";
 
 message PaymentProcessed {
   string order_id = 1;
@@ -13,7 +14,7 @@ message PaymentProcessed {
   string message = 4;
   int64 amount = 5;     // minor units
   string currency = 6;  // ISO 4217
-  string occurred_at = 7; // RFC3339
+  google.protobuf.Timestamp occurred_at = 7; // Use proper timestamp
   repeated common.OrderItem items = 8; // items that were reserved
 }
 

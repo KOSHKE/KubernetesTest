@@ -12,10 +12,14 @@ message Money {
   string currency = 2; // ISO 4217 (e.g., "USD")
 }
 
-// Common order item structure
+// Common order item structure - used by both events and gRPC API
 message OrderItem {
-  string product_id = 1;
-  int32 quantity = 2;
+  string id = 1;           // Order item ID (optional, for gRPC API)
+  string product_id = 2;   // Product ID (required)
+  string product_name = 3; // Product name (optional, for gRPC API)
+  int32 quantity = 4;      // Quantity (required)
+  Money price = 5;         // Unit price (optional, for gRPC API)
+  Money total = 6;         // Total price (optional, for gRPC API)
 }
 
 // Payment details for card payments

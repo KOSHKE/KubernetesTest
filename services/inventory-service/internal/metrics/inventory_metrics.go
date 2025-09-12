@@ -1,20 +1,18 @@
 package metrics
 
 import (
+	"time"
+
 	"ecommerce-platform/pkg/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // InventoryMetrics interface defines inventory service specific metrics
 type InventoryMetrics interface {
-	// Product business metrics
-	ProductCreated()
-	ProductCreationFailed(reason string)
-
-	// Stock management metrics
-	StockReserved()
-	StockReservationFailed(reason string)
-	StockReleased()
-	StockCommitted()
+	// gRPC metrics
+	GRPCRequestDuration(method string, duration time.Duration)
+	GRPCRequestTotal(method, status string)
 
 	// HTTP metrics (reused from pkg/metrics)
 	metrics.Metrics
@@ -23,6 +21,10 @@ type InventoryMetrics interface {
 // InventoryPrometheusMetrics implements InventoryMetrics interface
 type InventoryPrometheusMetrics struct {
 	*metrics.PrometheusMetrics
+
+	// gRPC metrics
+	grpcRequestDuration *prometheus.HistogramVec
+	grpcRequestTotal    *prometheus.CounterVec
 }
 
 // NewInventoryMetrics creates new inventory service metrics instance
@@ -33,35 +35,41 @@ func NewInventoryMetrics() InventoryMetrics {
 		PrometheusMetrics: baseMetrics,
 	}
 
+	// Initialize gRPC metrics
+	inventoryMetrics.grpcRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "inventory_service",
+			Name:      "grpc_request_duration_seconds",
+			Help:      "gRPC request duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"service", "method"},
+	)
+
+	inventoryMetrics.grpcRequestTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "inventory_service",
+			Name:      "grpc_requests_total",
+			Help:      "Total number of gRPC requests",
+		},
+		[]string{"service", "method", "status"},
+	)
+
+	// Register gRPC metrics
+	baseMetrics.GetRegistry().MustRegister(
+		inventoryMetrics.grpcRequestDuration,
+		inventoryMetrics.grpcRequestTotal,
+	)
+
 	return inventoryMetrics
 }
 
-// ProductCreated increments product creation counter
-func (m *InventoryPrometheusMetrics) ProductCreated() {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionCreated, "")
+// GRPCRequestDuration records gRPC request duration
+func (m *InventoryPrometheusMetrics) GRPCRequestDuration(method string, duration time.Duration) {
+	m.grpcRequestDuration.WithLabelValues("inventory-service", method).Observe(duration.Seconds())
 }
 
-// ProductCreationFailed increments product creation failure counter with reason
-func (m *InventoryPrometheusMetrics) ProductCreationFailed(reason string) {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionFailed, reason)
-}
-
-// StockReserved increments stock reservation counter
-func (m *InventoryPrometheusMetrics) StockReserved() {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockReserved, "")
-}
-
-// StockReservationFailed increments stock reservation failure counter with reason
-func (m *InventoryPrometheusMetrics) StockReservationFailed(reason string) {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionFailed, reason)
-}
-
-// StockReleased increments stock release counter
-func (m *InventoryPrometheusMetrics) StockReleased() {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockReleased, "")
-}
-
-// StockCommitted increments stock commit counter
-func (m *InventoryPrometheusMetrics) StockCommitted() {
-	m.EntityEvent(metrics.EntityTypeProduct, metrics.ActionStockCommitted, "")
+// GRPCRequestTotal increments gRPC request counter
+func (m *InventoryPrometheusMetrics) GRPCRequestTotal(method, status string) {
+	m.grpcRequestTotal.WithLabelValues("inventory-service", method, status).Inc()
 }

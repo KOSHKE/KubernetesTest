@@ -40,10 +40,7 @@ func NewTypedPublisher[T any](
 	marshal func(T) ([]byte, error),
 	log logger.Logger,
 ) (*TypedPublisher[T], error) {
-	base, err := NewKafkaPublisher(config.BootstrapServers, config.ClientID, log)
-	if err != nil {
-		return nil, err
-	}
+	base := NewKafkaPublisher(config.BootstrapServers, config.ClientID, log)
 
 	return &TypedPublisher[T]{
 		base:    base,

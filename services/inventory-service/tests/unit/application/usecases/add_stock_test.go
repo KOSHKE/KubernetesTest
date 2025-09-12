@@ -19,9 +19,8 @@ func TestAddStockUseCase_Execute_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewAddStockUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewAddStockUseCase(mockRepo)
 
 	ctx := context.Background()
 	productID := "product-123"

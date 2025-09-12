@@ -19,9 +19,8 @@ func TestGetProductUseCase_Execute_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewGetProductUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewGetProductUseCase(mockRepo)
 
 	ctx := context.Background()
 	productID := "product-123"
@@ -52,16 +51,14 @@ func TestGetProductUseCase_Execute_ProductNotFound(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewGetProductUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewGetProductUseCase(mockRepo)
 
 	ctx := context.Background()
 	productID := "non-existent-product"
 
 	// Setup mocks
 	mockRepo.EXPECT().GetProductByID(ctx, productID).Return(nil, assert.AnError)
-	mockLogger.EXPECT().Error("failed to get product", "productID", productID, "error", assert.AnError)
 
 	// Act
 	result, err := useCase.Execute(ctx, productID)
@@ -77,16 +74,14 @@ func TestGetProductUseCase_Execute_EmptyProductID(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewGetProductUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewGetProductUseCase(mockRepo)
 
 	ctx := context.Background()
 	productID := ""
 
 	// Setup mocks
 	mockRepo.EXPECT().GetProductByID(ctx, productID).Return(nil, assert.AnError)
-	mockLogger.EXPECT().Error("failed to get product", "productID", productID, "error", assert.AnError)
 
 	// Act
 	result, err := useCase.Execute(ctx, productID)

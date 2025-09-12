@@ -1,0 +1,242 @@
+{
+  "id": null,
+  "title": "Inventory Service Metrics",
+  "tags": ["inventory-service", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "gRPC Request Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"success\"}[5m])",
+          "legendFormat": "Successful Requests/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "title": "gRPC Error Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"error\"}[5m])",
+          "legendFormat": "Error Rate/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "title": "Total gRPC Requests",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "inventory_service_grpc_requests_total{service=\"inventory-service\"}",
+          "legendFormat": "Total Requests"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "id": 4,
+      "title": "Success Rate %",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"success\"}[5m]) / rate(inventory_service_grpc_requests_total{service=\"inventory-service\"}[5m]) * 100",
+          "legendFormat": "Success Rate %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      }
+    },
+    {
+      "id": 5,
+      "title": "gRPC Request Duration by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(inventory_service_grpc_request_duration_seconds_bucket{service=\"inventory-service\"}[5m]))",
+          "legendFormat": "{{method}} - 50th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(inventory_service_grpc_request_duration_seconds_bucket{service=\"inventory-service\"}[5m]))",
+          "legendFormat": "{{method}} - 95th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(inventory_service_grpc_request_duration_seconds_bucket{service=\"inventory-service\"}[5m]))",
+          "legendFormat": "{{method}} - 99th percentile"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      }
+    },
+    {
+      "id": 6,
+      "title": "gRPC Requests by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"success\"}[5m])",
+          "legendFormat": "{{method}} - Success"
+        },
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"error\"}[5m])",
+          "legendFormat": "{{method}} - Error"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      }
+    },
+    {
+      "id": 7,
+      "title": "gRPC Request Duration Heatmap",
+      "type": "heatmap",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_request_duration_seconds_bucket{service=\"inventory-service\"}[5m])",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      }
+    },
+    {
+      "id": 8,
+      "title": "Error Rate by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(inventory_service_grpc_requests_total{service=\"inventory-service\", status=\"error\"}[5m]) / rate(inventory_service_grpc_requests_total{service=\"inventory-service\"}[5m]) * 100",
+          "legendFormat": "{{method}} - Error Rate %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      }
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s"
+}

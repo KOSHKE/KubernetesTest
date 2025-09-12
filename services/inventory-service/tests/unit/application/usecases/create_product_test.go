@@ -18,9 +18,8 @@ func TestCreateProductUseCase_Execute_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewCreateProductUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewCreateProductUseCase(mockRepo)
 
 	ctx := context.Background()
 	name := "Test Product"
@@ -51,9 +50,8 @@ func TestCreateProductUseCase_Execute_RepositoryError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-	mockLogger := mocks.NewMockLogger(ctrl)
 
-	useCase := usecases.NewCreateProductUseCase(mockRepo, mockLogger)
+	useCase := usecases.NewCreateProductUseCase(mockRepo)
 
 	ctx := context.Background()
 	name := "Test Product"
@@ -63,7 +61,6 @@ func TestCreateProductUseCase_Execute_RepositoryError(t *testing.T) {
 
 	// Setup mocks
 	mockRepo.EXPECT().CreateProduct(ctx, gomock.Any()).Return(assert.AnError)
-	mockLogger.EXPECT().Error("failed to create product", "productID", gomock.Any(), "error", assert.AnError)
 
 	// Act
 	result, err := useCase.Execute(ctx, name, price, imageURL)

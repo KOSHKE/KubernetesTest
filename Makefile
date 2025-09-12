@@ -36,12 +36,17 @@ generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service $(GO_TEST_IMAGE) sh -c "go install go.uber.org/mock/mockgen@latest && go generate ./tests/mocks/generate.go"
 	@echo "Mocks generated successfully!"
 
-test: ## Run all tests across all services (Docker-based)
-	@echo "Running all tests (via $(GO_TEST_IMAGE))..."
-	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service $(GO_TEST_IMAGE) sh -c "go mod download && go test ./tests/..."
-	@echo "All tests completed!"
+install-test-deps: ## Install test dependencies locally
+	@echo "Installing test dependencies locally..."
+	@go install go.uber.org/mock/mockgen@latest
+	@echo "Test dependencies installed!"
 
-test-coverage: ## Run tests with coverage report (Docker-based)
-	@echo "Running tests with coverage (via $(GO_TEST_IMAGE))..."
-	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service $(GO_TEST_IMAGE) sh -c "go mod download && go test -coverprofile=coverage.out ./tests/... && go tool cover -html=coverage.out -o coverage.html"
-	@echo "Coverage report generated: services/inventory-service/coverage.html"
+deps-tidy: ## Tidy dependencies
+	@echo "Tidying dependencies..."
+	@go mod tidy
+	@echo "Dependencies tidied!"
+
+test: ## Run all tests locally
+	@echo "Running all tests locally..."
+	@cd services/inventory-service && go test ./tests/...
+	@echo "All tests completed!"

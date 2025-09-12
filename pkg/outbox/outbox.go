@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"ecommerce-platform/pkg/kafkaclient"
 	"ecommerce-platform/pkg/logger"
-
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // Event represents a record in the outbox table
@@ -59,20 +58,20 @@ func (s *OutboxService) SaveEvent(ctx context.Context, e Event) error {
 	return nil
 }
 
-// Publisher publishes events from outbox to Kafka via confluent-kafka-go
+// Publisher publishes events from outbox to Kafka via kafkaclient
 type Publisher struct {
 	repo      Repository
-	producer  *kafka.Producer
+	publisher kafkaclient.Publisher
 	topic     string
 	logger    logger.Logger
 	batchSize int
 	interval  time.Duration
 }
 
-func NewPublisher(repo Repository, producer *kafka.Producer, topic string, logger logger.Logger, batchSize int, interval time.Duration) *Publisher {
+func NewPublisher(repo Repository, publisher kafkaclient.Publisher, topic string, logger logger.Logger, batchSize int, interval time.Duration) *Publisher {
 	return &Publisher{
 		repo:      repo,
-		producer:  producer,
+		publisher: publisher,
 		topic:     topic,
 		logger:    logger,
 		batchSize: batchSize,
@@ -112,36 +111,11 @@ func (p *Publisher) processBatch(ctx context.Context) {
 			continue
 		}
 
-		msg := &kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &p.topic, Partition: kafka.PartitionAny},
-			Key:            []byte(e.AggregateID),
-			Value:          payloadBytes,
-		}
-
-		// Produce asynchronously, wait for delivery report via Events channel
-		deliveryChan := make(chan kafka.Event, 1)
-		err = p.producer.Produce(msg, deliveryChan)
+		// Publish message using kafkaclient
+		err = p.publisher.Publish(ctx, p.topic, payloadBytes)
 		if err != nil {
-			p.logger.Error("failed to produce", "eventID", e.ID, "err", err)
+			p.logger.Error("failed to publish", "eventID", e.ID, "err", err)
 			_ = p.repo.MarkAsFailed(ctx, e.ID, err.Error())
-			close(deliveryChan)
-			continue
-		}
-
-		// Wait for confirmation from Kafka
-		ev := <-deliveryChan
-		m, ok := ev.(*kafka.Message)
-		close(deliveryChan)
-
-		if !ok {
-			p.logger.Error("unexpected delivery report type", "eventID", e.ID)
-			_ = p.repo.MarkAsFailed(ctx, e.ID, "unexpected delivery report")
-			continue
-		}
-
-		if m.TopicPartition.Error != nil {
-			p.logger.Error("delivery failed", "eventID", e.ID, "err", m.TopicPartition.Error)
-			_ = p.repo.MarkAsFailed(ctx, e.ID, m.TopicPartition.Error.Error())
 			continue
 		}
 

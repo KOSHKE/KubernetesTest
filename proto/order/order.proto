@@ -21,21 +21,13 @@ message Order {
   string id = 1;
   string user_id = 2;
   OrderStatus status = 3;
-  repeated OrderItem items = 4;
+  repeated common.OrderItem items = 4;
   common.Money total_amount = 5;
   string shipping_address = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
 }
 
-message OrderItem {
-  string id = 1;
-  string product_id = 2;
-  string product_name = 3;
-  int32 quantity = 4;
-  common.Money price = 5;     
-  common.Money total = 6;    
-}
 
 enum OrderStatus {
   PENDING = 0;

@@ -23,6 +23,7 @@ func (m *MigrationService) RunMigrations(ctx context.Context) error {
 	if err := m.db.WithContext(ctx).AutoMigrate(
 		&ProductRecord{},
 		&StockRecord{},
+		&OutboxRecord{},
 	); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}

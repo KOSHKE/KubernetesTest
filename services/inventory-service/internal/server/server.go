@@ -108,7 +108,7 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
-	inventoryGrpc.RegisterInventoryServer(gs, inventorySvc, loggerAdapter)
+	inventoryGrpc.RegisterInventoryServer(gs, inventorySvc, inventoryMetrics)
 
 	// Setup health checks
 	hs := health.NewServer()

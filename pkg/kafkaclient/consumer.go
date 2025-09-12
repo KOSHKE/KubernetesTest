@@ -2,17 +2,16 @@ package kafkaclient
 
 import (
 	"context"
-	"time"
 
 	"ecommerce-platform/pkg/logger"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/segmentio/kafka-go"
 )
 
 // Consumer is a lightweight Kafka consumer with optional logging
 type Consumer struct {
-	c   *kafka.Consumer
-	log logger.Logger
+	reader *kafka.Reader
+	log    logger.Logger
 }
 
 // ConsumerConfig holds minimal config
@@ -24,20 +23,20 @@ type ConsumerConfig struct {
 
 // NewConsumer creates a simple consumer
 func NewConsumer(cfg ConsumerConfig) (*Consumer, error) {
-	if cfg.AutoOffsetReset == "" {
-		cfg.AutoOffsetReset = "earliest"
+	offset := kafka.FirstOffset
+	if cfg.AutoOffsetReset == "latest" {
+		offset = kafka.LastOffset
 	}
 
-	kc, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": cfg.BootstrapServers,
-		"group.id":          cfg.GroupID,
-		"auto.offset.reset": cfg.AutoOffsetReset,
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:     []string{cfg.BootstrapServers},
+		GroupID:     cfg.GroupID,
+		MinBytes:    1,
+		MaxBytes:    10e6, // 10MB
+		StartOffset: offset,
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	return &Consumer{c: kc}, nil
+	return &Consumer{reader: reader}, nil
 }
 
 // WithLogger sets logger for consumer
@@ -48,36 +47,47 @@ func (c *Consumer) WithLogger(l logger.Logger) *Consumer {
 
 // Close shuts down the consumer
 func (c *Consumer) Close() error {
-	return c.c.Close()
+	return c.reader.Close()
 }
 
 // Run consumes messages sequentially (no worker pool)
 func (c *Consumer) Run(ctx context.Context, topics []string, handle func([]byte) error) error {
-	if err := c.c.SubscribeTopics(topics, nil); err != nil {
-		if c.log != nil {
-			c.log.Error("failed to subscribe topics", "error", err)
-		}
-		return err
-	}
+	// Subscribe to topics by creating a new reader for each topic
+	// Segmentio kafka-go doesn't support multiple topics in one reader
+	for _, topic := range topics {
+		go func(topicName string) {
+			reader := kafka.NewReader(kafka.ReaderConfig{
+				Brokers:     []string{c.reader.Config().Brokers[0]},
+				GroupID:     c.reader.Config().GroupID,
+				Topic:       topicName,
+				MinBytes:    1,
+				MaxBytes:    10e6,
+				StartOffset: c.reader.Config().StartOffset,
+			})
+			defer reader.Close()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			msg, err := c.c.ReadMessage(100 * time.Millisecond)
-			if err != nil {
-				if kerr, ok := err.(kafka.Error); !ok || kerr.Code() != kafka.ErrTimedOut {
-					if c.log != nil {
-						c.log.Warn("kafka read error", "error", err)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					msg, err := reader.ReadMessage(ctx)
+					if err != nil {
+						if c.log != nil {
+							c.log.Warn("kafka read error", "topic", topicName, "error", err)
+						}
+						continue
+					}
+
+					if err := handle(msg.Value); err != nil && c.log != nil {
+						c.log.Error("message handling failed", "topic", topicName, "error", err)
 					}
 				}
-				continue
 			}
-
-			if err := handle(msg.Value); err != nil && c.log != nil {
-				c.log.Error("message handling failed", "error", err)
-			}
-		}
+		}(topic)
 	}
+
+	// Wait for context cancellation
+	<-ctx.Done()
+	return nil
 }

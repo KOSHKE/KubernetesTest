@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/common/errors"
-	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 )
@@ -12,14 +11,12 @@ import (
 // AddStockUseCase handles adding stock to a product
 type AddStockUseCase struct {
 	inventoryRepo repository.InventoryRepositoryFacade
-	logger        logger.Logger
 }
 
 // NewAddStockUseCase creates a new AddStockUseCase
-func NewAddStockUseCase(inventoryRepo repository.InventoryRepositoryFacade, logger logger.Logger) *AddStockUseCase {
+func NewAddStockUseCase(inventoryRepo repository.InventoryRepositoryFacade) *AddStockUseCase {
 	return &AddStockUseCase{
 		inventoryRepo: inventoryRepo,
-		logger:        logger,
 	}
 }
 
@@ -28,7 +25,6 @@ func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quanti
 	// Check if product exists
 	product, err := uc.inventoryRepo.GetProductByID(ctx, productID)
 	if err != nil {
-		uc.logger.Error("failed to get product", "productID", productID, "error", err)
 		return nil, err
 	}
 	if product == nil {
@@ -51,7 +47,6 @@ func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quanti
 	}
 
 	if err := uc.inventoryRepo.UpsertStock(ctx, stock); err != nil {
-		uc.logger.Error("failed to upsert stock", "productID", productID, "error", err)
 		return nil, err
 	}
 

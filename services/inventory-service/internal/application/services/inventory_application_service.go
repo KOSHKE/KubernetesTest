@@ -27,6 +27,7 @@ type InventoryApplicationService struct {
 	// Dependencies
 	inventoryRepo repository.InventoryRepositoryFacade
 	publisher     publisher.StockEventsPublisher
+	logger        logger.Logger
 }
 
 // NewInventoryApplicationService creates a new inventory application service
@@ -39,12 +40,12 @@ func NewInventoryApplicationService(
 	outboxService := outbox.NewService(inventoryRepo, logger)
 
 	// Create use cases
-	createProductUseCase := usecases.NewCreateProductUseCase(inventoryRepo, logger)
-	addStockUseCase := usecases.NewAddStockUseCase(inventoryRepo, logger)
-	getProductUseCase := usecases.NewGetProductUseCase(inventoryRepo, logger)
-	reserveStockUseCase := usecases.NewReserveStockUseCase(inventoryRepo, outboxService, logger)
-	releaseStockUseCase := usecases.NewReleaseStockUseCase(inventoryRepo, outboxService, logger)
-	commitStockUseCase := usecases.NewCommitStockUseCase(inventoryRepo, outboxService, logger)
+	createProductUseCase := usecases.NewCreateProductUseCase(inventoryRepo)
+	addStockUseCase := usecases.NewAddStockUseCase(inventoryRepo)
+	getProductUseCase := usecases.NewGetProductUseCase(inventoryRepo)
+	reserveStockUseCase := usecases.NewReserveStockUseCase(inventoryRepo, outboxService)
+	releaseStockUseCase := usecases.NewReleaseStockUseCase(inventoryRepo, outboxService)
+	commitStockUseCase := usecases.NewCommitStockUseCase(inventoryRepo, outboxService)
 
 	return &InventoryApplicationService{
 		createProductUseCase: createProductUseCase,
@@ -55,6 +56,7 @@ func NewInventoryApplicationService(
 		commitStockUseCase:   commitStockUseCase,
 		inventoryRepo:        inventoryRepo,
 		publisher:            publisher,
+		logger:               logger,
 	}
 }
 
@@ -70,9 +72,9 @@ func (s *InventoryApplicationService) GetStocksByProductIDs(ctx context.Context,
 
 // AddStock adds stock to a product
 func (s *InventoryApplicationService) AddStock(ctx context.Context, productID string, quantity int32) (*dto.StockInfo, error) {
-
 	stock, err := s.addStockUseCase.Execute(ctx, productID, quantity)
 	if err != nil {
+		s.logger.Error("failed to add stock", "productID", productID, "quantity", quantity, "error", err)
 		return nil, err
 	}
 
@@ -87,10 +89,10 @@ func (s *InventoryApplicationService) AddStock(ctx context.Context, productID st
 
 // CreateProduct creates a new product
 func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dto.CreateProductRequest) (*dto.ProductResponse, error) {
-
 	// Create product
 	product, err := s.createProductUseCase.Execute(ctx, req.Name, req.Price, req.ImageURL)
 	if err != nil {
+		s.logger.Error("failed to create product", "name", req.Name, "error", err)
 		return nil, err
 	}
 
@@ -105,12 +107,6 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 			AvailableQuantity: stock.AvailableQuantity,
 			ReservedQuantity:  stock.ReservedQuantity,
 			TotalQuantity:     stock.AvailableQuantity + stock.ReservedQuantity,
-		}
-	} else {
-		stockInfo = dto.StockInfo{
-			AvailableQuantity: 0,
-			ReservedQuantity:  0,
-			TotalQuantity:     0,
 		}
 	}
 
@@ -139,13 +135,7 @@ func (s *InventoryApplicationService) GetProduct(ctx context.Context, productID 
 	// Get stock information for this product
 	stock, err := s.inventoryRepo.GetStockByProductID(ctx, productID)
 	var stockInfo dto.StockInfo
-	if err != nil {
-		stockInfo = dto.StockInfo{
-			AvailableQuantity: 0,
-			ReservedQuantity:  0,
-			TotalQuantity:     0,
-		}
-	} else {
+	if err == nil {
 		stockInfo = dto.StockInfo{
 			AvailableQuantity: stock.AvailableQuantity,
 			ReservedQuantity:  stock.ReservedQuantity,
@@ -174,6 +164,7 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 	for i, item := range req.Items {
 		stockItem, err := valueobjects.NewItem(item.ProductID, item.Quantity)
 		if err != nil {
+			s.logger.Error("failed to create item", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
 			return nil, err
 		}
 		items[i] = *stockItem
@@ -181,6 +172,7 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 
 	err := s.reserveStockUseCase.Execute(ctx, req.OrderID, items)
 	if err != nil {
+		s.logger.Error("failed to reserve stock", "orderID", req.OrderID, "error", err)
 		return nil, err
 	}
 
@@ -244,12 +236,12 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 
 // ReleaseStock releases stock for an order
 func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto.ReleaseStockRequest) (*dto.ReleaseStockResponse, error) {
-
 	// Convert DTO to domain entities
 	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
 		stockItem, err := valueobjects.NewItem(item.ProductID, item.Quantity)
 		if err != nil {
+			s.logger.Error("failed to create item", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
 			return nil, err
 		}
 		items[i] = *stockItem
@@ -257,6 +249,7 @@ func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto
 
 	err := s.releaseStockUseCase.Execute(ctx, req.OrderID, items)
 	if err != nil {
+		s.logger.Error("failed to release stock", "orderID", req.OrderID, "error", err)
 		return nil, err
 	}
 
@@ -269,12 +262,12 @@ func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto
 
 // CommitStock commits stock for an order
 func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.CommitStockRequest) (*dto.CommitStockResponse, error) {
-
 	// Convert DTO to domain entities
 	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
 		stockItem, err := valueobjects.NewItem(item.ProductID, item.Quantity)
 		if err != nil {
+			s.logger.Error("failed to create item", "productID", item.ProductID, "quantity", item.Quantity, "error", err)
 			return nil, err
 		}
 		items[i] = *stockItem
@@ -282,6 +275,7 @@ func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.
 
 	err := s.commitStockUseCase.Execute(ctx, req.OrderID, items)
 	if err != nil {
+		s.logger.Error("failed to commit stock", "orderID", req.OrderID, "error", err)
 		return nil, err
 	}
 
@@ -303,6 +297,7 @@ func (s *InventoryApplicationService) CheckStockAvailability(ctx context.Context
 	// Fetch all stocks in a single query
 	stocks, err := s.inventoryRepo.GetStocksByProductIDs(ctx, productIDs, false)
 	if err != nil {
+		s.logger.Error("failed to get stocks for availability check", "productIDs", productIDs, "error", err)
 		return err
 	}
 
@@ -310,9 +305,11 @@ func (s *InventoryApplicationService) CheckStockAvailability(ctx context.Context
 	for _, item := range items {
 		stock, exists := stocks[item.ProductID]
 		if !exists {
+			s.logger.Error("product not found during stock check", "productID", item.ProductID)
 			return errors.ErrProductNotFound
 		}
 		if !stock.CanReserve(item.Quantity) {
+			s.logger.Error("insufficient stock for availability check", "productID", item.ProductID, "requested", item.Quantity, "available", stock.AvailableQuantity)
 			return errors.ErrInsufficientStock
 		}
 	}

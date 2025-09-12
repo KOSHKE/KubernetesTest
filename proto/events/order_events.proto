@@ -5,6 +5,7 @@ package events.order;
 option go_package = "ecommerce-platform/proto-go/events";
 
 import "common/common.proto";
+import "google/protobuf/timestamp.proto";
 
 message OrderCreated {
   string order_id = 1;
@@ -12,7 +13,7 @@ message OrderCreated {
   repeated common.OrderItem items = 3;
   int64 total_amount = 4; // minor units
   string currency = 5;    // ISO 4217
-  string occurred_at = 6; // RFC3339
+  google.protobuf.Timestamp occurred_at = 6; // Use proper timestamp
   string payment_method = 7; // payment method (e.g., "CREDIT_CARD", "DEBIT_CARD")
 }
 
