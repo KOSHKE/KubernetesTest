@@ -4,6 +4,14 @@ import (
 	"time"
 )
 
+// MigrationRecord tracks applied migrations
+type MigrationRecord struct {
+	ID          uint      `gorm:"primaryKey"`
+	Version     int64     `gorm:"uniqueIndex;not null"`
+	Description string    `gorm:"not null"`
+	AppliedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+}
+
 // ProductRecord represents the product table structure
 type ProductRecord struct {
 	ID        string    `gorm:"primaryKey;type:varchar(255)"`

@@ -73,31 +73,17 @@ func (s *MigrationService) getAppliedMigrations() (map[int64]bool, error) {
 
 // applyMigration applies a single migration
 func (s *MigrationService) applyMigration(migration Migration) error {
-	// Start transaction
-	tx := s.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := migration.Up(tx); err != nil {
+			return err
 		}
-	}()
 
-	// Run migration
-	if err := migration.Up(tx); err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	// Record migration
-	record := MigrationRecord{
-		Version:     migration.Version,
-		Description: migration.Description,
-	}
-	if err := tx.Create(&record).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	return tx.Commit().Error
+		record := MigrationRecord{
+			Version:     migration.Version,
+			Description: migration.Description,
+		}
+		return tx.Create(&record).Error
+	})
 }
 
 // getMigrations returns all available migrations

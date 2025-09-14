@@ -168,13 +168,9 @@ func initDatabase(cfg *config.InventoryConfig, logger logger.Logger) (*gorm.DB, 
 func runMigrations(db *gorm.DB, logger logger.Logger) error {
 	logger.Info("running database migrations")
 
-	// Auto migrate if enabled
-	if err := db.AutoMigrate(
-		&migration.ProductRecord{},
-		&migration.StockRecord{},
-		&migration.OutboxRecord{},
-	); err != nil {
-		return fmt.Errorf("failed to run database migrations: %w", err)
+	migrationService := migration.NewMigrationService(db)
+	if err := migrationService.Migrate(context.Background()); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	logger.Info("database migrations completed")

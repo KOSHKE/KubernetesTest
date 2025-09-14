@@ -2,83 +2,61 @@ package usecases
 
 import (
 	"context"
+	"time"
 
 	"ecommerce-platform/pkg/common/errors"
-	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/idgenerator"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
-	"ecommerce-platform/services/user-service/internal/domain/ports/auth"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
+	"ecommerce-platform/services/user-service/internal/domain/ports/services"
 	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/user-service/internal/metrics"
 )
 
 // LoginUserUseCase handles user login business logic
 type LoginUserUseCase struct {
-	userRepo    repository.UserRepository
-	authService auth.AuthService
-	logger      logger.Logger
-	metrics     metrics.UserMetrics
+	userRepo       repository.UserRepository
+	sessionRepo    repository.SessionRepository
+	tokenGenerator services.TokenGenerator
+	metrics        metrics.UserMetrics
 }
 
 // NewLoginUserUseCase creates a new LoginUserUseCase
 func NewLoginUserUseCase(
 	userRepo repository.UserRepository,
-	authService auth.AuthService,
-	logger logger.Logger,
+	sessionRepo repository.SessionRepository,
+	tokenGenerator services.TokenGenerator,
 	metrics metrics.UserMetrics,
 ) *LoginUserUseCase {
 	return &LoginUserUseCase{
-		userRepo:    userRepo,
-		authService: authService,
-		logger:      logger,
-		metrics:     metrics,
+		userRepo:       userRepo,
+		sessionRepo:    sessionRepo,
+		tokenGenerator: tokenGenerator,
+		metrics:        metrics,
 	}
 }
 
 // Execute performs user login
-func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string) (*entities.User, *valueobjects.TokenPair, error) {
+func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string) (*entities.User, *entities.Session, error) {
 	// Create email value object
 	emailVO := valueobjects.NewEmail(email)
 
 	// Find user by email
 	user, err := uc.userRepo.GetByEmail(ctx, emailVO)
 	if err != nil {
-		uc.logger.Error("failed to find user", "error", err)
 		return nil, nil, errors.ErrUserNotFound
 	}
 
 	// Verify password
-	if !user.Password.Verify(password) {
-		uc.logger.Warn("invalid password for user", "email", email)
+	if !user.VerifyPassword(password) {
 		if uc.metrics != nil {
 			uc.metrics.UserLoginFailed("invalid_password")
 		}
 		return nil, nil, errors.ErrInvalidCredentials
 	}
 
-	var domainTokenPair *valueobjects.TokenPair
-
-	// Execute token generation and storage within a transaction
-	err = uc.authService.WithTransaction(ctx, func(txCtx context.Context) error {
-		// Generate authentication tokens
-		tokenPair, err := uc.authService.GenerateTokenPair(user.ID, user.Email.Value())
-		if err != nil {
-			uc.logger.Error("failed to generate tokens", "error", err)
-			return errors.ErrTokenGenerationFailed
-		}
-
-		// Store refresh token
-		if err := uc.authService.StoreRefreshToken(txCtx, tokenPair.RefreshToken, user.ID); err != nil {
-			uc.logger.Error("failed to store refresh token", "error", err)
-			return errors.ErrTokenStorageFailed
-		}
-
-		// Create domain token pair
-		domainTokenPair = valueobjects.NewTokenPair(tokenPair.AccessToken, tokenPair.RefreshToken, tokenPair.ExpiresIn)
-
-		return nil
-	})
-
+	// Create session - вся бизнес-логика в use case
+	session, err := uc.createSession(ctx, user)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -88,5 +66,38 @@ func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string)
 		uc.metrics.UserLoginSuccess()
 	}
 
-	return user, domainTokenPair, nil
+	return user, session, nil
+}
+
+// createSession creates a new session for the user
+func (uc *LoginUserUseCase) createSession(ctx context.Context, user *entities.User) (*entities.Session, error) {
+	// Generate token pair (both access and refresh tokens)
+	accessToken, refreshToken, err := uc.tokenGenerator.GenerateTokenPair(user.ID)
+	if err != nil {
+		return nil, errors.ErrTokenGenerationFailed
+	}
+
+	// Create session
+	sessionID := idgenerator.GenerateID("session")
+	expiresAt := time.Now().Add(24 * time.Hour) // 24 hours session
+
+	session := entities.NewSession(
+		sessionID,
+		user.ID,
+		accessToken,
+		refreshToken,
+		expiresAt,
+	)
+
+	// Validate session
+	if err := session.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Save session
+	if err := uc.sessionRepo.Save(ctx, session); err != nil {
+		return nil, errors.ErrSessionCreationFailed
+	}
+
+	return session, nil
 }

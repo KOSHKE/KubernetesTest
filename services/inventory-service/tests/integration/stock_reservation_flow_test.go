@@ -41,7 +41,7 @@ func setupTestDB(t *testing.T, ctx context.Context) (*gorm.DB, func()) {
 	require.NoError(t, err)
 
 	migrator := migration.NewMigrationService(db)
-	require.NoError(t, migrator.RunMigrations(ctx))
+	require.NoError(t, migrator.Migrate(ctx))
 	require.NoError(t, migrator.SeedData(ctx))
 
 	cleanup := func() { _ = postgresC.Terminate(ctx) }

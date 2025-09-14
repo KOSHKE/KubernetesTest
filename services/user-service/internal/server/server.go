@@ -11,15 +11,17 @@ import (
 	"time"
 
 	"ecommerce-platform/pkg/config"
+	"ecommerce-platform/pkg/jwt"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/redisclient"
 	appsvc "ecommerce-platform/services/user-service/internal/application/services"
-	authPorts "ecommerce-platform/services/user-service/internal/domain/ports/auth"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
-	"ecommerce-platform/services/user-service/internal/infra/auth"
+	"ecommerce-platform/services/user-service/internal/domain/ports/services"
 	userGrpc "ecommerce-platform/services/user-service/internal/infra/grpc"
 	"ecommerce-platform/services/user-service/internal/infra/migration"
 	userRepoImpl "ecommerce-platform/services/user-service/internal/infra/repository"
+	infraServices "ecommerce-platform/services/user-service/internal/infra/services"
 	usermetrics "ecommerce-platform/services/user-service/internal/metrics"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -44,9 +46,10 @@ type Server struct {
 	db *gorm.DB
 
 	// business dependencies
-	userRepo    repository.UserRepository
-	authService authPorts.AuthService
-	userSvc     *appsvc.UserApplicationService
+	userRepo       repository.UserRepository
+	sessionRepo    repository.SessionRepository
+	tokenGenerator services.TokenGenerator
+	userSvc        *appsvc.UserApplicationService
 
 	// metrics
 	pm      *metrics.MetricsServer
@@ -72,25 +75,37 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	// Initialize repository
+	// Initialize repositories
 	userRepo := userRepoImpl.NewGormUserRepository(db)
 
-	// Initialize auth service
-	authService, err := initAuthService(cfg, userRepo, loggerAdapter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize auth service: %w", err)
+	// Initialize Redis client for session storage
+	redisClient := redisclient.New(cfg.Auth.StorageURL, "", 0) // No password, default DB
+	sessionRepo := userRepoImpl.NewRedisSessionRepository(redisClient, cfg.Auth.RefreshTokenTTL)
+
+	// Initialize JWT manager
+	jwtConfig := jwt.Config{
+		AccessTokenSecret:  cfg.Auth.AccessTokenSecret,
+		RefreshTokenSecret: cfg.Auth.RefreshTokenSecret,
+		AccessTokenTTL:     cfg.Auth.AccessTokenTTL,
+		RefreshTokenTTL:    cfg.Auth.RefreshTokenTTL,
+		Issuer:             "user-service",
+		Audience:           "ecommerce-platform",
 	}
+	jwtManager := jwt.NewManager(jwtConfig)
+
+	// Initialize token generator
+	tokenGenerator := infraServices.NewJWTTokenGenerator(jwtManager)
 
 	// Initialize metrics
 	userMetrics := usermetrics.NewUserMetrics()
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
 	// Initialize user application service
-	userSvc := appsvc.NewUserApplicationService(userRepo, authService, loggerAdapter, userMetrics)
+	userSvc := appsvc.NewUserApplicationService(userRepo, sessionRepo, tokenGenerator, loggerAdapter, userMetrics)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
-	userGrpc.RegisterUserPBServer(gs, userSvc)
+	userGrpc.RegisterUserPBServer(gs, userSvc, userMetrics)
 
 	// Setup health checks
 	hs := health.NewServer()
@@ -103,15 +118,16 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		log:         log,
-		grpcServer:  gs,
-		pm:          pm,
-		db:          db,
-		userRepo:    userRepo,
-		authService: authService,
-		userSvc:     userSvc,
-		metrics:     userMetrics,
+		cfg:            cfg,
+		log:            log,
+		grpcServer:     gs,
+		pm:             pm,
+		db:             db,
+		userRepo:       userRepo,
+		sessionRepo:    sessionRepo,
+		tokenGenerator: tokenGenerator,
+		userSvc:        userSvc,
+		metrics:        userMetrics,
 	}
 	return s, nil
 }
@@ -139,27 +155,6 @@ func runMigrations(db *gorm.DB, logger logger.Logger) error {
 
 	logger.Info("database migrations completed")
 	return nil
-}
-
-func initAuthService(cfg *config.UserConfig, userRepo repository.UserRepository, logger logger.Logger) (authPorts.AuthService, error) {
-	logger.Info("initializing authentication service")
-
-	authConfig := &auth.Config{
-		AccessTokenSecret:  cfg.Auth.AccessTokenSecret,
-		RefreshTokenSecret: cfg.Auth.RefreshTokenSecret,
-		AccessTokenTTL:     cfg.Auth.AccessTokenTTL,
-		RefreshTokenTTL:    cfg.Auth.RefreshTokenTTL,
-		StorageURL:         cfg.Auth.StorageURL,
-		StorageTimeout:     cfg.Auth.StorageTimeout,
-	}
-
-	authService, err := auth.NewJWTAuthService(authConfig, userRepo, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create JWT auth service: %w", err)
-	}
-
-	logger.Info("authentication service initialized")
-	return authService, nil
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -266,10 +261,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Close auth service
-	if closer, ok := s.authService.(interface{ Close() error }); ok {
+	// Close token generator
+	if closer, ok := s.tokenGenerator.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
-			s.log.Warn("auth service close error", zap.Error(err))
+			s.log.Warn("token generator close error", zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}

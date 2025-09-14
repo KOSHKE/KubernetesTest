@@ -22,6 +22,19 @@ var (
 	ErrTokenRevocationFailed = errors.New("failed to revoke token")
 	ErrRefreshTokenInvalid   = errors.New("invalid refresh token")
 	ErrAuthenticationFailed  = errors.New("authentication failed")
+	ErrPasswordHashingFailed = errors.New("password hashing failed")
+	ErrUnexpectedSign        = errors.New("unexpected signing method")
+
+	// Session errors
+	ErrSessionNotFound       = errors.New("session not found")
+	ErrSessionExpired        = errors.New("session expired")
+	ErrSessionCreationFailed = errors.New("failed to create session")
+	ErrSessionUpdateFailed   = errors.New("failed to update session")
+	ErrSessionDeletionFailed = errors.New("failed to delete session")
+	ErrInvalidSessionID      = errors.New("invalid session ID")
+	ErrInvalidUserID         = errors.New("invalid user ID")
+	ErrInvalidAccessToken    = errors.New("invalid access token")
+	ErrInvalidRefreshToken   = errors.New("invalid refresh token")
 
 	// Configuration errors
 	ErrAccessTokenSecretRequired  = errors.New("access token secret is required")

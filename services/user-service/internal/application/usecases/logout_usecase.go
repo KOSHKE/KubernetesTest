@@ -4,30 +4,32 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/common/errors"
-	"ecommerce-platform/pkg/logger"
-	"ecommerce-platform/services/user-service/internal/domain/ports/auth"
+	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 )
 
 // LogoutUseCase handles user logout business logic
 type LogoutUseCase struct {
-	authSvc auth.AuthService
-	logger  logger.Logger
+	sessionRepo repository.SessionRepository
 }
 
 // NewLogoutUseCase creates a new LogoutUseCase
-func NewLogoutUseCase(authSvc auth.AuthService, logger logger.Logger) *LogoutUseCase {
+func NewLogoutUseCase(sessionRepo repository.SessionRepository) *LogoutUseCase {
 	return &LogoutUseCase{
-		authSvc: authSvc,
-		logger:  logger,
+		sessionRepo: sessionRepo,
 	}
 }
 
 // Execute performs user logout
-func (uc *LogoutUseCase) Execute(ctx context.Context, refreshToken string) error {
-	// Revoke refresh token
-	if err := uc.authSvc.RevokeRefreshToken(ctx, refreshToken); err != nil {
-		uc.logger.Error("failed to revoke refresh token", "error", err)
-		return errors.ErrTokenRevocationFailed
+func (uc *LogoutUseCase) Execute(ctx context.Context, sessionID string) error {
+	// Check if session exists
+	_, err := uc.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		return errors.ErrSessionNotFound
+	}
+
+	// Delete session
+	if err := uc.sessionRepo.Delete(ctx, sessionID); err != nil {
+		return errors.ErrSessionDeletionFailed
 	}
 
 	return nil

@@ -22,10 +22,10 @@ type GetUserRequest struct {
 
 // LogoutRequest represents the request to logout a user
 type LogoutRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
+	SessionID string `json:"session_id" validate:"required"`
 }
 
 // RefreshTokenRequest represents the request to refresh authentication tokens
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
+	SessionID string `json:"session_id" validate:"required"`
 }

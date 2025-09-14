@@ -1,15 +1,18 @@
 package metrics
 
 import (
+	"time"
+
 	"ecommerce-platform/pkg/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // UserMetrics interface defines user service specific metrics
 type UserMetrics interface {
-	// User business metrics
-	UserCreated()
-	UserLoginSuccess()
-	UserLoginFailed(reason string)
+	// gRPC metrics
+	GRPCRequestDuration(method string, duration time.Duration)
+	GRPCRequestTotal(method, status string)
 
 	// HTTP metrics (reused from pkg/metrics)
 	metrics.Metrics
@@ -18,6 +21,10 @@ type UserMetrics interface {
 // UserPrometheusMetrics implements UserMetrics interface
 type UserPrometheusMetrics struct {
 	*metrics.PrometheusMetrics
+
+	// gRPC metrics
+	grpcRequestTotal    *prometheus.CounterVec
+	grpcRequestDuration *prometheus.HistogramVec
 }
 
 // NewUserMetrics creates new user service metrics instance
@@ -28,23 +35,41 @@ func NewUserMetrics() UserMetrics {
 		PrometheusMetrics: baseMetrics,
 	}
 
-	// Note: User service uses only base metrics from pkg/metrics
-	// No additional service-specific metrics needed for now
+	// Initialize gRPC metrics
+	userMetrics.grpcRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "user_service",
+			Name:      "grpc_request_duration_seconds",
+			Help:      "gRPC request duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"service", "method"},
+	)
+
+	userMetrics.grpcRequestTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "user_service",
+			Name:      "grpc_requests_total",
+			Help:      "Total number of gRPC requests",
+		},
+		[]string{"service", "method", "status"},
+	)
+
+	// Register gRPC metrics
+	baseMetrics.GetRegistry().MustRegister(
+		userMetrics.grpcRequestDuration,
+		userMetrics.grpcRequestTotal,
+	)
 
 	return userMetrics
 }
 
-// UserCreated increments user creation counter
-func (m *UserPrometheusMetrics) UserCreated() {
-	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionCreated, "")
+// GRPCRequestDuration records gRPC request duration
+func (m *UserPrometheusMetrics) GRPCRequestDuration(method string, duration time.Duration) {
+	m.grpcRequestDuration.WithLabelValues("user-service", method).Observe(duration.Seconds())
 }
 
-// UserLoginSuccess increments successful login counter
-func (m *UserPrometheusMetrics) UserLoginSuccess() {
-	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionLoginSuccess, "")
-}
-
-// UserLoginFailed increments failed login counter with reason
-func (m *UserPrometheusMetrics) UserLoginFailed(reason string) {
-	m.EntityEvent(metrics.EntityTypeUser, metrics.ActionLoginFailed, reason)
+// GRPCRequestTotal increments gRPC request counter
+func (m *UserPrometheusMetrics) GRPCRequestTotal(method, status string) {
+	m.grpcRequestTotal.WithLabelValues("user-service", method, status).Inc()
 }

@@ -5,7 +5,6 @@ import (
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/idgenerator"
-	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
@@ -15,19 +14,16 @@ import (
 // RegisterUserUseCase handles user registration business logic
 type RegisterUserUseCase struct {
 	userRepo repository.UserRepository
-	logger   logger.Logger
 	metrics  metrics.UserMetrics
 }
 
 // NewRegisterUserUseCase creates a new RegisterUserUseCase
 func NewRegisterUserUseCase(
 	userRepo repository.UserRepository,
-	logger logger.Logger,
 	metrics metrics.UserMetrics,
 ) *RegisterUserUseCase {
 	return &RegisterUserUseCase{
 		userRepo: userRepo,
-		logger:   logger,
 		metrics:  metrics,
 	}
 }
@@ -36,10 +32,10 @@ func NewRegisterUserUseCase(
 func (uc *RegisterUserUseCase) Execute(ctx context.Context, email, password, firstName, lastName, phone string) (*entities.User, error) {
 	// Create value objects
 	emailVO := valueobjects.NewEmail(email)
-	passwordVO := valueobjects.NewPasswordFromPlain(password)
 	firstNameVO := valueobjects.NewName(firstName)
 	lastNameVO := valueobjects.NewName(lastName)
 	phoneVO := valueobjects.NewPhone(phone)
+	passwordVO := valueobjects.NewPasswordFromPlain(password)
 
 	var user *entities.User
 
@@ -48,22 +44,19 @@ func (uc *RegisterUserUseCase) Execute(ctx context.Context, email, password, fir
 		// Check if user already exists
 		exists, err := txRepo.ExistsByEmail(ctx, emailVO)
 		if err != nil {
-			uc.logger.Error("failed to check user existence", "error", err)
 			return errors.ErrDatabaseOperationFailed
 		}
 
 		if exists {
-			uc.logger.Warn("user already exists", "email", email)
 			return errors.ErrEmailAlreadyExists
 		}
 
-		// Create user entity using constructor directly
+		// Create user entity
 		userID := idgenerator.GenerateID("user")
 		user = entities.NewUser(userID, emailVO, passwordVO, firstNameVO, lastNameVO, phoneVO)
 
 		// Save user to repository
 		if err := txRepo.Create(ctx, user); err != nil {
-			uc.logger.Error("failed to save user", "error", err)
 			return errors.ErrUserCreationFailed
 		}
 

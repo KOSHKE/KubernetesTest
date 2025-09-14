@@ -18,6 +18,11 @@ type User struct {
 	UpdatedAt time.Time
 }
 
+// VerifyPassword verifies a plain password against the user's hashed password
+func (u *User) VerifyPassword(password string) bool {
+	return u.Password.Verify(password)
+}
+
 // NewUser creates a new User aggregate
 func NewUser(id string, email valueobjects.Email, password valueobjects.Password, firstName, lastName valueobjects.Name, phone valueobjects.Phone) *User {
 	now := time.Now()
