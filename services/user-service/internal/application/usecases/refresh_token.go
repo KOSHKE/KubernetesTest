@@ -32,7 +32,7 @@ func (uc *RefreshTokenUseCase) Execute(ctx context.Context, sessionID string) (*
 	// Get existing session
 	session, err := uc.sessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
-		return nil, errors.ErrSessionNotFound
+		return nil, err
 	}
 
 	// Check if session is expired
@@ -45,7 +45,7 @@ func (uc *RefreshTokenUseCase) Execute(ctx context.Context, sessionID string) (*
 	// Generate new token pair
 	accessToken, refreshToken, err := uc.tokenGenerator.GenerateTokenPair(session.UserID)
 	if err != nil {
-		return nil, errors.ErrTokenGenerationFailed
+		return nil, err
 	}
 
 	// Update session with new tokens
@@ -54,7 +54,7 @@ func (uc *RefreshTokenUseCase) Execute(ctx context.Context, sessionID string) (*
 
 	// Save updated session
 	if err := uc.sessionRepo.Save(ctx, session); err != nil {
-		return nil, errors.ErrSessionUpdateFailed
+		return nil, err
 	}
 
 	return session, nil

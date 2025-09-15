@@ -10,19 +10,15 @@ import (
 )
 
 // CreateProductUseCase handles product creation
-type CreateProductUseCase struct {
-	inventoryRepo repository.InventoryRepositoryFacade
-}
+type CreateProductUseCase struct{}
 
 // NewCreateProductUseCase creates a new CreateProductUseCase
-func NewCreateProductUseCase(inventoryRepo repository.InventoryRepositoryFacade) *CreateProductUseCase {
-	return &CreateProductUseCase{
-		inventoryRepo: inventoryRepo,
-	}
+func NewCreateProductUseCase() *CreateProductUseCase {
+	return &CreateProductUseCase{}
 }
 
 // Execute creates a new product
-func (uc *CreateProductUseCase) Execute(ctx context.Context, name string, price valueobjects.Money, imageURL string) (*entities.Product, error) {
+func (uc *CreateProductUseCase) Execute(ctx context.Context, name string, price valueobjects.Money, imageURL string, repo repository.InventoryRepositoryFacade) (*entities.Product, error) {
 	// Generate product ID
 	productID := idgenerator.GenerateID("product")
 
@@ -40,7 +36,7 @@ func (uc *CreateProductUseCase) Execute(ctx context.Context, name string, price 
 	}
 
 	// Save product
-	if err := uc.inventoryRepo.CreateProduct(ctx, product); err != nil {
+	if err := repo.CreateProduct(ctx, product); err != nil {
 		return nil, err
 	}
 

@@ -47,9 +47,10 @@ message LoginRequest {
 message LoginResponse {
   User user = 1;
   string message = 2;
-  string access_token = 3;
-  string refresh_token = 4;
-  int64 expires_in = 5;
+  string session_id = 3;
+  string access_token = 4;
+  string refresh_token = 5;
+  int64 expires_in = 6;
 }
 
 message GetUserRequest {
@@ -66,7 +67,8 @@ message UpdateUserResponse {
 }
 
 message RefreshTokenRequest {
-  string refresh_token = 1;
+  string session_id = 1;
+  string refresh_token = 2;
 }
 
 message RefreshTokenResponse {
@@ -76,7 +78,7 @@ message RefreshTokenResponse {
 }
 
 message LogoutRequest {
-  string refresh_token = 1;
+  string session_id = 1;
 }
 
 message LogoutResponse {

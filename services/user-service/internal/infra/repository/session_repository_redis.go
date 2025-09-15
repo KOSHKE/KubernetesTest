@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/redisclient"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
@@ -26,48 +25,49 @@ func NewRedisSessionRepository(client *redisclient.Client, ttl time.Duration) re
 
 // Save saves or updates a session
 func (r *RedisSessionRepository) Save(ctx context.Context, session *entities.Session) error {
-	key := r.sessionKey(session.ID)
-	refreshKey := r.refreshTokenKey(session.RefreshToken.Value())
-	userSessionsKey := r.userSessionsKey(session.UserID)
-
 	pipe := r.client.Pipeline()
-	pipe.Set(ctx, key, session, r.ttl)
-	pipe.Set(ctx, refreshKey, session.ID, r.ttl)
-	pipe.SAdd(ctx, userSessionsKey, session.ID)
-	pipe.Expire(ctx, userSessionsKey, r.ttl)
+	pipe.Set(ctx, "session:"+session.ID, session, r.ttl)
+	pipe.Set(ctx, "refresh_token:"+session.RefreshToken.Value(), session.ID, r.ttl)
+	pipe.SAdd(ctx, "user_sessions:"+session.UserID, session.ID)
+	pipe.Expire(ctx, "user_sessions:"+session.UserID, r.ttl)
 
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		return errors.ErrSessionCreationFailed
+		return err
 	}
 	return nil
 }
 
 // GetByID retrieves a session by ID
 func (r *RedisSessionRepository) GetByID(ctx context.Context, id string) (*entities.Session, error) {
-	key := r.sessionKey(id)
 	var session entities.Session
-	if err := r.client.Get(ctx, key, &session); err != nil {
-		return nil, errors.ErrSessionNotFound
+	if err := r.client.Get(ctx, "session:"+id, &session); err != nil {
+		return nil, err
 	}
 	return &session, nil
 }
 
 // GetByUserID retrieves all sessions for a user
 func (r *RedisSessionRepository) GetByUserID(ctx context.Context, userID string) ([]*entities.Session, error) {
-	userSessionsKey := r.userSessionsKey(userID)
-	sessionIDs, err := r.client.SMembers(ctx, userSessionsKey)
+	sessionIDs, err := r.client.SMembers(ctx, "user_sessions:"+userID)
 	if err != nil {
-		return nil, errors.ErrSessionNotFound
+		return nil, err
 	}
 
+	if len(sessionIDs) == 0 {
+		return []*entities.Session{}, nil
+	}
+
+	// Build session keys for MGET
+	sessionKeys := make([]string, len(sessionIDs))
+	for i, sessionID := range sessionIDs {
+		sessionKeys[i] = "session:" + sessionID
+	}
+
+	// Use MGET to fetch all sessions in one request
 	var sessions []*entities.Session
-	for _, sessionID := range sessionIDs {
-		session, err := r.GetByID(ctx, sessionID)
-		if err != nil {
-			continue
-		}
-		sessions = append(sessions, session)
+	if err := r.client.MGet(ctx, sessionKeys, &sessions); err != nil {
+		return nil, err
 	}
 
 	return sessions, nil
@@ -75,10 +75,9 @@ func (r *RedisSessionRepository) GetByUserID(ctx context.Context, userID string)
 
 // GetByRefreshToken retrieves a session by refresh token
 func (r *RedisSessionRepository) GetByRefreshToken(ctx context.Context, refreshToken string) (*entities.Session, error) {
-	refreshKey := r.refreshTokenKey(refreshToken)
 	var sessionID string
-	if err := r.client.Get(ctx, refreshKey, &sessionID); err != nil {
-		return nil, errors.ErrSessionNotFound
+	if err := r.client.Get(ctx, "refresh_token:"+refreshToken, &sessionID); err != nil {
+		return nil, err
 	}
 	return r.GetByID(ctx, sessionID)
 }
@@ -90,52 +89,39 @@ func (r *RedisSessionRepository) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	key := r.sessionKey(id)
-	refreshKey := r.refreshTokenKey(session.RefreshToken.Value())
-	userSessionsKey := r.userSessionsKey(session.UserID)
-
 	pipe := r.client.Pipeline()
-	pipe.Del(ctx, key)
-	pipe.Del(ctx, refreshKey)
-	pipe.SRem(ctx, userSessionsKey, id)
+	pipe.Del(ctx, "session:"+id)
+	pipe.Del(ctx, "refresh_token:"+session.RefreshToken.Value())
+	pipe.SRem(ctx, "user_sessions:"+session.UserID, id)
 
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return errors.ErrSessionDeletionFailed
+		return err
 	}
 	return nil
 }
 
 // DeleteByUserID removes all sessions for a user
 func (r *RedisSessionRepository) DeleteByUserID(ctx context.Context, userID string) error {
-	userSessionsKey := r.userSessionsKey(userID)
-	sessionIDs, err := r.client.SMembers(ctx, userSessionsKey)
+	sessionIDs, err := r.client.SMembers(ctx, "user_sessions:"+userID)
 	if err != nil {
 		return err
 	}
 
 	pipe := r.client.Pipeline()
 	for _, sessionID := range sessionIDs {
-		pipe.Del(ctx, r.sessionKey(sessionID))
+		pipe.Del(ctx, "session:"+sessionID)
 	}
-	pipe.Del(ctx, userSessionsKey)
+	pipe.Del(ctx, "user_sessions:"+userID)
 
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return errors.ErrSessionDeletionFailed
+		return err
 	}
 	return nil
 }
 
-// Helper methods for Redis key generation
-func (r *RedisSessionRepository) sessionKey(sessionID string) string {
-	return "session:" + sessionID
-}
-
-func (r *RedisSessionRepository) refreshTokenKey(refreshToken string) string {
-	return "refresh_token:" + refreshToken
-}
-
-func (r *RedisSessionRepository) userSessionsKey(userID string) string {
-	return "user_sessions:" + userID
+// Close closes the Redis connection
+func (r *RedisSessionRepository) Close() error {
+	return r.client.Close()
 }

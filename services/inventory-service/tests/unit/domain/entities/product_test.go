@@ -11,96 +11,109 @@ import (
 )
 
 func TestProduct_Validate(t *testing.T) {
-	tests := map[string]struct {
-		product       *entities.Product
-		expectedError error
-	}{
-		"valid product": {
-			product:       createTestProduct("prod1", "Test Product", 1000, "USD"),
-			expectedError: nil,
-		},
-		"empty ID": {
-			product:       createTestProduct("", "Test Product", 1000, "USD"),
-			expectedError: errors.ErrInvalidProductID,
-		},
-		"empty name": {
-			product:       createTestProduct("prod1", "", 1000, "USD"),
-			expectedError: errors.ErrInvalidProductName,
-		},
-		"valid with zero price": {
-			product:       createTestProduct("prod1", "Free Product", 0, "USD"),
-			expectedError: nil,
-		},
-		"valid with empty image URL": {
-			product:       createTestProduct("prod1", "Test Product", 1000, "USD"),
-			expectedError: nil,
-		},
-	}
+	t.Run("valid product", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		product := createTestProduct("prod1", "Test Product", 1000, "USD")
 
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			// Act
-			err := tt.product.Validate()
+		// Act
+		err := product.Validate()
 
-			// Assert
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.Equal(t, tt.expectedError, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
+		// Assert
+		assert.NoError(t, err)
+	})
+
+	t.Run("empty ID", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		product := createTestProduct("", "Test Product", 1000, "USD")
+
+		// Act
+		err := product.Validate()
+
+		// Assert
+		assert.Error(t, err)
+		assert.Equal(t, errors.ErrInvalidProductID, err)
+	})
+
+	t.Run("empty name", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		product := createTestProduct("prod1", "", 1000, "USD")
+
+		// Act
+		err := product.Validate()
+
+		// Assert
+		assert.Error(t, err)
+		assert.Equal(t, errors.ErrInvalidProductName, err)
+	})
+
+	t.Run("valid with zero price", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		product := createTestProduct("prod1", "Free Product", 0, "USD")
+
+		// Act
+		err := product.Validate()
+
+		// Assert
+		assert.NoError(t, err)
+	})
+
+	t.Run("valid with empty image URL", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		product := createTestProduct("prod1", "Test Product", 1000, "USD")
+
+		// Act
+		err := product.Validate()
+
+		// Assert
+		assert.NoError(t, err)
+	})
 }
 
 func TestProduct_NewProduct(t *testing.T) {
-	tests := map[string]struct {
-		id       string
-		name     string
-		price    valueobjects.Money
-		imageURL string
-		expected *entities.Product
-	}{
-		"valid product creation": {
-			id:       "prod1",
-			name:     "Test Product",
-			price:    createTestMoney(1000, "USD"),
-			imageURL: "https://example.com/image.jpg",
-			expected: &entities.Product{
-				ID:       "prod1",
-				Name:     "Test Product",
-				Price:    createTestMoney(1000, "USD"),
-				ImageURL: "https://example.com/image.jpg",
-			},
-		},
-		"product with empty image URL": {
-			id:       "prod2",
-			name:     "Test Product 2",
-			price:    createTestMoney(2000, "EUR"),
-			imageURL: "",
-			expected: &entities.Product{
-				ID:       "prod2",
-				Name:     "Test Product 2",
-				Price:    createTestMoney(2000, "EUR"),
-				ImageURL: "",
-			},
-		},
-	}
+	t.Run("valid product creation", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		id := "prod1"
+		name := "Test Product"
+		price := createTestMoney(1000, "USD")
+		imageURL := "https://example.com/image.jpg"
 
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			// Act
-			product := entities.NewProduct(tt.id, tt.name, tt.price, tt.imageURL)
+		// Act
+		product := entities.NewProduct(id, name, price, imageURL)
 
-			// Assert
-			assert.Equal(t, tt.expected.ID, product.ID)
-			assert.Equal(t, tt.expected.Name, product.Name)
-			assert.Equal(t, tt.expected.Price, product.Price)
-			assert.Equal(t, tt.expected.ImageURL, product.ImageURL)
-			assert.False(t, product.CreatedAt.IsZero())
-			assert.False(t, product.UpdatedAt.IsZero())
-		})
-	}
+		// Assert
+		assert.Equal(t, id, product.ID)
+		assert.Equal(t, name, product.Name)
+		assert.Equal(t, price, product.Price)
+		assert.Equal(t, imageURL, product.ImageURL)
+		assert.False(t, product.CreatedAt.IsZero())
+		assert.False(t, product.UpdatedAt.IsZero())
+	})
+
+	t.Run("product with empty image URL", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		id := "prod2"
+		name := "Test Product 2"
+		price := createTestMoney(2000, "EUR")
+		imageURL := ""
+
+		// Act
+		product := entities.NewProduct(id, name, price, imageURL)
+
+		// Assert
+		assert.Equal(t, id, product.ID)
+		assert.Equal(t, name, product.Name)
+		assert.Equal(t, price, product.Price)
+		assert.Equal(t, imageURL, product.ImageURL)
+		assert.False(t, product.CreatedAt.IsZero())
+		assert.False(t, product.UpdatedAt.IsZero())
+	})
 }
 
 // Helper functions for creating test data

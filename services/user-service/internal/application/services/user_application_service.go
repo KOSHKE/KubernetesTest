@@ -3,14 +3,12 @@ package services
 import (
 	"context"
 
-	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/validation"
 	"ecommerce-platform/services/user-service/internal/application/dto"
 	"ecommerce-platform/services/user-service/internal/application/usecases"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/ports/services"
-	"ecommerce-platform/services/user-service/internal/metrics"
 )
 
 // UserApplicationService provides the main interface for user operations
@@ -30,13 +28,12 @@ func NewUserApplicationService(
 	sessionRepo repository.SessionRepository,
 	tokenGenerator services.TokenGenerator,
 	logger logger.Logger,
-	metrics metrics.UserMetrics,
 ) *UserApplicationService {
 	v := validation.New()
 
 	return &UserApplicationService{
-		registerUserUseCase: usecases.NewRegisterUserUseCase(userRepo, metrics),
-		loginUserUseCase:    usecases.NewLoginUserUseCase(userRepo, sessionRepo, tokenGenerator, metrics),
+		registerUserUseCase: usecases.NewRegisterUserUseCase(userRepo),
+		loginUserUseCase:    usecases.NewLoginUserUseCase(userRepo, sessionRepo, tokenGenerator),
 		getUserUseCase:      usecases.NewGetUserUseCase(userRepo),
 		refreshTokenUseCase: usecases.NewRefreshTokenUseCase(sessionRepo, tokenGenerator),
 		logoutUseCase:       usecases.NewLogoutUseCase(sessionRepo),
@@ -50,13 +47,13 @@ func (s *UserApplicationService) RegisterUser(ctx context.Context, req *dto.Regi
 	// Validate request DTO
 	if err := s.validator.Struct(req); err != nil {
 		s.logger.Error("Invalid request parameters", "error", err)
-		return nil, errors.ErrInvalidUserData
+		return nil, err
 	}
 
 	// Convert DTO to domain parameters
 	user, err := s.registerUserUseCase.Execute(ctx, req.Email, req.Password, req.FirstName, req.LastName, req.Phone)
 	if err != nil {
-		s.logger.Error("failed to register user", "email", req.Email, "error", err)
+		s.logger.Error("failed to register user", "error", err)
 		return nil, err
 	}
 
@@ -76,7 +73,7 @@ func (s *UserApplicationService) LoginUser(ctx context.Context, req *dto.LoginRe
 	// Validate request DTO
 	if err := s.validator.Struct(req); err != nil {
 		s.logger.Error("Invalid request parameters", "error", err)
-		return nil, errors.ErrInvalidUserData
+		return nil, err
 	}
 
 	// Convert DTO to domain parameters
@@ -105,7 +102,7 @@ func (s *UserApplicationService) GetUser(ctx context.Context, req *dto.GetUserRe
 	// Validate request DTO
 	if err := s.validator.Struct(req); err != nil {
 		s.logger.Error("Invalid request parameters", "error", err)
-		return nil, errors.ErrInvalidUserData
+		return nil, err
 	}
 
 	// Convert DTO to domain parameters
@@ -132,7 +129,7 @@ func (s *UserApplicationService) RefreshToken(ctx context.Context, req *dto.Refr
 	// Validate request DTO
 	if err := s.validator.Struct(req); err != nil {
 		s.logger.Error("Invalid request parameters", "error", err)
-		return nil, errors.ErrInvalidUserData
+		return nil, err
 	}
 
 	// Convert DTO to domain parameters
@@ -155,7 +152,7 @@ func (s *UserApplicationService) Logout(ctx context.Context, req *dto.LogoutRequ
 	// Validate request DTO
 	if err := s.validator.Struct(req); err != nil {
 		s.logger.Error("Invalid request parameters", "error", err)
-		return errors.ErrInvalidUserData
+		return err
 	}
 
 	// Convert DTO to domain parameters

@@ -35,7 +35,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // Set stores a value with TTL (any struct will be JSON-marshaled)
-func (c *Client) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (c *Client) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -44,7 +44,7 @@ func (c *Client) Set(ctx context.Context, key string, value interface{}, ttl tim
 }
 
 // Get retrieves a value and unmarshals it into dest
-func (c *Client) Get(ctx context.Context, key string, dest interface{}) error {
+func (c *Client) Get(ctx context.Context, key string, dest any) error {
 	data, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil {
 		return err
@@ -86,12 +86,12 @@ func (c *Client) WithTransaction(ctx context.Context, fn func(tx redis.Pipeliner
 }
 
 // SAdd adds one or more members to a Redis set
-func (c *Client) SAdd(ctx context.Context, key string, members ...interface{}) error {
+func (c *Client) SAdd(ctx context.Context, key string, members ...any) error {
 	return c.rdb.SAdd(ctx, key, members...).Err()
 }
 
 // SRem removes one or more members from a Redis set
-func (c *Client) SRem(ctx context.Context, key string, members ...interface{}) error {
+func (c *Client) SRem(ctx context.Context, key string, members ...any) error {
 	return c.rdb.SRem(ctx, key, members...).Err()
 }
 
@@ -101,8 +101,8 @@ func (c *Client) SMembers(ctx context.Context, key string) ([]string, error) {
 }
 
 // SAddJSON adds one or more complex objects to a Redis set as JSON
-func (c *Client) SAddJSON(ctx context.Context, key string, values ...interface{}) error {
-	strValues := make([]interface{}, len(values))
+func (c *Client) SAddJSON(ctx context.Context, key string, values ...any) error {
+	strValues := make([]any, len(values))
 	for i, v := range values {
 		data, err := json.Marshal(v)
 		if err != nil {
@@ -111,4 +111,33 @@ func (c *Client) SAddJSON(ctx context.Context, key string, values ...interface{}
 		strValues[i] = data
 	}
 	return c.rdb.SAdd(ctx, key, strValues...).Err()
+}
+
+// MGet retrieves multiple values and unmarshals them into dest slice
+func (c *Client) MGet(ctx context.Context, keys []string, dest any) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	results, err := c.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return err
+	}
+
+	var raw []json.RawMessage
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		if str, ok := r.(string); ok && str != "" {
+			raw = append(raw, json.RawMessage(str))
+		}
+	}
+
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, dest)
 }

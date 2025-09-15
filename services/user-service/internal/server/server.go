@@ -101,7 +101,7 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
 	// Initialize user application service
-	userSvc := appsvc.NewUserApplicationService(userRepo, sessionRepo, tokenGenerator, loggerAdapter, userMetrics)
+	userSvc := appsvc.NewUserApplicationService(userRepo, sessionRepo, tokenGenerator, loggerAdapter)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
@@ -141,6 +141,16 @@ func initDatabase(cfg *config.UserConfig, logger logger.Logger) (*gorm.DB, error
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Test connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database instance: %w", err)
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
 	logger.Info("database connection established")
 	return db, nil
 }
@@ -173,12 +183,12 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 
 	s.httpSrv = &http.Server{
-		Addr:              ":" + s.cfg.MetricsPort, // общий порт для health/metrics
+		Addr:              ":" + s.cfg.MetricsPort, // shared port for health/metrics
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// pprof (опционально: на localhost:6060)
+	// pprof (optional: on localhost:6060)
 	s.pprofSrv = &http.Server{Addr: "localhost:6060"}
 
 	errCh := make(chan error, 3)
@@ -213,10 +223,10 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	// имитация прогрева и только потом readiness=true
+	// simulate warmup and only then readiness=true
 	time.AfterFunc(500*time.Millisecond, func() { s.ready.Store(true) })
 
-	// ожидание завершения
+	// wait for completion
 	select {
 	case <-ctx.Done():
 		s.log.Info("shutdown signal received")
@@ -265,6 +275,16 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if closer, ok := s.tokenGenerator.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
 			s.log.Warn("token generator close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// Close Redis session repository
+	if closer, ok := s.sessionRepo.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			s.log.Warn("session repository close error", zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}

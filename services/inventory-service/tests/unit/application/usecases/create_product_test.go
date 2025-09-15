@@ -12,60 +12,70 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestCreateProductUseCase_Execute_Success(t *testing.T) {
-	// Arrange
+// setupCreateProductTest creates common test setup for CreateProductUseCase tests
+func setupCreateProductTest(t *testing.T) (*gomock.Controller, *mocks.MockInventoryRepositoryFacade, *usecases.CreateProductUseCase) {
 	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-
-	useCase := usecases.NewCreateProductUseCase(mockRepo)
-
-	ctx := context.Background()
-	name := "Test Product"
-	currency, _ := valueobjects.NewCurrency("USD")
-	price := valueobjects.NewMoney(1000, currency)
-	imageURL := "https://example.com/image.jpg"
-
-	// Setup mocks
-	mockRepo.EXPECT().CreateProduct(ctx, gomock.Any()).Return(nil)
-
-	// Act
-	result, err := useCase.Execute(ctx, name, price, imageURL)
-
-	// Assert
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	assert.Equal(t, name, result.Name)
-	assert.Equal(t, price, result.Price)
-	assert.Equal(t, imageURL, result.ImageURL)
-	assert.NotEmpty(t, result.ID)
-	assert.False(t, result.CreatedAt.IsZero())
-	assert.False(t, result.UpdatedAt.IsZero())
+	useCase := usecases.NewCreateProductUseCase()
+	return ctrl, mockRepo, useCase
 }
 
-func TestCreateProductUseCase_Execute_RepositoryError(t *testing.T) {
-	// Arrange
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+func TestCreateProductUseCase_Execute(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		ctrl, mockRepo, useCase := setupCreateProductTest(t)
+		defer ctrl.Finish()
 
-	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+		ctx := context.Background()
+		name := "Test Product"
+		currency, _ := valueobjects.NewCurrency("USD")
+		price := valueobjects.NewMoney(1000, currency)
+		imageURL := "https://example.com/image.jpg"
 
-	useCase := usecases.NewCreateProductUseCase(mockRepo)
+		// Setup mocks
+		mockRepo.EXPECT().
+			CreateProduct(ctx, gomock.Any()).
+			Return(nil).
+			Times(1)
 
-	ctx := context.Background()
-	name := "Test Product"
-	currency, _ := valueobjects.NewCurrency("USD")
-	price := valueobjects.NewMoney(1000, currency)
-	imageURL := "https://example.com/image.jpg"
+		// Act
+		result, err := useCase.Execute(ctx, name, price, imageURL, mockRepo)
 
-	// Setup mocks
-	mockRepo.EXPECT().CreateProduct(ctx, gomock.Any()).Return(assert.AnError)
+		// Assert
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, name, result.Name)
+		assert.Equal(t, price, result.Price)
+		assert.Equal(t, imageURL, result.ImageURL)
+		assert.NotEmpty(t, result.ID)
+		assert.False(t, result.CreatedAt.IsZero())
+		assert.False(t, result.UpdatedAt.IsZero())
+	})
 
-	// Act
-	result, err := useCase.Execute(ctx, name, price, imageURL)
+	t.Run("repository error", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		ctrl, mockRepo, useCase := setupCreateProductTest(t)
+		defer ctrl.Finish()
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
+		ctx := context.Background()
+		name := "Test Product"
+		currency, _ := valueobjects.NewCurrency("USD")
+		price := valueobjects.NewMoney(1000, currency)
+		imageURL := "https://example.com/image.jpg"
+
+		// Setup mocks
+		mockRepo.EXPECT().
+			CreateProduct(ctx, gomock.Any()).
+			Return(assert.AnError).
+			Times(1)
+
+		// Act
+		result, err := useCase.Execute(ctx, name, price, imageURL, mockRepo)
+
+		// Assert
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
 }

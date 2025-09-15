@@ -1,6 +1,6 @@
 # Makefile for Microservices Order System (dev only)
 
-.PHONY: help proto proto-clean dev-up dev-rebuild dev-down fmt deps-get deps-tidy mod-download update-mod go-mod-all build-service build-all monitoring-up monitoring-down test test-unit test-integration test-coverage generate-mocks install-test-deps
+.PHONY: help proto proto-clean dev-up dev-rebuild dev-down test generate-mocks
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -33,20 +33,21 @@ dev-down: ## Stop local development environment
 
 generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 	@echo "Generating mocks with gomock (via $(GO_TEST_IMAGE))..."
-	@docker run --rm -v "$(CURDIR)":/workspace -w /workspace/services/inventory-service $(GO_TEST_IMAGE) sh -c "go install go.uber.org/mock/mockgen@latest && go generate ./tests/mocks/generate.go"
+	@docker run --rm \
+		-v "$(CURDIR)":/workspace \
+		-v go-cache:/go/pkg/mod \
+		-v go-build-cache:/root/.cache/go-build \
+		$(GO_TEST_IMAGE) sh -c " \
+			go install go.uber.org/mock/mockgen@latest && \
+			cd /workspace/services/inventory-service && \
+			go generate ./tests/mocks/generate.go && \
+			cd /workspace/services/user-service && \
+			go generate ./tests/mocks/generate.go \
+		"
 	@echo "Mocks generated successfully!"
-
-install-test-deps: ## Install test dependencies locally
-	@echo "Installing test dependencies locally..."
-	@go install go.uber.org/mock/mockgen@latest
-	@echo "Test dependencies installed!"
-
-deps-tidy: ## Tidy dependencies
-	@echo "Tidying dependencies..."
-	@go mod tidy
-	@echo "Dependencies tidied!"
 
 test: ## Run all tests locally
 	@echo "Running all tests locally..."
 	@cd services/inventory-service && go test ./tests/...
+	@cd services/user-service && go test ./tests/...
 	@echo "All tests completed!"

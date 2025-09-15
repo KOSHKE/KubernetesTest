@@ -7,6 +7,7 @@ import (
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
+	"ecommerce-platform/pkg/validation"
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/usecases"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
@@ -27,6 +28,7 @@ type InventoryApplicationService struct {
 	// Dependencies
 	inventoryRepo repository.InventoryRepositoryFacade
 	publisher     publisher.StockEventsPublisher
+	validator     *validation.Validate
 	logger        logger.Logger
 }
 
@@ -36,16 +38,15 @@ func NewInventoryApplicationService(
 	publisher publisher.StockEventsPublisher,
 	logger logger.Logger,
 ) *InventoryApplicationService {
-	// Create outbox service using inventory repo (which includes outbox)
-	outboxService := outbox.NewService(inventoryRepo, logger)
-
 	// Create use cases
-	createProductUseCase := usecases.NewCreateProductUseCase(inventoryRepo)
-	addStockUseCase := usecases.NewAddStockUseCase(inventoryRepo)
-	getProductUseCase := usecases.NewGetProductUseCase(inventoryRepo)
-	reserveStockUseCase := usecases.NewReserveStockUseCase(inventoryRepo, outboxService)
-	releaseStockUseCase := usecases.NewReleaseStockUseCase(inventoryRepo, outboxService)
-	commitStockUseCase := usecases.NewCommitStockUseCase(inventoryRepo, outboxService)
+	createProductUseCase := usecases.NewCreateProductUseCase()
+	addStockUseCase := usecases.NewAddStockUseCase()
+	getProductUseCase := usecases.NewGetProductUseCase()
+	reserveStockUseCase := usecases.NewReserveStockUseCase()
+	releaseStockUseCase := usecases.NewReleaseStockUseCase()
+	commitStockUseCase := usecases.NewCommitStockUseCase()
+
+	v := validation.New()
 
 	return &InventoryApplicationService{
 		createProductUseCase: createProductUseCase,
@@ -56,6 +57,7 @@ func NewInventoryApplicationService(
 		commitStockUseCase:   commitStockUseCase,
 		inventoryRepo:        inventoryRepo,
 		publisher:            publisher,
+		validator:            v,
 		logger:               logger,
 	}
 }
@@ -72,7 +74,7 @@ func (s *InventoryApplicationService) GetStocksByProductIDs(ctx context.Context,
 
 // AddStock adds stock to a product
 func (s *InventoryApplicationService) AddStock(ctx context.Context, productID string, quantity int32) (*dto.StockInfo, error) {
-	stock, err := s.addStockUseCase.Execute(ctx, productID, quantity)
+	stock, err := s.addStockUseCase.Execute(ctx, productID, quantity, s.inventoryRepo)
 	if err != nil {
 		s.logger.Error("failed to add stock", "productID", productID, "quantity", quantity, "error", err)
 		return nil, err
@@ -89,8 +91,14 @@ func (s *InventoryApplicationService) AddStock(ctx context.Context, productID st
 
 // CreateProduct creates a new product
 func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dto.CreateProductRequest) (*dto.ProductResponse, error) {
+	// Validate request DTO
+	if err := s.validator.Struct(req); err != nil {
+		s.logger.Error("Invalid request parameters", "error", err)
+		return nil, err
+	}
+
 	// Create product
-	product, err := s.createProductUseCase.Execute(ctx, req.Name, req.Price, req.ImageURL)
+	product, err := s.createProductUseCase.Execute(ctx, req.Name, req.Price, req.ImageURL, s.inventoryRepo)
 	if err != nil {
 		s.logger.Error("failed to create product", "name", req.Name, "error", err)
 		return nil, err
@@ -99,7 +107,7 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 	// Add stock if specified
 	var stockInfo dto.StockInfo
 	if req.Stock > 0 {
-		stock, err := s.addStockUseCase.Execute(ctx, product.ID, req.Stock)
+		stock, err := s.addStockUseCase.Execute(ctx, product.ID, req.Stock, s.inventoryRepo)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +135,7 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 // GetProduct retrieves a product by ID
 func (s *InventoryApplicationService) GetProduct(ctx context.Context, productID string) (*dto.ProductResponse, error) {
 
-	product, err := s.getProductUseCase.Execute(ctx, productID)
+	product, err := s.getProductUseCase.Execute(ctx, productID, s.inventoryRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +167,12 @@ func (s *InventoryApplicationService) GetProduct(ctx context.Context, productID 
 
 // ReserveStock reserves stock for an order
 func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto.ReserveStockRequest) (*dto.ReserveStockResponse, error) {
+	// Validate request DTO
+	if err := s.validator.Struct(req); err != nil {
+		s.logger.Error("Invalid request parameters", "error", err)
+		return nil, err
+	}
+
 	// Convert DTO to domain entities
 	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
@@ -170,7 +184,33 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 		items[i] = *stockItem
 	}
 
-	err := s.reserveStockUseCase.Execute(ctx, req.OrderID, items)
+	// Use transaction to ensure both stock reservation and event are saved atomically
+	err := s.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
+		// Execute use case with transaction repository
+		if err := s.reserveStockUseCase.Execute(ctx, req.OrderID, items, repo); err != nil {
+			return err
+		}
+
+		// Save event to outbox table (to be published later)
+		eventData := dto.StockEventDTO{
+			OrderID: req.OrderID,
+			Items:   items,
+		}
+		event := outbox.Event{
+			AggregateID: req.OrderID,
+			Type:        "StockReserved",
+			Payload:     eventData,
+		}
+
+		// Create outbox service using transaction repository
+		outboxService := outbox.NewService(repo, s.logger)
+		if err := outboxService.SaveEvent(ctx, event); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		s.logger.Error("failed to reserve stock", "orderID", req.OrderID, "error", err)
 		return nil, err
@@ -196,6 +236,12 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 // ListProducts retrieves a paginated list of products with stock information
 // This method uses ProductInventory aggregate to solve N+1 problem
 func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto.ListProductsRequest) (*dto.ListProductsResponse, error) {
+	// Validate request DTO
+	if err := s.validator.Struct(req); err != nil {
+		s.logger.Error("Invalid request parameters", "error", err)
+		return nil, err
+	}
+
 	// Get products with stock information using single query
 	productInventories, total, err := s.inventoryRepo.ListProductsWithStock(ctx, req.Page, req.Limit, req.Search)
 	if err != nil {
@@ -236,6 +282,12 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 
 // ReleaseStock releases stock for an order
 func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto.ReleaseStockRequest) (*dto.ReleaseStockResponse, error) {
+	// Validate request DTO
+	if err := s.validator.Struct(req); err != nil {
+		s.logger.Error("Invalid request parameters", "error", err)
+		return nil, err
+	}
+
 	// Convert DTO to domain entities
 	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
@@ -247,7 +299,33 @@ func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto
 		items[i] = *stockItem
 	}
 
-	err := s.releaseStockUseCase.Execute(ctx, req.OrderID, items)
+	// Use transaction to ensure both stock release and event are saved atomically
+	err := s.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
+		// Execute use case with transaction repository
+		if err := s.releaseStockUseCase.Execute(ctx, req.OrderID, items, repo); err != nil {
+			return err
+		}
+
+		// Save event to outbox table (to be published later)
+		eventData := dto.StockEventDTO{
+			OrderID: req.OrderID,
+			Items:   items,
+		}
+		event := outbox.Event{
+			AggregateID: req.OrderID,
+			Type:        "StockReleased",
+			Payload:     eventData,
+		}
+
+		// Create outbox service using transaction repository
+		outboxService := outbox.NewService(repo, s.logger)
+		if err := outboxService.SaveEvent(ctx, event); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		s.logger.Error("failed to release stock", "orderID", req.OrderID, "error", err)
 		return nil, err
@@ -262,6 +340,12 @@ func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto
 
 // CommitStock commits stock for an order
 func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.CommitStockRequest) (*dto.CommitStockResponse, error) {
+	// Validate request DTO
+	if err := s.validator.Struct(req); err != nil {
+		s.logger.Error("Invalid request parameters", "error", err)
+		return nil, err
+	}
+
 	// Convert DTO to domain entities
 	items := make([]valueobjects.Item, len(req.Items))
 	for i, item := range req.Items {
@@ -273,7 +357,33 @@ func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.
 		items[i] = *stockItem
 	}
 
-	err := s.commitStockUseCase.Execute(ctx, req.OrderID, items)
+	// Use transaction to ensure both stock commit and event are saved atomically
+	err := s.inventoryRepo.WithTransaction(ctx, func(repo repository.InventoryRepositoryFacade) error {
+		// Execute use case with transaction repository
+		if err := s.commitStockUseCase.Execute(ctx, req.OrderID, items, repo); err != nil {
+			return err
+		}
+
+		// Save event to outbox table (to be published later)
+		eventData := dto.StockEventDTO{
+			OrderID: req.OrderID,
+			Items:   items,
+		}
+		event := outbox.Event{
+			AggregateID: req.OrderID,
+			Type:        "StockCommitted",
+			Payload:     eventData,
+		}
+
+		// Create outbox service using transaction repository
+		outboxService := outbox.NewService(repo, s.logger)
+		if err := outboxService.SaveEvent(ctx, event); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		s.logger.Error("failed to commit stock", "orderID", req.OrderID, "error", err)
 		return nil, err

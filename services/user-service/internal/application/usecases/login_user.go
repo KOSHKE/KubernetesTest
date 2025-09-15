@@ -10,7 +10,6 @@ import (
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/ports/services"
 	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
-	"ecommerce-platform/services/user-service/internal/metrics"
 )
 
 // LoginUserUseCase handles user login business logic
@@ -18,7 +17,6 @@ type LoginUserUseCase struct {
 	userRepo       repository.UserRepository
 	sessionRepo    repository.SessionRepository
 	tokenGenerator services.TokenGenerator
-	metrics        metrics.UserMetrics
 }
 
 // NewLoginUserUseCase creates a new LoginUserUseCase
@@ -26,44 +24,37 @@ func NewLoginUserUseCase(
 	userRepo repository.UserRepository,
 	sessionRepo repository.SessionRepository,
 	tokenGenerator services.TokenGenerator,
-	metrics metrics.UserMetrics,
 ) *LoginUserUseCase {
 	return &LoginUserUseCase{
 		userRepo:       userRepo,
 		sessionRepo:    sessionRepo,
 		tokenGenerator: tokenGenerator,
-		metrics:        metrics,
 	}
 }
 
 // Execute performs user login
 func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string) (*entities.User, *entities.Session, error) {
-	// Create email value object
-	emailVO := valueobjects.NewEmail(email)
-
-	// Find user by email
-	user, err := uc.userRepo.GetByEmail(ctx, emailVO)
-	if err != nil {
-		return nil, nil, errors.ErrUserNotFound
-	}
-
-	// Verify password
-	if !user.VerifyPassword(password) {
-		if uc.metrics != nil {
-			uc.metrics.UserLoginFailed("invalid_password")
-		}
-		return nil, nil, errors.ErrInvalidCredentials
-	}
-
-	// Create session - вся бизнес-логика в use case
-	session, err := uc.createSession(ctx, user)
+	// Create email value object with validation
+	emailVO, err := valueobjects.NewEmail(email)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Record metrics for successful login
-	if uc.metrics != nil {
-		uc.metrics.UserLoginSuccess()
+	// Find user by email
+	user, err := uc.userRepo.GetByEmail(ctx, emailVO)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Verify password
+	if !user.VerifyPassword(password) {
+		return nil, nil, errors.ErrInvalidCredentials
+	}
+
+	// Create session - all business logic in use case
+	session, err := uc.createSession(ctx, user)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return user, session, nil
@@ -74,7 +65,7 @@ func (uc *LoginUserUseCase) createSession(ctx context.Context, user *entities.Us
 	// Generate token pair (both access and refresh tokens)
 	accessToken, refreshToken, err := uc.tokenGenerator.GenerateTokenPair(user.ID)
 	if err != nil {
-		return nil, errors.ErrTokenGenerationFailed
+		return nil, err
 	}
 
 	// Create session
@@ -96,7 +87,7 @@ func (uc *LoginUserUseCase) createSession(ctx context.Context, user *entities.Us
 
 	// Save session
 	if err := uc.sessionRepo.Save(ctx, session); err != nil {
-		return nil, errors.ErrSessionCreationFailed
+		return nil, err
 	}
 
 	return session, nil

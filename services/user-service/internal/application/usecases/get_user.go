@@ -3,7 +3,6 @@ package usecases
 import (
 	"context"
 
-	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 )
@@ -25,7 +24,7 @@ func (uc *GetUserUseCase) Execute(ctx context.Context, userID string) (*entities
 	// Get user from repository
 	user, err := uc.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, errors.ErrUserNotFound
+		return nil, err
 	}
 
 	return user, nil

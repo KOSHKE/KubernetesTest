@@ -13,80 +13,90 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestGetProductUseCase_Execute_Success(t *testing.T) {
-	// Arrange
+// setupGetProductTest creates common test setup for GetProductUseCase tests
+func setupGetProductTest(t *testing.T) (*gomock.Controller, *mocks.MockInventoryRepositoryFacade, *usecases.GetProductUseCase) {
 	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
 	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
-
-	useCase := usecases.NewGetProductUseCase(mockRepo)
-
-	ctx := context.Background()
-	productID := "product-123"
-
-	// Create test product
-	currency, _ := valueobjects.NewCurrency("USD")
-	price := valueobjects.NewMoney(1000, currency)
-	expectedProduct := entities.NewProduct(productID, "Test Product", price, "https://example.com/image.jpg")
-
-	// Setup mocks
-	mockRepo.EXPECT().GetProductByID(ctx, productID).Return(expectedProduct, nil)
-
-	// Act
-	result, err := useCase.Execute(ctx, productID)
-
-	// Assert
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	assert.Equal(t, expectedProduct.ID, result.ID)
-	assert.Equal(t, expectedProduct.Name, result.Name)
-	assert.Equal(t, expectedProduct.Price, result.Price)
-	assert.Equal(t, expectedProduct.ImageURL, result.ImageURL)
+	useCase := usecases.NewGetProductUseCase()
+	return ctrl, mockRepo, useCase
 }
 
-func TestGetProductUseCase_Execute_ProductNotFound(t *testing.T) {
-	// Arrange
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+func TestGetProductUseCase_Execute(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		ctrl, mockRepo, useCase := setupGetProductTest(t)
+		defer ctrl.Finish()
 
-	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+		ctx := context.Background()
+		productID := "product-123"
 
-	useCase := usecases.NewGetProductUseCase(mockRepo)
+		// Create test product
+		currency, _ := valueobjects.NewCurrency("USD")
+		price := valueobjects.NewMoney(1000, currency)
+		expectedProduct := entities.NewProduct(productID, "Test Product", price, "https://example.com/image.jpg")
 
-	ctx := context.Background()
-	productID := "non-existent-product"
+		// Setup mocks
+		mockRepo.EXPECT().
+			GetProductByID(ctx, productID).
+			Return(expectedProduct, nil).
+			Times(1)
 
-	// Setup mocks
-	mockRepo.EXPECT().GetProductByID(ctx, productID).Return(nil, assert.AnError)
+		// Act
+		result, err := useCase.Execute(ctx, productID, mockRepo)
 
-	// Act
-	result, err := useCase.Execute(ctx, productID)
+		// Assert
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, expectedProduct.ID, result.ID)
+		assert.Equal(t, expectedProduct.Name, result.Name)
+		assert.Equal(t, expectedProduct.Price, result.Price)
+		assert.Equal(t, expectedProduct.ImageURL, result.ImageURL)
+	})
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
-}
+	t.Run("product not found", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		ctrl, mockRepo, useCase := setupGetProductTest(t)
+		defer ctrl.Finish()
 
-func TestGetProductUseCase_Execute_EmptyProductID(t *testing.T) {
-	// Arrange
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+		ctx := context.Background()
+		productID := "non-existent-product"
 
-	mockRepo := mocks.NewMockInventoryRepositoryFacade(ctrl)
+		// Setup mocks
+		mockRepo.EXPECT().
+			GetProductByID(ctx, productID).
+			Return(nil, assert.AnError).
+			Times(1)
 
-	useCase := usecases.NewGetProductUseCase(mockRepo)
+		// Act
+		result, err := useCase.Execute(ctx, productID, mockRepo)
 
-	ctx := context.Background()
-	productID := ""
+		// Assert
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
 
-	// Setup mocks
-	mockRepo.EXPECT().GetProductByID(ctx, productID).Return(nil, assert.AnError)
+	t.Run("empty product id", func(t *testing.T) {
+		t.Parallel()
+		// Arrange
+		ctrl, mockRepo, useCase := setupGetProductTest(t)
+		defer ctrl.Finish()
 
-	// Act
-	result, err := useCase.Execute(ctx, productID)
+		ctx := context.Background()
+		productID := ""
 
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
+		// Setup mocks
+		mockRepo.EXPECT().
+			GetProductByID(ctx, productID).
+			Return(nil, assert.AnError).
+			Times(1)
+
+		// Act
+		result, err := useCase.Execute(ctx, productID, mockRepo)
+
+		// Assert
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
 }

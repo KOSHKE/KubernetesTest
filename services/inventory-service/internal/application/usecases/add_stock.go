@@ -9,21 +9,17 @@ import (
 )
 
 // AddStockUseCase handles adding stock to a product
-type AddStockUseCase struct {
-	inventoryRepo repository.InventoryRepositoryFacade
-}
+type AddStockUseCase struct{}
 
 // NewAddStockUseCase creates a new AddStockUseCase
-func NewAddStockUseCase(inventoryRepo repository.InventoryRepositoryFacade) *AddStockUseCase {
-	return &AddStockUseCase{
-		inventoryRepo: inventoryRepo,
-	}
+func NewAddStockUseCase() *AddStockUseCase {
+	return &AddStockUseCase{}
 }
 
 // Execute adds stock to a product
-func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quantity int32) (*entities.Stock, error) {
+func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quantity int32, repo repository.InventoryRepositoryFacade) (*entities.Stock, error) {
 	// Check if product exists
-	product, err := uc.inventoryRepo.GetProductByID(ctx, productID)
+	product, err := repo.GetProductByID(ctx, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +28,7 @@ func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quanti
 	}
 
 	// Get existing stock or create new one
-	stock, err := uc.inventoryRepo.GetStockByProductID(ctx, productID)
+	stock, err := repo.GetStockByProductID(ctx, productID)
 	if err != nil {
 		// If stock doesn't exist, create new one
 		stock = entities.NewStock(productID, 0, 0)
@@ -46,7 +42,7 @@ func (uc *AddStockUseCase) Execute(ctx context.Context, productID string, quanti
 		return nil, err
 	}
 
-	if err := uc.inventoryRepo.UpsertStock(ctx, stock); err != nil {
+	if err := repo.UpsertStock(ctx, stock); err != nil {
 		return nil, err
 	}
 

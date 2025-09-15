@@ -23,9 +23,8 @@ func (u *User) VerifyPassword(password string) bool {
 	return u.Password.Verify(password)
 }
 
-// NewUser creates a new User aggregate
-func NewUser(id string, email valueobjects.Email, password valueobjects.Password, firstName, lastName valueobjects.Name, phone valueobjects.Phone) *User {
-	now := time.Now()
+// NewUser creates a new User entity
+func NewUser(id string, email valueobjects.Email, password valueobjects.Password, firstName, lastName valueobjects.Name, phone valueobjects.Phone, createdAt, updatedAt time.Time) *User {
 	return &User{
 		ID:        id,
 		Email:     email,
@@ -33,7 +32,7 @@ func NewUser(id string, email valueobjects.Email, password valueobjects.Password
 		FirstName: firstName,
 		LastName:  lastName,
 		Phone:     phone,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
 	}
 }

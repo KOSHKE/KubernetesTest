@@ -13,21 +13,21 @@ func NewZapLogger(log *zap.SugaredLogger) Logger {
 }
 
 // Error logs error with structured fields
-func (z *ZapLogger) Error(msg string, keysAndValues ...interface{}) {
+func (z *ZapLogger) Error(msg string, keysAndValues ...any) {
 	z.log.Errorw(msg, keysAndValues...)
 }
 
 // Warn logs warning with structured fields
-func (z *ZapLogger) Warn(msg string, keysAndValues ...interface{}) {
+func (z *ZapLogger) Warn(msg string, keysAndValues ...any) {
 	z.log.Warnw(msg, keysAndValues...)
 }
 
 // Info logs info with structured fields
-func (z *ZapLogger) Info(msg string, keysAndValues ...interface{}) {
+func (z *ZapLogger) Info(msg string, keysAndValues ...any) {
 	z.log.Infow(msg, keysAndValues...)
 }
 
 // Debug logs debug with structured fields
-func (z *ZapLogger) Debug(msg string, keysAndValues ...interface{}) {
+func (z *ZapLogger) Debug(msg string, keysAndValues ...any) {
 	z.log.Debugw(msg, keysAndValues...)
 }

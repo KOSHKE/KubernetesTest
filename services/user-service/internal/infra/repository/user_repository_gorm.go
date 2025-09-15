@@ -39,12 +39,21 @@ func recordFromEntity(u *entities.User) userRecord {
 }
 
 func entityFromRecord(r userRecord) (*entities.User, error) {
-	email := valueobjects.NewEmail(r.Email)
-	password := valueobjects.NewPassword(r.PasswordHash)
+	email, err := valueobjects.NewEmail(r.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	password := valueobjects.NewPasswordFromHashed(r.PasswordHash)
 	firstName := valueobjects.NewName(r.FirstName)
 	lastName := valueobjects.NewName(r.LastName)
-	phone := valueobjects.NewPhone(r.Phone)
-	return entities.NewUser(r.ID, email, password, firstName, lastName, phone), nil
+
+	phone, err := valueobjects.NewPhone(r.Phone)
+	if err != nil {
+		return nil, err
+	}
+
+	return entities.NewUser(r.ID, email, password, firstName, lastName, phone, r.CreatedAt, r.UpdatedAt), nil
 }
 
 type GormUserRepository struct {

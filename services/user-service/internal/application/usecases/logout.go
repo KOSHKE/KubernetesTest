@@ -3,7 +3,6 @@ package usecases
 import (
 	"context"
 
-	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 )
 
@@ -24,12 +23,12 @@ func (uc *LogoutUseCase) Execute(ctx context.Context, sessionID string) error {
 	// Check if session exists
 	_, err := uc.sessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
-		return errors.ErrSessionNotFound
+		return err
 	}
 
 	// Delete session
 	if err := uc.sessionRepo.Delete(ctx, sessionID); err != nil {
-		return errors.ErrSessionDeletionFailed
+		return err
 	}
 
 	return nil

@@ -99,17 +99,16 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
-	// Get user details for response
-	userReq := &dto.GetUserRequest{UserID: response.UserID}
-	userResponse, err := s.appService.GetUser(ctx, userReq)
-	if err != nil {
-		status = "error"
-		return nil, grpcutils.MapErrorToStatus(err)
-	}
-
 	// Convert response to gRPC
 	grpcResponse := &userpb.LoginResponse{
-		User:         mapUserResponseToPB(userResponse),
+		User: mapUserResponseToPB(&dto.GetUserResponse{
+			UserID:    response.UserID,
+			Email:     response.Email,
+			FirstName: response.FirstName,
+			LastName:  response.LastName,
+			Phone:     response.Phone,
+		}),
+		SessionId:    response.SessionID,
 		AccessToken:  response.AccessToken,
 		RefreshToken: response.RefreshToken,
 		ExpiresIn:    int64(time.Until(response.ExpiresAt).Seconds()),
@@ -163,7 +162,7 @@ func (s *PBUserServer) RefreshToken(ctx context.Context, req *userpb.RefreshToke
 
 	// Convert gRPC request to DTO
 	appReq := &dto.RefreshTokenRequest{
-		SessionID: req.RefreshToken, // Using refresh token as session ID for now
+		SessionID: req.SessionId,
 	}
 
 	// Refresh token
@@ -195,7 +194,7 @@ func (s *PBUserServer) Logout(ctx context.Context, req *userpb.LogoutRequest) (*
 
 	// Convert gRPC request to DTO
 	appReq := &dto.LogoutRequest{
-		SessionID: req.RefreshToken, // Using refresh token as session ID for now
+		SessionID: req.SessionId,
 	}
 
 	// Logout user
