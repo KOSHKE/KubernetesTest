@@ -34,13 +34,20 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
 }
 
-// Set stores a value with TTL (any struct will be JSON-marshaled)
+// Set stores a value with TTL (primitives stored as-is, structs JSON-marshaled)
 func (c *Client) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
+	switch v := value.(type) {
+	case string:
+		return c.rdb.Set(ctx, key, v, ttl).Err()
+	case int, int32, int64, float32, float64, bool:
+		return c.rdb.Set(ctx, key, v, ttl).Err()
+	default:
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return c.rdb.Set(ctx, key, data, ttl).Err()
 	}
-	return c.rdb.Set(ctx, key, data, ttl).Err()
 }
 
 // Get retrieves a value and unmarshals it into dest
@@ -49,7 +56,24 @@ func (c *Client) Get(ctx context.Context, key string, dest any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, dest)
+
+	// For primitives, try direct unmarshaling first
+	switch dest.(type) {
+	case *string, *int, *int32, *int64, *float32, *float64, *bool:
+		// Try direct unmarshaling for primitives
+		if err := json.Unmarshal(data, dest); err == nil {
+			return nil
+		}
+		// If JSON unmarshal fails, try direct string conversion for strings
+		if strDest, ok := dest.(*string); ok {
+			*strDest = string(data)
+			return nil
+		}
+		return err
+	default:
+		// For complex types, always use JSON unmarshaling
+		return json.Unmarshal(data, dest)
+	}
 }
 
 // Del deletes one or more keys
@@ -67,6 +91,11 @@ func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 	return res > 0, nil
+}
+
+// FlushDB removes all keys from the current database
+func (c *Client) FlushDB(ctx context.Context) error {
+	return c.rdb.FlushDB(ctx).Err()
 }
 
 // Expire sets TTL for an existing key

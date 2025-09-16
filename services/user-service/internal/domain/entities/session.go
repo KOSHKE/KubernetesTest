@@ -1,6 +1,7 @@
 package entities
 
 import (
+	"encoding/json"
 	"time"
 
 	"ecommerce-platform/pkg/common/errors"
@@ -9,13 +10,13 @@ import (
 
 // Session represents a user authentication session
 type Session struct {
-	ID           string
-	UserID       string
-	AccessToken  valueobjects.Token
-	RefreshToken valueobjects.Token
-	ExpiresAt    time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           string             `json:"id"`
+	UserID       string             `json:"user_id"`
+	AccessToken  valueobjects.Token `json:"access_token"`
+	RefreshToken valueobjects.Token `json:"refresh_token"`
+	ExpiresAt    time.Time          `json:"expires_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 // NewSession creates a new session
@@ -60,4 +61,14 @@ func (s *Session) Validate() error {
 		return errors.ErrInvalidRefreshToken
 	}
 	return nil
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler for Redis serialization
+func (s *Session) MarshalBinary() ([]byte, error) {
+	return json.Marshal(s)
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler for Redis deserialization
+func (s *Session) UnmarshalBinary(data []byte) error {
+	return json.Unmarshal(data, s)
 }

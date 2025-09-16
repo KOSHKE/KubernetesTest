@@ -91,8 +91,8 @@ func (s *UserApplicationService) LoginUser(ctx context.Context, req *dto.LoginRe
 		LastName:     user.LastName.Value(),
 		Phone:        user.Phone.Value(),
 		SessionID:    session.ID,
-		AccessToken:  session.AccessToken.Value(),
-		RefreshToken: session.RefreshToken.Value(),
+		AccessToken:  session.AccessToken.Value,
+		RefreshToken: session.RefreshToken.Value,
 		ExpiresAt:    session.ExpiresAt,
 	}, nil
 }
@@ -141,8 +141,8 @@ func (s *UserApplicationService) RefreshToken(ctx context.Context, req *dto.Refr
 
 	// Convert domain object to DTO response
 	return &dto.RefreshTokenResponse{
-		AccessToken:  session.AccessToken.Value(),
-		RefreshToken: session.RefreshToken.Value(),
+		AccessToken:  session.AccessToken.Value,
+		RefreshToken: session.RefreshToken.Value,
 		ExpiresAt:    session.ExpiresAt,
 	}, nil
 }

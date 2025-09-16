@@ -27,7 +27,7 @@ func NewRedisSessionRepository(client *redisclient.Client, ttl time.Duration) re
 func (r *RedisSessionRepository) Save(ctx context.Context, session *entities.Session) error {
 	pipe := r.client.Pipeline()
 	pipe.Set(ctx, "session:"+session.ID, session, r.ttl)
-	pipe.Set(ctx, "refresh_token:"+session.RefreshToken.Value(), session.ID, r.ttl)
+	pipe.Set(ctx, "refresh_token:"+session.RefreshToken.Value, session.ID, r.ttl)
 	pipe.SAdd(ctx, "user_sessions:"+session.UserID, session.ID)
 	pipe.Expire(ctx, "user_sessions:"+session.UserID, r.ttl)
 
@@ -91,7 +91,7 @@ func (r *RedisSessionRepository) Delete(ctx context.Context, id string) error {
 
 	pipe := r.client.Pipeline()
 	pipe.Del(ctx, "session:"+id)
-	pipe.Del(ctx, "refresh_token:"+session.RefreshToken.Value())
+	pipe.Del(ctx, "refresh_token:"+session.RefreshToken.Value)
 	pipe.SRem(ctx, "user_sessions:"+session.UserID, id)
 
 	_, err = pipe.Exec(ctx)

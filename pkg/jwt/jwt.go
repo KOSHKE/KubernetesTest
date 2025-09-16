@@ -1,6 +1,8 @@
 package jwt
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	"ecommerce-platform/pkg/common/errors"
@@ -12,6 +14,15 @@ import (
 type Claims struct {
 	UserID string `json:"user_id"`
 	jwt.RegisteredClaims
+}
+
+// generateJTI generates a unique JWT ID
+func generateJTI() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 // TokenPair represents access and refresh token pair
@@ -142,9 +153,16 @@ func (m *Manager) GenerateAccessToken(userID string) (string, time.Time, error) 
 		audience = []string{m.config.Audience}
 	}
 
+	// Generate unique JWT ID
+	jti, err := generateJTI()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
 	claims := &Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -172,9 +190,16 @@ func (m *Manager) GenerateRefreshToken(userID string) (string, time.Time, error)
 		audience = []string{m.config.Audience}
 	}
 
+	// Generate unique JWT ID
+	jti, err := generateJTI()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
 	claims := &Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.RefreshTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),

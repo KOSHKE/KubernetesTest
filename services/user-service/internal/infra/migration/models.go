@@ -14,7 +14,7 @@ type MigrationRecord struct {
 
 // UserRecord is a GORM model for users (copied from repository)
 type UserRecord struct {
-	ID           string    `gorm:"primaryKey;type:uuid"`
+	ID           string    `gorm:"primaryKey;type:varchar(255)"`
 	Email        string    `gorm:"uniqueIndex;not null"`
 	PasswordHash string    `gorm:"column:password_hash;not null"`
 	FirstName    string    `gorm:"not null"`
