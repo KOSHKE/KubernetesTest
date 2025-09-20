@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"ecommerce-platform/pkg/common/errors"
+	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/pkg/validation"
@@ -76,7 +77,7 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
 		// Execute use case with transaction repository
 		var err error
-		order, err = s.createOrderUseCase.Execute(ctx, req.UserID, req.ShippingAddress, req.Currency, items, txRepo)
+		order, err = s.createOrderUseCase.Execute(ctx, req.UserID, req.ShippingAddress.String(), req.Currency.String(), items, txRepo)
 		if err != nil {
 			return err
 		}
@@ -99,11 +100,17 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 			}
 		}
 
+		currency, err := valueobjects.NewCurrency(order.Currency.Code)
+		if err != nil {
+			s.logger.Error("Failed to create currency value object", "error", err, "currency", order.Currency.Code)
+			return err
+		}
+
 		eventData := dto.OrderEventDTO{
 			UserID:      order.UserID,
 			Items:       eventItems,
 			TotalAmount: order.TotalAmount.Amount,
-			Currency:    order.Currency.Code,
+			Currency:    currency,
 		}
 		event := outbox.Event{
 			AggregateID: order.ID,
@@ -235,11 +242,17 @@ func (s *OrderApplicationService) CancelOrder(ctx context.Context, req *dto.Canc
 			}
 		}
 
+		currency, err := valueobjects.NewCurrency(order.Currency.Code)
+		if err != nil {
+			s.logger.Error("Failed to create currency value object", "error", err, "currency", order.Currency.Code)
+			return err
+		}
+
 		orderEvent := dto.OrderEventDTO{
 			UserID:      order.UserID,
 			Items:       eventItems,
 			TotalAmount: order.TotalAmount.Amount,
-			Currency:    order.Currency.Code,
+			Currency:    currency,
 			Reason:      req.Reason,
 		}
 

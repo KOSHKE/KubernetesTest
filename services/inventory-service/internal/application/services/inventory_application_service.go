@@ -102,8 +102,8 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 
 	// Add stock if specified
 	var stockInfo dto.StockInfo
-	if req.Stock > 0 {
-		stock, err := s.addStockUseCase.Execute(ctx, product.ID, req.Stock, s.inventoryRepo)
+	if req.Stock != nil && req.Stock.AvailableQuantity > 0 {
+		stock, err := s.addStockUseCase.Execute(ctx, product.ID, req.Stock.AvailableQuantity, s.inventoryRepo)
 		if err != nil {
 			return nil, err
 		}
@@ -193,17 +193,20 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 	}
 
 	// Create success response
+	reservedItems := make([]dto.StockReservationItem, len(items))
+	for i, item := range items {
+		reservedItems[i] = dto.StockReservationItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+		}
+	}
+
 	response := &dto.ReserveStockResponse{
 		OrderID:       req.OrderID,
 		Success:       true,
 		Message:       "Stock reserved successfully",
-		ReservedItems: make([]string, len(items)),
-		FailedItems:   []string{},
-	}
-
-	// Add all product IDs as reserved
-	for i, item := range items {
-		response.ReservedItems[i] = item.ProductID
+		ReservedItems: reservedItems,
+		FailedItems:   []dto.StockReservationItem{},
 	}
 
 	return response, nil

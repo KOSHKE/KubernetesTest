@@ -35,25 +35,29 @@ type ListProductsResponse struct {
 
 // ReserveStockResponse represents a response to stock reservation
 type ReserveStockResponse struct {
-	OrderID       string   `json:"order_id"`
-	ReservedItems []string `json:"reserved_items"`
-	FailedItems   []string `json:"failed_items"`
-	Success       bool     `json:"success"`
-	Message       string   `json:"message"`
+	OrderID       string                 `json:"order_id"`
+	ReservedItems []StockReservationItem `json:"reserved_items"`
+	FailedItems   []StockReservationItem `json:"failed_items"`
+	Success       bool                   `json:"success"`
+	Message       string                 `json:"message"`
 }
 
 // ReleaseStockResponse represents a response to stock release
 type ReleaseStockResponse struct {
-	OrderID string `json:"order_id"`
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	OrderID       string                 `json:"order_id"`
+	ReleasedItems []StockReservationItem `json:"released_items"`
+	FailedItems   []StockReservationItem `json:"failed_items"`
+	Success       bool                   `json:"success"`
+	Message       string                 `json:"message"`
 }
 
 // CommitStockResponse represents a response to stock commit
 type CommitStockResponse struct {
-	OrderID string `json:"order_id"`
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	OrderID        string                 `json:"order_id"`
+	CommittedItems []StockReservationItem `json:"committed_items"`
+	FailedItems    []StockReservationItem `json:"failed_items"`
+	Success        bool                   `json:"success"`
+	Message        string                 `json:"message"`
 }
 
 // NewProductResponse creates a ProductResponse from product entity with optional stock info

@@ -49,12 +49,21 @@ func CreateTestUserApplicationService(t *testing.T, ctx context.Context, db *gor
 
 // CreateTestUser creates a test user via application service
 func CreateTestUser(t *testing.T, ctx context.Context, appService *services.UserApplicationService) *dto.RegisterUserResponse {
+	email, err := valueobjects.NewEmail("test@example.com")
+	require.NoError(t, err)
+
+	firstName := valueobjects.NewName("John")
+	lastName := valueobjects.NewName("Doe")
+
+	phone, err := valueobjects.NewPhone("+1234567890")
+	require.NoError(t, err)
+
 	req := &dto.RegisterUserRequest{
-		Email:     "test@example.com",
+		Email:     email,
 		Password:  "TestPassword123!",
-		FirstName: "John",
-		LastName:  "Doe",
-		Phone:     "+1234567890",
+		FirstName: firstName,
+		LastName:  lastName,
+		Phone:     phone,
 	}
 
 	user, err := appService.RegisterUser(ctx, req)
@@ -64,8 +73,11 @@ func CreateTestUser(t *testing.T, ctx context.Context, appService *services.User
 
 // LoginTestUser logs in a test user and returns session data
 func LoginTestUser(t *testing.T, ctx context.Context, appService *services.UserApplicationService, email, password string) *dto.LoginResponse {
+	emailVO, err := valueobjects.NewEmail(email)
+	require.NoError(t, err)
+
 	req := &dto.LoginRequest{
-		Email:    email,
+		Email:    emailVO,
 		Password: password,
 	}
 
@@ -77,7 +89,7 @@ func LoginTestUser(t *testing.T, ctx context.Context, appService *services.UserA
 // CreateTestUserWithLogin creates a user and logs them in
 func CreateTestUserWithLogin(t *testing.T, ctx context.Context, appService *services.UserApplicationService) (*dto.RegisterUserResponse, *dto.LoginResponse) {
 	user := CreateTestUser(t, ctx, appService)
-	loginResp := LoginTestUser(t, ctx, appService, user.Email, "TestPassword123!")
+	loginResp := LoginTestUser(t, ctx, appService, user.Email.String(), "TestPassword123!")
 	return user, loginResp
 }
 

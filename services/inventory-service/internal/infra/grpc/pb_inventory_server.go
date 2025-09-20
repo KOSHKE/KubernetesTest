@@ -222,10 +222,15 @@ func (s *PBInventoryServer) ReserveStock(ctx context.Context, req *inventory.Res
 	}
 
 	// Convert response to gRPC
+	failedProducts := make([]string, len(response.FailedItems))
+	for i, item := range response.FailedItems {
+		failedProducts[i] = item.ProductID
+	}
+
 	grpcResponse := &inventory.ReserveStockResponse{
 		Success:        response.Success,
 		Message:        response.Message,
-		FailedProducts: response.FailedItems,
+		FailedProducts: failedProducts,
 	}
 
 	return grpcResponse, nil

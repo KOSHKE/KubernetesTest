@@ -1,13 +1,16 @@
 package dto
 
-import "ecommerce-platform/pkg/common/valueobjects"
+import (
+	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/services/inventory-service/internal/domain/entities"
+)
 
 // CreateProductRequest represents a request to create a product
 type CreateProductRequest struct {
 	Name     string             `json:"name" validate:"required,min=1,max=255"`
 	Price    valueobjects.Money `json:"price" validate:"required"`
 	ImageURL string             `json:"image_url" validate:"max=500"`
-	Stock    int32              `json:"stock" validate:"min=0"`
+	Stock    *entities.Stock    `json:"stock" validate:"omitempty"`
 }
 
 // UpdateProductRequest represents a request to update a product

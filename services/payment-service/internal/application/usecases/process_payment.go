@@ -6,28 +6,26 @@ import (
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/domain/entities"
-	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
+	"ecommerce-platform/services/payment-service/internal/domain/ports/repository"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 
 	"ecommerce-platform/pkg/idgenerator"
+	"ecommerce-platform/pkg/outbox"
 )
 
 // ProcessPaymentUseCase handles payment processing business logic
 type ProcessPaymentUseCase struct {
-	logger              logger.Logger
-	paymentProcessedPub publisher.PaymentProcessedPublisher
+	outboxRepo repository.OutboxRepository
 }
 
 // NewProcessPaymentUseCase creates a new instance of ProcessPaymentUseCase
 func NewProcessPaymentUseCase(
-	paymentProcessedPub publisher.PaymentProcessedPublisher,
-	logger logger.Logger,
+	outboxRepo repository.OutboxRepository,
 ) *ProcessPaymentUseCase {
 	return &ProcessPaymentUseCase{
-		logger:              logger,
-		paymentProcessedPub: paymentProcessedPub,
+		outboxRepo: outboxRepo,
 	}
 }
 
@@ -46,14 +44,31 @@ func (uc *ProcessPaymentUseCase) Execute(ctx context.Context, orderID, userID st
 		payment.Status = paymentvalueobjects.PaymentStatusFailed
 	}
 
-	// Publish event
+	// Save event to outbox (to be published later)
 	message := "Payment processed successfully"
 	if !success {
 		message = "Payment processing failed"
 	}
 
-	if err := uc.paymentProcessedPub.PublishPaymentProcessed(ctx, payment, success, message); err != nil {
-		uc.logger.Error("Failed to publish PaymentProcessed event", "error", err)
+	eventData := dto.PaymentEventDTO{
+		OrderID:       payment.OrderID,
+		PaymentID:     payment.ID,
+		UserID:        payment.UserID,
+		Amount:        payment.Amount,
+		Status:        payment.Status,
+		Method:        payment.Method,
+		TransactionID: payment.TransactionID,
+		Success:       success,
+		Message:       message,
+	}
+
+	event := outbox.Event{
+		AggregateID: payment.OrderID,
+		Type:        "PaymentProcessed",
+		Payload:     eventData,
+	}
+
+	if err := uc.outboxRepo.SaveEvent(ctx, event); err != nil {
 		return nil, errors.ErrPaymentProcessingFailed
 	}
 

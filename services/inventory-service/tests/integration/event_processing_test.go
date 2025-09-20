@@ -648,7 +648,7 @@ func createTestProduct(t *testing.T, ctx context.Context, appService *services.I
 		Name:     "Test Product",
 		Price:    valueobjects.Money{Amount: 1000, Currency: currency},
 		ImageURL: "https://example.com/image.jpg",
-		Stock:    0, // Add stock separately
+		Stock:    nil, // Add stock separately
 	}
 
 	product, err := appService.CreateProduct(ctx, req)

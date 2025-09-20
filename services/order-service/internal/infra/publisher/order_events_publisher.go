@@ -100,7 +100,7 @@ func (p *OrderEventsPublisherImpl) publishOrderCreatedFromOutbox(ctx context.Con
 		UserId:      orderEvent.UserID,
 		Items:       orderEvent.Items,
 		TotalAmount: orderEvent.TotalAmount,
-		Currency:    orderEvent.Currency,
+		Currency:    orderEvent.Currency.String(),
 	}
 
 	return p.PublishOrderCreated(ctx, protoEvent)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ecommerce-platform/pkg/common/grpcutils"
+	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/proto-go/common"
 	orderpb "ecommerce-platform/proto-go/order"
 	"ecommerce-platform/services/order-service/internal/application/dto"
@@ -47,11 +48,24 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 		})
 	}
 
+	// Create value objects from strings
+	shippingAddr, err := orderValueObjects.NewShippingAddress(req.ShippingAddress)
+	if err != nil {
+		status = "error"
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
+	currency, err := valueobjects.NewCurrency(req.Currency)
+	if err != nil {
+		status = "error"
+		return nil, grpcutils.MapErrorToStatus(err)
+	}
+
 	order, err := s.appService.CreateOrder(ctx, &dto.CreateOrderRequest{
 		UserID:          req.UserId,
 		Items:           items,
-		ShippingAddress: req.ShippingAddress,
-		Currency:        req.Currency,
+		ShippingAddress: shippingAddr,
+		Currency:        currency,
 	})
 	if err != nil {
 		status = "error"
@@ -164,7 +178,7 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 		Status:          mapOrderStatusToPB(orderValueObjects.OrderStatus(o.Status)),
 		Items:           items,
 		TotalAmount:     &common.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency.Code},
-		ShippingAddress: o.ShippingAddress,
+		ShippingAddress: o.ShippingAddress.String(),
 		CreatedAt:       timestamppb.New(o.CreatedAt),
 		UpdatedAt:       timestamppb.New(o.UpdatedAt),
 	}

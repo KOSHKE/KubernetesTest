@@ -6,7 +6,7 @@ import (
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/application/usecases"
-	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
+	"ecommerce-platform/services/payment-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/payment-service/internal/metrics"
 )
 
@@ -19,18 +19,18 @@ type PaymentApplicationService struct {
 
 // NewPaymentApplicationService creates a new PaymentApplicationService instance
 func NewPaymentApplicationService(
-	paymentProcessedPub publisher.PaymentProcessedPublisher,
+	outboxRepo repository.OutboxRepository,
 	logger logger.Logger,
 	metrics metrics.PaymentMetrics,
 ) *PaymentApplicationService {
 	return &PaymentApplicationService{
-		processPaymentUseCase: usecases.NewProcessPaymentUseCase(paymentProcessedPub, logger),
+		processPaymentUseCase: usecases.NewProcessPaymentUseCase(outboxRepo),
 		logger:                logger,
 		metrics:               metrics,
 	}
 }
 
-// GetProcessPaymentUseCase returns the process payment use case for internal use
+// GetProcessPaymentUseCase returns the process payment use case
 func (s *PaymentApplicationService) GetProcessPaymentUseCase() *usecases.ProcessPaymentUseCase {
 	return s.processPaymentUseCase
 }
@@ -40,8 +40,11 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 	// Convert DTO to domain parameters
 	payment, err := s.processPaymentUseCase.Execute(ctx, req.OrderID, req.UserID, req.Amount, req.Method)
 	if err != nil {
+		s.logger.Error("Failed to process payment", "error", err, "orderID", req.OrderID, "userID", req.UserID)
 		return nil, err
 	}
+
+	s.logger.Info("Payment processed successfully", "paymentID", payment.ID, "orderID", req.OrderID, "userID", req.UserID, "status", payment.Status)
 
 	// Convert entity to DTO response
 	return &dto.PaymentResponse{
@@ -55,9 +58,4 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 		CreatedAt:     payment.CreatedAt,
 		UpdatedAt:     payment.UpdatedAt,
 	}, nil
-}
-
-// GetProcessPaymentUseCase returns the process payment use case for external use
-func (s *PaymentApplicationService) GetProcessPaymentUseCase() *usecases.ProcessPaymentUseCase {
-	return s.processPaymentUseCase
 }

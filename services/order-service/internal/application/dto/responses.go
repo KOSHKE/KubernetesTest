@@ -4,22 +4,22 @@ import (
 	"time"
 
 	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/services/order-service/internal/domain/aggregates"
 	"ecommerce-platform/services/order-service/internal/domain/entities"
+	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 )
 
 // OrderResponse represents the order response
 type OrderResponse struct {
-	ID              string               `json:"id"`
-	UserID          string               `json:"user_id"`
-	Status          string               `json:"status"`
-	Items           []*OrderItemResponse `json:"items"`
-	ShippingAddress string               `json:"shipping_address"`
-	Currency        string               `json:"currency"`
-	TotalAmount     valueobjects.Money   `json:"total_amount"`
-	CreatedAt       time.Time            `json:"created_at"`
-	UpdatedAt       time.Time            `json:"updated_at"`
+	ID              string                            `json:"id"`
+	UserID          string                            `json:"user_id"`
+	Status          orderValueObjects.OrderStatus     `json:"status"`
+	Items           []*OrderItemResponse              `json:"items"`
+	ShippingAddress orderValueObjects.ShippingAddress `json:"shipping_address"`
+	Currency        valueobjects.Currency             `json:"currency"`
+	TotalAmount     valueobjects.Money                `json:"total_amount"`
+	CreatedAt       time.Time                         `json:"created_at"`
+	UpdatedAt       time.Time                         `json:"updated_at"`
 }
 
 // OrderItemResponse represents an order item response
@@ -41,25 +41,16 @@ type OrdersListResponse struct {
 
 // OrderStatusResponse represents order status update response
 type OrderStatusResponse struct {
-	OrderID   string    `json:"order_id"`
-	NewStatus string    `json:"new_status"`
-	UpdatedAt time.Time `json:"updated_at"`
+	OrderID   string                        `json:"order_id"`
+	NewStatus orderValueObjects.OrderStatus `json:"new_status"`
+	UpdatedAt time.Time                     `json:"updated_at"`
 }
 
 // ProcessOrderResponse represents the response after processing an order
 type ProcessOrderResponse struct {
-	OrderID string `json:"order_id"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
-// OrderEventDTO represents order event data for outbox pattern
-type OrderEventDTO struct {
-	UserID      string              `json:"user_id"`
-	Items       []*common.OrderItem `json:"items"`
-	TotalAmount int64               `json:"total_amount"`
-	Currency    string              `json:"currency"`
-	Reason      string              `json:"reason,omitempty"` // for OrderCancelled events
+	OrderID string                        `json:"order_id"`
+	Status  orderValueObjects.OrderStatus `json:"status"`
+	Message string                        `json:"message"`
 }
 
 // NewOrderItemResponse creates an OrderItemResponse from domain entity
@@ -84,10 +75,10 @@ func NewOrderResponse(order *aggregates.Order) *OrderResponse {
 	return &OrderResponse{
 		ID:              order.ID,
 		UserID:          order.UserID,
-		Status:          string(order.Status),
+		Status:          order.Status,
 		Items:           items,
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code,
+		ShippingAddress: order.ShippingAddress,
+		Currency:        order.Currency,
 		TotalAmount:     order.TotalAmount,
 		CreatedAt:       order.CreatedAt,
 		UpdatedAt:       order.UpdatedAt,
@@ -96,8 +87,8 @@ func NewOrderResponse(order *aggregates.Order) *OrderResponse {
 
 // CreateOrderResponse represents the response after creating an order
 type CreateOrderResponse struct {
-	OrderID     string `json:"order_id"`
-	TotalAmount int64  `json:"total_amount"`
-	Currency    string `json:"currency"`
-	Status      string `json:"status"`
+	OrderID     string                        `json:"order_id"`
+	TotalAmount valueobjects.Money            `json:"total_amount"`
+	Currency    valueobjects.Currency         `json:"currency"`
+	Status      orderValueObjects.OrderStatus `json:"status"`
 }

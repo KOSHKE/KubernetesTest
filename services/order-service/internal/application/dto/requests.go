@@ -9,8 +9,8 @@ import (
 type CreateOrderRequest struct {
 	UserID          string             `json:"user_id" validate:"required"`
 	Items           []OrderItemRequest `json:"items" validate:"required"`
-	ShippingAddress string             `json:"shipping_address" validate:"required"`
-	Currency        string             `json:"currency" validate:"required"`
+	ShippingAddress orderValueObjects.ShippingAddress `json:"shipping_address" validate:"required"`
+	Currency        valueobjects.Currency `json:"currency" validate:"required"`
 }
 
 // OrderItemRequest represents an item in the order creation request

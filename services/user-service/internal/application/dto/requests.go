@@ -1,18 +1,22 @@
 package dto
 
+import (
+	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
+)
+
 // RegisterUserRequest represents the request to register a new user
 type RegisterUserRequest struct {
-	Email     string `json:"email" validate:"required,email"`
-	Password  string `json:"password" validate:"required"`
-	FirstName string `json:"first_name" validate:"required"`
-	LastName  string `json:"last_name" validate:"required"`
-	Phone     string `json:"phone"`
+	Email     valueobjects.Email `json:"email" validate:"required"`
+	Password  string             `json:"password" validate:"required"`
+	FirstName valueobjects.Name  `json:"first_name" validate:"required"`
+	LastName  valueobjects.Name  `json:"last_name" validate:"required"`
+	Phone     valueobjects.Phone `json:"phone" validate:"omitempty"`
 }
 
 // LoginRequest represents the request to login a user
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	Email    valueobjects.Email `json:"email" validate:"required"`
+	Password string             `json:"password" validate:"required"`
 }
 
 // GetUserRequest represents the request to get user information

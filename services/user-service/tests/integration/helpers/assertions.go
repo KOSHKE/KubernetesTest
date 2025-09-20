@@ -91,10 +91,10 @@ func AssertValidJWTToken(t *testing.T, token string, expectedUserID string) {
 
 // AssertUserDataMatches checks that user data in response matches expected values
 func AssertUserDataMatches(t *testing.T, user *dto.GetUserResponse, expectedEmail, expectedFirstName, expectedLastName, expectedPhone string) {
-	assert.Equal(t, expectedEmail, user.Email, "Email should match")
-	assert.Equal(t, expectedFirstName, user.FirstName, "First name should match")
-	assert.Equal(t, expectedLastName, user.LastName, "Last name should match")
-	assert.Equal(t, expectedPhone, user.Phone, "Phone should match")
+	assert.Equal(t, expectedEmail, user.Email.String(), "Email should match")
+	assert.Equal(t, expectedFirstName, user.FirstName.String(), "First name should match")
+	assert.Equal(t, expectedLastName, user.LastName.String(), "Last name should match")
+	assert.Equal(t, expectedPhone, user.Phone.String(), "Phone should match")
 	assert.NotEmpty(t, user.UserID, "User ID should not be empty")
 	assert.False(t, user.CreatedAt.IsZero(), "Created at should not be zero")
 	assert.False(t, user.UpdatedAt.IsZero(), "Updated at should not be zero")
@@ -103,7 +103,7 @@ func AssertUserDataMatches(t *testing.T, user *dto.GetUserResponse, expectedEmai
 // AssertLoginResponseValid checks that login response contains valid data
 func AssertLoginResponseValid(t *testing.T, loginResp *dto.LoginResponse, expectedEmail string) {
 	assert.NotEmpty(t, loginResp.UserID, "User ID should not be empty")
-	assert.Equal(t, expectedEmail, loginResp.Email, "Email should match")
+	assert.Equal(t, expectedEmail, loginResp.Email.String(), "Email should match")
 	assert.NotEmpty(t, loginResp.SessionID, "Session ID should not be empty")
 	assert.NotEmpty(t, loginResp.AccessToken, "Access token should not be empty")
 	assert.NotEmpty(t, loginResp.RefreshToken, "Refresh token should not be empty")

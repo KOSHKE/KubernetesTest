@@ -13,18 +13,3 @@ const (
 func (ps PaymentStatus) String() string {
 	return string(ps)
 }
-
-// IsPending checks if status is pending
-func (ps PaymentStatus) IsPending() bool {
-	return ps == PaymentStatusPending
-}
-
-// IsCompleted checks if status is completed
-func (ps PaymentStatus) IsCompleted() bool {
-	return ps == PaymentStatusCompleted
-}
-
-// IsFailed checks if status is failed
-func (ps PaymentStatus) IsFailed() bool {
-	return ps == PaymentStatusFailed
-}

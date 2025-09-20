@@ -2,14 +2,19 @@ package publisher
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"ecommerce-platform/pkg/kafkaclient"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/proto-go/events"
+	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/domain/entities"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // PaymentProcessedPublisher is a type-safe publisher for PaymentProcessed events
@@ -18,7 +23,7 @@ type PaymentProcessedPublisher struct {
 }
 
 // NewPaymentProcessedPublisher creates a new typed publisher for PaymentProcessed events
-func NewPaymentProcessedPublisher(bootstrapServers, topic string) (*PaymentProcessedPublisher, error) {
+func NewPaymentProcessedPublisher(bootstrapServers, topic string, logger logger.Logger) (*PaymentProcessedPublisher, error) {
 	config := kafkaclient.PublisherConfig{
 		BootstrapServers: bootstrapServers,
 		ClientID:         "payment-service",
@@ -31,6 +36,7 @@ func NewPaymentProcessedPublisher(bootstrapServers, topic string) (*PaymentProce
 		func(evt *events.PaymentProcessed) ([]byte, error) {
 			return proto.Marshal(evt)
 		},
+		logger,
 	)
 	if err != nil {
 		return nil, err
@@ -60,8 +66,44 @@ func (p *PaymentProcessedPublisher) PublishPaymentProcessed(ctx context.Context,
 		Message:    message,
 		Amount:     payment.Amount.Amount,
 		Currency:   payment.Amount.Currency.String(),
-		OccurredAt: time.Now().Format(time.RFC3339),
+		OccurredAt: timestamppb.New(time.Now()),
 	}
 
 	return p.publisher.Publish(ctx, event)
+}
+
+// PublishFromOutbox publishes events directly from outbox
+func (p *PaymentProcessedPublisher) PublishFromOutbox(ctx context.Context, event outbox.Event) error {
+	switch event.Type {
+	case "PaymentProcessed":
+		return p.publishPaymentProcessedFromOutbox(ctx, event)
+	default:
+		return fmt.Errorf("unknown event type: %s", event.Type)
+	}
+}
+
+func (p *PaymentProcessedPublisher) publishPaymentProcessedFromOutbox(ctx context.Context, event outbox.Event) error {
+	// Parse payload to PaymentEventDTO
+	payloadBytes, err := json.Marshal(event.Payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	var paymentEvent dto.PaymentEventDTO
+	if err := json.Unmarshal(payloadBytes, &paymentEvent); err != nil {
+		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	// Create protobuf event
+	protoEvent := &events.PaymentProcessed{
+		OrderId:    paymentEvent.OrderID,
+		PaymentId:  paymentEvent.PaymentID,
+		Success:    paymentEvent.Success,
+		Message:    paymentEvent.Message,
+		Amount:     paymentEvent.Amount.Amount,
+		Currency:   paymentEvent.Amount.Currency.String(),
+		OccurredAt: timestamppb.New(time.Now()),
+	}
+
+	return p.publisher.Publish(ctx, protoEvent)
 }

@@ -2,6 +2,8 @@ package publisher
 
 import (
 	"context"
+
+	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/services/payment-service/internal/domain/entities"
 )
 
@@ -9,4 +11,6 @@ import (
 type PaymentProcessedPublisher interface {
 	// PublishPaymentProcessed publishes PaymentProcessed event
 	PublishPaymentProcessed(ctx context.Context, payment *entities.Payment, success bool, message string) error
+	// PublishFromOutbox publishes events directly from outbox
+	PublishFromOutbox(ctx context.Context, event outbox.Event) error
 }
