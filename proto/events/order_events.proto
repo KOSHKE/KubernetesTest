@@ -17,4 +17,11 @@ message OrderCreated {
   string payment_method = 7; // payment method (e.g., "CREDIT_CARD", "DEBIT_CARD")
 }
 
+message OrderCancelled {
+  string order_id = 1;
+  string user_id = 2;
+  repeated common.OrderItem items = 3;
+  string reason = 4; // cancellation reason (e.g., "USER_REQUEST", "TIMEOUT", "PAYMENT_FAILED")
+}
+
 

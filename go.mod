@@ -13,7 +13,6 @@ require (
 	github.com/segmentio/kafka-go v0.4.49
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.38.0
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.38.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.41.0

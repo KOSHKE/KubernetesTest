@@ -34,7 +34,7 @@ func (oi *OrderItem) TotalPrice() valueobjects.Money {
 
 // Currency returns the currency of the item
 func (oi *OrderItem) Currency() string {
-	return oi.UnitPrice.Currency.Code()
+	return oi.UnitPrice.Currency.Code
 }
 
 // UnitPriceAmount returns the unit price amount in minor units

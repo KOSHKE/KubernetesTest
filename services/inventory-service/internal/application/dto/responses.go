@@ -56,13 +56,19 @@ type CommitStockResponse struct {
 	Message string `json:"message"`
 }
 
-// FromProductEntity converts a product entity to response DTO
-func FromProductEntity(product *entities.Product) ProductResponse {
-	return ProductResponse{
+// NewProductResponse creates a ProductResponse from product entity with optional stock info
+func NewProductResponse(product *entities.Product, stockInfo ...StockInfo) *ProductResponse {
+	var stock StockInfo
+	if len(stockInfo) > 0 {
+		stock = stockInfo[0]
+	}
+
+	return &ProductResponse{
 		ID:        product.ID,
 		Name:      product.Name,
 		Price:     product.Price,
 		ImageURL:  product.ImageURL,
+		Stock:     stock,
 		CreatedAt: product.CreatedAt,
 		UpdatedAt: product.UpdatedAt,
 	}

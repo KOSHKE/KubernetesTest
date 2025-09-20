@@ -112,7 +112,7 @@ func (s *MigrationService) getMigrations() []Migration {
 		},
 		{
 			Version:     3,
-			Description: "Create outbox_records table",
+			Description: "Create outbox_events table",
 			Up: func(db *gorm.DB) error {
 				return db.AutoMigrate(&OutboxRecord{})
 			},

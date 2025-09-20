@@ -48,6 +48,7 @@ type RemoveItemFromOrderRequest struct {
 type CancelOrderRequest struct {
 	OrderID string `json:"order_id" validate:"required,min=1"`
 	UserID  string `json:"user_id" validate:"required,min=1"`
+	Reason  string `json:"reason,omitempty"` // cancellation reason
 }
 
 // GetOrderRequest represents the request to get an order

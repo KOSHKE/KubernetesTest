@@ -3,6 +3,7 @@ package redisclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -31,7 +32,14 @@ func (c *Client) Close() error {
 
 // Ping checks Redis connectivity
 func (c *Client) Ping(ctx context.Context) error {
-	return c.rdb.Ping(ctx).Err()
+	pong, err := c.rdb.Ping(ctx).Result()
+	if err != nil {
+		return err
+	}
+	if pong != "PONG" {
+		return fmt.Errorf("unexpected ping response: %s", pong)
+	}
+	return nil
 }
 
 // Set stores a value with TTL (primitives stored as-is, structs JSON-marshaled)

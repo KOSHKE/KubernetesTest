@@ -42,6 +42,8 @@ generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 			cd /workspace/services/inventory-service && \
 			go generate ./tests/mocks/generate.go && \
 			cd /workspace/services/user-service && \
+			go generate ./tests/mocks/generate.go && \
+			cd /workspace/services/order-service && \
 			go generate ./tests/mocks/generate.go \
 		"
 	@echo "Mocks generated successfully!"
@@ -52,6 +54,7 @@ test: ## Run all tests locally
 	@cd services/inventory-service && go test -tags=integration -v ./tests/integration/...
 	@cd services/user-service && go test ./tests/...
 	@cd services/user-service && go test -tags=integration -v ./tests/integration/...
+	@cd services/order-service && go test ./tests/unit/...
 	@echo "All tests completed!"
 
 test-user-integration: ## Run user-service integration tests

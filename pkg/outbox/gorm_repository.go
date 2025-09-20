@@ -1,4 +1,4 @@
-package repository
+package outbox
 
 import (
 	"context"
@@ -6,32 +6,29 @@ import (
 	"fmt"
 	"time"
 
-	"ecommerce-platform/pkg/outbox"
-	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
-	"ecommerce-platform/services/inventory-service/internal/infra/migration"
-
 	"gorm.io/gorm"
 )
 
-// GormOutboxRepository implements OutboxRepository using GORM
-type GormOutboxRepository struct {
+// GormRepository implements Repository using GORM
+// This is a shared implementation that can be used across all services
+type GormRepository struct {
 	db *gorm.DB
 }
 
-// NewOutboxRepository creates a new outbox repository
-func NewOutboxRepository(db *gorm.DB) repository.OutboxRepository {
-	return &GormOutboxRepository{db: db}
+// NewGormRepository creates a new GORM outbox repository
+func NewGormRepository(db *gorm.DB) Repository {
+	return &GormRepository{db: db}
 }
 
 // SaveEvent saves an event to the outbox table
-func (r *GormOutboxRepository) SaveEvent(ctx context.Context, event outbox.Event) error {
+func (r *GormRepository) SaveEvent(ctx context.Context, event Event) error {
 	// Convert payload to JSON string
 	payloadJSON, err := json.Marshal(event.Payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	record := migration.OutboxRecord{
+	record := OutboxRecord{
 		AggregateID: event.AggregateID,
 		Type:        event.Type,
 		Payload:     string(payloadJSON),
@@ -46,8 +43,8 @@ func (r *GormOutboxRepository) SaveEvent(ctx context.Context, event outbox.Event
 }
 
 // GetUnprocessedEvents returns unprocessed events
-func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([]outbox.Event, error) {
-	var records []migration.OutboxRecord
+func (r *GormRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([]Event, error) {
+	var records []OutboxRecord
 	err := r.db.WithContext(ctx).
 		Where("processed = ?", false).
 		Order("created_at ASC").
@@ -59,7 +56,7 @@ func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit i
 	}
 
 	// Convert to outbox.Event
-	result := make([]outbox.Event, len(records))
+	result := make([]Event, len(records))
 	for i, record := range records {
 		// Parse payload back to interface{}
 		var payload interface{}
@@ -67,7 +64,7 @@ func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit i
 			return nil, fmt.Errorf("failed to unmarshal payload for record %d: %w", record.ID, err)
 		}
 
-		result[i] = outbox.Event{
+		result[i] = Event{
 			ID:          record.ID,
 			AggregateID: record.AggregateID,
 			Type:        record.Type,
@@ -84,10 +81,10 @@ func (r *GormOutboxRepository) GetUnprocessedEvents(ctx context.Context, limit i
 }
 
 // MarkAsProcessed marks an event as processed
-func (r *GormOutboxRepository) MarkAsProcessed(ctx context.Context, id uint) error {
+func (r *GormRepository) MarkAsProcessed(ctx context.Context, id uint) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).
-		Model(&migration.OutboxRecord{}).
+		Model(&OutboxRecord{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"processed":    true,
@@ -98,10 +95,10 @@ func (r *GormOutboxRepository) MarkAsProcessed(ctx context.Context, id uint) err
 }
 
 // MarkAsFailed marks an event as failed
-func (r *GormOutboxRepository) MarkAsFailed(ctx context.Context, id uint, err string) error {
+func (r *GormRepository) MarkAsFailed(ctx context.Context, id uint, err string) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).
-		Model(&migration.OutboxRecord{}).
+		Model(&OutboxRecord{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"processed":    false,

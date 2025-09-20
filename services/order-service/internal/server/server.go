@@ -7,30 +7,28 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"strings"
-	"sync/atomic"
 	"time"
 
 	"ecommerce-platform/pkg/config"
+	pkghealth "ecommerce-platform/pkg/health"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/outbox"
 	appservices "ecommerce-platform/services/order-service/internal/application/services"
-	appsvc "ecommerce-platform/services/order-service/internal/application/services"
+	"ecommerce-platform/services/order-service/internal/domain/ports/consumer"
 	"ecommerce-platform/services/order-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
-	domainservices "ecommerce-platform/services/order-service/internal/domain/services"
 	infraconsumer "ecommerce-platform/services/order-service/internal/infra/consumer"
-	"ecommerce-platform/services/order-service/internal/infra/consumer/handlers"
 	orderGrpc "ecommerce-platform/services/order-service/internal/infra/grpc"
 	"ecommerce-platform/services/order-service/internal/infra/migration"
 	orderPublisher "ecommerce-platform/services/order-service/internal/infra/publisher"
 	orderRepoImpl "ecommerce-platform/services/order-service/internal/infra/repository"
 	ordermetrics "ecommerce-platform/services/order-service/internal/metrics"
+	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/postgres"
@@ -43,22 +41,23 @@ type Server struct {
 	grpcServer *grpc.Server
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
-	ready      atomic.Bool
+	health     *pkghealth.Manager
 
 	// database
 	db *gorm.DB
 
 	// business dependencies
-	orderRepo      repository.OrderRepository
-	orderPublisher publisher.OrderCreatedPublisher
-	orderSvc       *appsvc.OrderApplicationService
+	orderRepo       repository.OrderRepositoryFacade
+	orderPublisher  publisher.OrderEventsPublisher
+	orderSvc        *appservices.OrderApplicationService
+	consumerManager consumer.EventConsumerManager
+
+	// outbox publisher
+	outboxPublisher *outbox.BackgroundPublisher
 
 	// metrics
 	pm      *metrics.MetricsServer
 	metrics ordermetrics.OrderMetrics
-
-	// Kafka consumers
-	consumers []interface{ Close() error }
 }
 
 func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
@@ -81,7 +80,7 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 	}
 
 	// Initialize repository
-	orderRepo := orderRepoImpl.NewGormOrderRepository(db)
+	orderRepo := orderRepoImpl.NewOrderRepositoryFacade(db)
 
 	// Initialize publisher
 	orderPublisher, err := initPublisher(cfg, loggerAdapter)
@@ -89,36 +88,55 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("failed to initialize publisher: %w", err)
 	}
 
+	// Initialize outbox publisher
+	outboxPublisher := outbox.NewBackgroundPublisher(
+		orderRepo,
+		orderPublisher,
+		loggerAdapter,
+		5*time.Second, // interval
+		10,            // batch size
+	)
+
 	// Initialize metrics
 	orderMetrics := ordermetrics.NewOrderMetrics()
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
 	// Initialize order application service
-	orderSvc := appsvc.NewOrderApplicationService(orderRepo, orderPublisher, loggerAdapter, orderMetrics)
+	orderSvc := appservices.NewOrderApplicationService(orderRepo, loggerAdapter)
+
+	// Initialize health manager
+	healthManager := pkghealth.NewManager()
+
+	// Add database health check
+	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
+
+	// Create gRPC health checker that syncs with our health manager
+	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
+	healthManager.AddChecker(grpcHealthChecker)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
-	orderGrpc.RegisterOrderPBServer(gs, orderSvc)
+	orderGrpc.RegisterOrderPBServer(gs, orderSvc, orderMetrics)
 
-	// Setup health checks
-	hs := health.NewServer()
-	healthpb.RegisterHealthServer(gs, hs)
-	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	// Register gRPC health server
+	healthpb.RegisterHealthServer(gs, grpcHealthChecker.GetGRPCHealthServer())
 
 	// Setup reflection for development
 	reflection.Register(gs)
 
 	s := &Server{
-		cfg:            cfg,
-		log:            log,
-		grpcServer:     gs,
-		pm:             pm,
-		db:             db,
-		orderRepo:      orderRepo,
-		orderPublisher: orderPublisher,
-		orderSvc:       orderSvc,
-		metrics:        orderMetrics,
-		consumers:      make([]interface{ Close() error }, 0),
+		cfg:             cfg,
+		log:             log,
+		grpcServer:      gs,
+		pm:              pm,
+		db:              db,
+		orderRepo:       orderRepo,
+		orderPublisher:  orderPublisher,
+		orderSvc:        orderSvc,
+		outboxPublisher: outboxPublisher,
+		metrics:         orderMetrics,
+		consumerManager: infraconsumer.NewConsumerManager(loggerAdapter),
+		health:          healthManager,
 	}
 
 	// Initialize Kafka consumers if configured
@@ -126,9 +144,61 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 		if err := s.initConsumers(cfg, loggerAdapter); err != nil {
 			return nil, fmt.Errorf("failed to initialize consumers: %w", err)
 		}
+
+		// Add consumer health checks
+		s.health.AddChecker(pkghealth.NewConsumerChecker("stock", func() bool {
+			return s.consumerManager != nil
+		}))
+		s.health.AddChecker(pkghealth.NewConsumerChecker("payment", func() bool {
+			return s.consumerManager != nil
+		}))
 	}
 
+	// Add outbox health check
+	s.health.AddChecker(pkghealth.NewOutboxChecker(func() bool {
+		return s.outboxPublisher != nil
+	}))
+
+	// All components initialized successfully - check health status
+	s.health.IsHealthy(context.Background())
+	loggerAdapter.Info("server initialized successfully and ready to serve requests")
+
 	return s, nil
+}
+
+func (s *Server) initConsumers(cfg *config.OrderConfig, logger logger.Logger) error {
+	logger.Info("initializing Kafka consumers")
+
+	// Create application service for consumers
+	applicationService := appservices.NewOrderApplicationService(s.orderRepo, logger)
+
+	// Consumer configuration
+	consumerConfig := consumer.ConsumerConfig{
+		BootstrapServers: cfg.Kafka.Brokers,
+		AutoOffsetReset:  "earliest",
+	}
+
+	// Initialize critical stock consumer - failure should stop service
+	stockConfig := consumerConfig
+	stockConfig.GroupID = "order-service-stock"
+	stockConfig.Topics = []string{"inventory.v1.stock_reserved", "inventory.v1.stock_released", "inventory.v1.stock_committed"}
+
+	if err := s.consumerManager.StartStockConsumer(context.Background(), stockConfig, applicationService); err != nil {
+		return fmt.Errorf("failed to start critical stock consumer: %w", err)
+	}
+	logger.Info("stock consumer started successfully")
+
+	// Initialize critical payment processed consumer - failure should stop service
+	paymentConfig := consumerConfig
+	paymentConfig.GroupID = "order-service-payments"
+	paymentConfig.Topics = []string{"payments.v1.payment_processed"}
+
+	if err := s.consumerManager.StartPaymentConsumer(context.Background(), paymentConfig, applicationService); err != nil {
+		return fmt.Errorf("failed to start critical payment consumer: %w", err)
+	}
+	logger.Info("payment consumer started successfully")
+
+	return nil
 }
 
 func initDatabase(cfg *config.OrderConfig, logger logger.Logger) (*gorm.DB, error) {
@@ -157,232 +227,34 @@ func initDatabase(cfg *config.OrderConfig, logger logger.Logger) (*gorm.DB, erro
 func runMigrations(db *gorm.DB, logger logger.Logger) error {
 	logger.Info("running database migrations")
 
-	// Auto migrate if enabled
-	if err := db.AutoMigrate(
-		&migration.OrderRecord{},
-		&migration.OrderItemRecord{},
-	); err != nil {
-		return fmt.Errorf("failed to run database migrations: %w", err)
+	migrationService := migration.NewMigrationService(db)
+	if err := migrationService.Migrate(context.Background()); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	logger.Info("database migrations completed")
 	return nil
 }
 
-func initPublisher(cfg *config.OrderConfig, logger logger.Logger) (publisher.OrderCreatedPublisher, error) {
-	logger.Info("initializing order created publisher")
+func initPublisher(cfg *config.OrderConfig, logger logger.Logger) (publisher.OrderEventsPublisher, error) {
+	logger.Info("initializing order events publisher")
 
-	orderCreatedPublisher, err := orderPublisher.NewOrderCreatedPublisher(
-		cfg.GetKafkaBrokers(),
-		"orders.v1.order_created",
+	topics := map[string]string{
+		"OrderCreated":   "orders.v1.order_created",
+		"OrderCancelled": "orders.v1.order_cancelled",
+	}
+
+	orderEventsPublisher, err := orderPublisher.NewOrderEventsPublisher(
+		cfg.Kafka.Brokers,
+		topics,
+		logger,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create order created publisher: %w", err)
+		return nil, fmt.Errorf("failed to create order events publisher: %w", err)
 	}
 
-	logger.Info("order created publisher initialized")
-	return orderCreatedPublisher, nil
-}
-
-func (s *Server) initConsumers(cfg *config.OrderConfig, logger logger.Logger) error {
-	logger.Info("initializing Kafka consumers")
-
-	// Initialize payment processed consumer
-	if err := s.initPaymentConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize payment consumer", "error", err)
-	}
-
-	// Initialize stock reserved consumer
-	if err := s.initStockConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize stock consumer", "error", err)
-	}
-
-	return nil
-}
-
-func (s *Server) initPaymentConsumer(cfg *config.OrderConfig, logger logger.Logger) error {
-	// Create domain service for order business logic
-	orderDomainService := domainservices.NewOrderDomainService(s.orderRepo, logger)
-
-	// Create application service for payment event processing
-	paymentEventService := appsvc.NewPaymentEventService(orderDomainService, logger)
-
-	// Create infrastructure handler
-	paymentHandler := handlers.NewPaymentProcessedHandler(paymentEventService, logger)
-
-	// Create and start payment consumer
-	paymentConsumer, err := infraconsumer.NewPaymentProcessedConsumer(
-		cfg.GetKafkaBrokers(),
-		"order-service-payment",
-		"earliest",
-		paymentHandler,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create payment consumer: %w", err)
-	}
-
-	s.consumers = append(s.consumers, paymentConsumer)
-
-	// Start consumer in background
-	go func() {
-		if err := paymentConsumer.Run(context.Background(), []string{"payments.v1.payment_processed"}); err != nil {
-			s.log.Error("payment consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("payment consumer started")
-
-	return nil
-}
-
-func (s *Server) initStockConsumer(cfg *config.OrderConfig, logger logger.Logger) error {
-	// Create domain service for order business logic
-	orderDomainService := domainservices.NewOrderDomainService(s.orderRepo, logger)
-
-	// Create application service for stock event processing
-	stockEventService := appsvc.NewStockEventService(orderDomainService, logger)
-
-	// Create infrastructure handler
-	stockHandler := handlers.NewStockReservedHandler(stockEventService, logger)
-
-	// Create and start stock consumer
-	stockConsumer, err := infraconsumer.NewStockReservedConsumer(
-		cfg.GetKafkaBrokers(),
-		"order-service-stock",
-		"earliest",
-		stockHandler,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create stock consumer: %w", err)
-	}
-
-	s.consumers = append(s.consumers, stockConsumer)
-
-	// Start consumer in background
-	go func() {
-		if err := stockConsumer.Run(context.Background(), []string{"inventory.v1.stock_reserved"}); err != nil {
-			s.log.Error("stock consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("stock consumer started")
-
-	// Initialize stock reservation failed consumer
-	if err := s.initStockReservationFailedConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize stock reservation failed consumer", "error", err)
-	}
-
-	// Initialize stock released consumer
-	if err := s.initStockReleasedConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize stock released consumer", "error", err)
-	}
-
-	// Initialize stock committed consumer
-	if err := s.initStockCommittedConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize stock committed consumer", "error", err)
-	}
-
-	return nil
-}
-
-func (s *Server) initStockReservationFailedConsumer(cfg *config.OrderConfig, logger logger.Logger) error {
-	// Create domain service for order business logic
-	orderDomainService := domainservices.NewOrderDomainService(s.orderRepo, logger)
-
-	// Create application service
-	stockEventService := appservices.NewStockEventService(orderDomainService, logger)
-
-	// Create infrastructure handler
-	stockReservationFailedHandler := handlers.NewStockReservationFailedHandler(stockEventService, logger)
-
-	// Create and start stock reservation failed consumer
-	stockReservationFailedConsumer, err := infraconsumer.NewStockReservationFailedConsumer(
-		strings.Join(cfg.Kafka.Brokers, ","),
-		"order-service-stock-failed",
-		"earliest",
-		stockReservationFailedHandler,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create stock reservation failed consumer: %w", err)
-	}
-
-	s.consumers = append(s.consumers, stockReservationFailedConsumer)
-
-	// Start consumer in background
-	go func() {
-		if err := stockReservationFailedConsumer.Run(context.Background(), []string{"inventory.v1.stock_reservation_failed"}); err != nil {
-			s.log.Error("stock reservation failed consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("stock reservation failed consumer started")
-
-	return nil
-}
-
-func (s *Server) initStockReleasedConsumer(cfg *config.OrderConfig, logger logger.Logger) error {
-	// Create domain service for order business logic
-	orderDomainService := domainservices.NewOrderDomainService(s.orderRepo, logger)
-
-	// Create application service
-	stockEventService := appservices.NewStockEventService(orderDomainService, logger)
-
-	// Create infrastructure handler
-	stockReleasedHandler := handlers.NewStockReleasedHandler(stockEventService, logger)
-
-	// Create and start stock released consumer
-	stockReleasedConsumer, err := infraconsumer.NewStockReleasedConsumer(
-		strings.Join(cfg.Kafka.Brokers, ","),
-		"order-service-stock-released",
-		"earliest",
-		stockReleasedHandler,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create stock released consumer: %w", err)
-	}
-
-	s.consumers = append(s.consumers, stockReleasedConsumer)
-
-	// Start consumer in background
-	go func() {
-		if err := stockReleasedConsumer.Run(context.Background(), []string{"inventory.v1.stock_released"}); err != nil {
-			s.log.Error("stock released consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("stock released consumer started")
-
-	return nil
-}
-
-func (s *Server) initStockCommittedConsumer(cfg *config.OrderConfig, logger logger.Logger) error {
-	// Create domain service for order business logic
-	orderDomainService := domainservices.NewOrderDomainService(s.orderRepo, logger)
-
-	// Create application service
-	stockEventService := appservices.NewStockEventService(orderDomainService, logger)
-
-	// Create infrastructure handler
-	stockCommittedHandler := handlers.NewStockCommittedHandler(stockEventService, logger)
-
-	// Create and start stock committed consumer
-	stockCommittedConsumer, err := infraconsumer.NewStockCommittedConsumer(
-		strings.Join(cfg.Kafka.Brokers, ","),
-		"order-service-stock-committed",
-		"earliest",
-		stockCommittedHandler,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create stock committed consumer: %w", err)
-	}
-
-	s.consumers = append(s.consumers, stockCommittedConsumer)
-
-	// Start consumer in background
-	go func() {
-		if err := stockCommittedConsumer.Run(context.Background(), []string{"inventory.v1.stock_committed"}); err != nil {
-			s.log.Error("stock committed consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("stock committed consumer started")
-
-	return nil
+	logger.Info("order events publisher initialized")
+	return orderEventsPublisher, nil
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -392,12 +264,48 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if s.ready.Load() {
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		w.Header().Set("Content-Type", "application/json")
+
+		if s.health.IsReady(ctx) {
 			w.WriteHeader(http.StatusOK)
+			response := map[string]interface{}{
+				"status": "ready",
+				"checks": make(map[string]string),
+			}
+
+			// Get status of all components for complete info
+			status := s.health.GetStatus(ctx)
+			for name, err := range status {
+				if err != nil {
+					response["checks"].(map[string]string)[name] = err.Error()
+				} else {
+					response["checks"].(map[string]string)[name] = "ok"
+				}
+			}
+
+			json.NewEncoder(w).Encode(response)
 			return
 		}
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+
+		// Return detailed status for debugging
+		w.WriteHeader(http.StatusServiceUnavailable)
+		response := map[string]interface{}{
+			"status": "not ready",
+			"checks": make(map[string]string),
+		}
+
+		status := s.health.GetStatus(ctx)
+		for name, err := range status {
+			if err != nil {
+				response["checks"].(map[string]string)[name] = err.Error()
+			} else {
+				response["checks"].(map[string]string)[name] = "ok"
+			}
+		}
+
+		json.NewEncoder(w).Encode(response)
 	})
 
 	s.httpSrv = &http.Server{
@@ -441,8 +349,11 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	// simulate warmup and only then readiness=true
-	time.AfterFunc(500*time.Millisecond, func() { s.ready.Store(true) })
+	// start outbox publisher
+	go func() {
+		s.log.Info("outbox publisher starting")
+		s.outboxPublisher.Start(ctx)
+	}()
 
 	// wait for completion
 	select {
@@ -489,10 +400,20 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Close Kafka consumers
-	for _, consumer := range s.consumers {
-		if err := consumer.Close(); err != nil {
-			s.log.Warn("consumer close error", zap.Error(err))
+	// Close consumer manager
+	if s.consumerManager != nil {
+		if err := s.consumerManager.Close(); err != nil {
+			s.log.Warn("consumer manager close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// Close outbox publisher
+	if s.outboxPublisher != nil {
+		if err := s.outboxPublisher.Close(); err != nil {
+			s.log.Warn("outbox publisher close error", zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}

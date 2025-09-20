@@ -4,6 +4,9 @@ import (
 	"time"
 
 	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/proto-go/common"
+	"ecommerce-platform/services/order-service/internal/domain/aggregates"
+	"ecommerce-platform/services/order-service/internal/domain/entities"
 )
 
 // OrderResponse represents the order response
@@ -48,6 +51,47 @@ type ProcessOrderResponse struct {
 	OrderID string `json:"order_id"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+// OrderEventDTO represents order event data for outbox pattern
+type OrderEventDTO struct {
+	UserID      string              `json:"user_id"`
+	Items       []*common.OrderItem `json:"items"`
+	TotalAmount int64               `json:"total_amount"`
+	Currency    string              `json:"currency"`
+	Reason      string              `json:"reason,omitempty"` // for OrderCancelled events
+}
+
+// NewOrderItemResponse creates an OrderItemResponse from domain entity
+func NewOrderItemResponse(item *entities.OrderItem) *OrderItemResponse {
+	return &OrderItemResponse{
+		ProductID:   item.ProductID,
+		ProductName: item.ProductName,
+		Quantity:    item.Quantity,
+		UnitPrice:   item.UnitPrice,
+		TotalPrice:  item.TotalPrice(),
+	}
+}
+
+// NewOrderResponse creates an OrderResponse from Order aggregate
+func NewOrderResponse(order *aggregates.Order) *OrderResponse {
+	// Create items slice using the single item constructor
+	items := make([]*OrderItemResponse, len(order.Items))
+	for i, item := range order.Items {
+		items[i] = NewOrderItemResponse(item)
+	}
+
+	return &OrderResponse{
+		ID:              order.ID,
+		UserID:          order.UserID,
+		Status:          string(order.Status),
+		Items:           items,
+		ShippingAddress: order.ShippingAddress.Value,
+		Currency:        order.Currency.Code,
+		TotalAmount:     order.TotalAmount,
+		CreatedAt:       order.CreatedAt,
+		UpdatedAt:       order.UpdatedAt,
+	}
 }
 
 // CreateOrderResponse represents the response after creating an order

@@ -7,10 +7,10 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"sync/atomic"
 	"time"
 
 	"ecommerce-platform/pkg/config"
+	pkghealth "ecommerce-platform/pkg/health"
 	"ecommerce-platform/pkg/jwt"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
@@ -23,11 +23,11 @@ import (
 	userRepoImpl "ecommerce-platform/services/user-service/internal/infra/repository"
 	infraServices "ecommerce-platform/services/user-service/internal/infra/services"
 	usermetrics "ecommerce-platform/services/user-service/internal/metrics"
+	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/postgres"
@@ -40,10 +40,13 @@ type Server struct {
 	grpcServer *grpc.Server
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
-	ready      atomic.Bool
+	health     *pkghealth.Manager
 
 	// database
 	db *gorm.DB
+
+	// redis
+	redisClient *redisclient.Client
 
 	// business dependencies
 	userRepo       repository.UserRepository
@@ -100,6 +103,19 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 	userMetrics := usermetrics.NewUserMetrics()
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
+	// Initialize health manager
+	healthManager := pkghealth.NewManager()
+
+	// Add database health check
+	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
+
+	// Add Redis health check
+	healthManager.AddChecker(pkghealth.NewRedisChecker(redisClient))
+
+	// Create gRPC health checker that syncs with our health manager
+	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
+	healthManager.AddChecker(grpcHealthChecker)
+
 	// Initialize user application service
 	userSvc := appsvc.NewUserApplicationService(userRepo, sessionRepo, tokenGenerator, loggerAdapter)
 
@@ -107,10 +123,8 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 	gs := grpc.NewServer()
 	userGrpc.RegisterUserPBServer(gs, userSvc, userMetrics)
 
-	// Setup health checks
-	hs := health.NewServer()
-	healthpb.RegisterHealthServer(gs, hs)
-	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	// Register gRPC health server
+	healthpb.RegisterHealthServer(gs, grpcHealthChecker.GetGRPCHealthServer())
 
 	// Setup reflection for development
 	if cfg.IsDevelopment() {
@@ -128,7 +142,13 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 		tokenGenerator: tokenGenerator,
 		userSvc:        userSvc,
 		metrics:        userMetrics,
+		health:         healthManager,
+		redisClient:    redisClient,
 	}
+
+	// All components initialized successfully - check health status
+	s.health.IsHealthy(context.Background())
+
 	return s, nil
 }
 
@@ -174,12 +194,48 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if s.ready.Load() {
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		w.Header().Set("Content-Type", "application/json")
+
+		if s.health.IsReady(ctx) {
 			w.WriteHeader(http.StatusOK)
+			response := map[string]interface{}{
+				"status": "ready",
+				"checks": make(map[string]string),
+			}
+
+			// Get status of all components for complete info
+			status := s.health.GetStatus(ctx)
+			for name, err := range status {
+				if err != nil {
+					response["checks"].(map[string]string)[name] = err.Error()
+				} else {
+					response["checks"].(map[string]string)[name] = "ok"
+				}
+			}
+
+			json.NewEncoder(w).Encode(response)
 			return
 		}
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+
+		// Return detailed status for debugging
+		w.WriteHeader(http.StatusServiceUnavailable)
+		response := map[string]interface{}{
+			"status": "not ready",
+			"checks": make(map[string]string),
+		}
+
+		status := s.health.GetStatus(ctx)
+		for name, err := range status {
+			if err != nil {
+				response["checks"].(map[string]string)[name] = err.Error()
+			} else {
+				response["checks"].(map[string]string)[name] = "ok"
+			}
+		}
+
+		json.NewEncoder(w).Encode(response)
 	})
 
 	s.httpSrv = &http.Server{
@@ -222,9 +278,6 @@ func (s *Server) Run(ctx context.Context) error {
 			errCh <- fmt.Errorf("grpc serve: %w", err)
 		}
 	}()
-
-	// simulate warmup and only then readiness=true
-	time.AfterFunc(500*time.Millisecond, func() { s.ready.Store(true) })
 
 	// wait for completion
 	select {
@@ -275,6 +328,16 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if closer, ok := s.tokenGenerator.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
 			s.log.Warn("token generator close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// Close Redis client
+	if s.redisClient != nil {
+		if err := s.redisClient.Close(); err != nil {
+			s.log.Warn("redis client close error", zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}

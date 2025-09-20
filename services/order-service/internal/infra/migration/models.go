@@ -2,6 +2,8 @@ package migration
 
 import (
 	"time"
+
+	"ecommerce-platform/pkg/outbox"
 )
 
 // MigrationRecord tracks applied migrations
@@ -50,3 +52,7 @@ type OrderItemRecord struct {
 func (OrderItemRecord) TableName() string {
 	return "order_items"
 }
+
+// Use shared OutboxRecord from pkg/outbox
+// This ensures consistency across all services
+type OutboxRecord = outbox.OutboxRecord

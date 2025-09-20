@@ -31,7 +31,7 @@ func NewInventoryRepository(db *gorm.DB) repository.InventoryRepositoryFacade {
 			return &GormStockRepository{db: db}
 		},
 		outboxRepoFactory: func(db *gorm.DB) repository.OutboxRepository {
-			return NewOutboxRepository(db)
+			return outbox.NewGormRepository(db)
 		},
 	}
 }

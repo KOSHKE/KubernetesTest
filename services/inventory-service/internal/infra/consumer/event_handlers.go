@@ -116,3 +116,24 @@ func (h *EventHandlers) convertToStockReservationItems(items []valueobjects.Item
 	}
 	return result
 }
+
+// HandleOrderCancelled processes OrderCancelled events
+func (h *EventHandlers) HandleOrderCancelled(ctx context.Context, evt *events.OrderCancelled) error {
+	// Convert order items to domain value objects
+	items := h.convertToValueObjects(evt.Items)
+
+	// Release reserved stock for cancelled order
+	req := &dto.ReleaseStockRequest{
+		OrderID: evt.OrderId,
+		Items:   h.convertToStockReservationItems(items),
+	}
+
+	_, err := h.applicationService.ReleaseStock(ctx, req)
+	if err != nil {
+		h.logger.Error("failed to release stock for cancelled order", "orderID", evt.OrderId, "reason", evt.Reason, "error", err)
+		return err
+	}
+
+	h.logger.Info("stock released for cancelled order", "orderID", evt.OrderId, "reason", evt.Reason)
+	return nil
+}

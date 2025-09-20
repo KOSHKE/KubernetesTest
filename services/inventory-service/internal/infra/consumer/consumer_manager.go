@@ -58,7 +58,28 @@ func (cm *ConsumerManager) StartOrderConsumer(
 		}
 	}()
 
-	cm.logger.Info("order consumer started")
+	// Start OrderCancelled consumer
+	orderCancelledConsumer, err := NewEventConsumer[*events.OrderCancelled](
+		strings.Join(config.BootstrapServers, ","),
+		config.GroupID+"-cancelled",
+		config.AutoOffsetReset,
+		EventHandlerFunc[*events.OrderCancelled](handlers.HandleOrderCancelled),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create order cancelled consumer: %w", err)
+	}
+
+	cm.consumers = append(cm.consumers, orderCancelledConsumer)
+
+	// Start order cancelled consumer in background for order_cancelled topic
+	go func() {
+		cm.logger.Info("starting order cancelled consumer", "topics", []string{"orders.v1.order_cancelled"})
+		if err := orderCancelledConsumer.Run(ctx, []string{"orders.v1.order_cancelled"}); err != nil {
+			cm.logger.Error("order cancelled consumer failed", "error", err)
+		}
+	}()
+
+	cm.logger.Info("order consumers started")
 	return nil
 }
 

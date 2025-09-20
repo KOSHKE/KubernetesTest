@@ -3,26 +3,41 @@ package grpc
 import (
 	"context"
 	stdErrors "errors"
+	"time"
 
 	"ecommerce-platform/pkg/common/grpcutils"
+	"ecommerce-platform/proto-go/common"
 	orderpb "ecommerce-platform/proto-go/order"
 	"ecommerce-platform/services/order-service/internal/application/dto"
 	appsvc "ecommerce-platform/services/order-service/internal/application/services"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
+	"ecommerce-platform/services/order-service/internal/metrics"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBOrderServer struct {
 	orderpb.UnimplementedOrderServiceServer
-	svc *appsvc.OrderApplicationService
+	appService *appsvc.OrderApplicationService
+	metrics    metrics.OrderMetrics
 }
 
-func NewPBOrderServer(svc *appsvc.OrderApplicationService) *PBOrderServer {
-	return &PBOrderServer{svc: svc}
+func NewPBOrderServer(appService *appsvc.OrderApplicationService, metrics metrics.OrderMetrics) *PBOrderServer {
+	return &PBOrderServer{
+		appService: appService,
+		metrics:    metrics,
+	}
 }
 
 func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrderRequest) (*orderpb.CreateOrderResponse, error) {
+	start := time.Now()
+	method := "CreateOrder"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(method, time.Since(start))
+		s.metrics.GRPCRequestTotal(method, status)
+	}()
+
 	// Map proto -> app request
 	items := make([]dto.OrderItemRequest, 0, len(req.Items))
 	for _, it := range req.Items {
@@ -32,13 +47,14 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 		})
 	}
 
-	order, err := s.svc.CreateOrder(ctx, &dto.CreateOrderRequest{
+	order, err := s.appService.CreateOrder(ctx, &dto.CreateOrderRequest{
 		UserID:          req.UserId,
 		Items:           items,
 		ShippingAddress: req.ShippingAddress,
 		Currency:        req.Currency,
 	})
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
@@ -46,16 +62,34 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 }
 
 func (s *PBOrderServer) GetOrder(ctx context.Context, req *orderpb.GetOrderRequest) (*orderpb.GetOrderResponse, error) {
-	ord, err := s.svc.GetOrder(ctx, &dto.GetOrderRequest{OrderID: req.Id, UserID: req.UserId})
+	start := time.Now()
+	method := "GetOrder"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(method, time.Since(start))
+		s.metrics.GRPCRequestTotal(method, status)
+	}()
+
+	ord, err := s.appService.GetOrder(ctx, &dto.GetOrderRequest{OrderID: req.Id, UserID: req.UserId})
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	return &orderpb.GetOrderResponse{Order: mapOrderResponseToPB(ord)}, nil
 }
 
 func (s *PBOrderServer) GetUserOrders(ctx context.Context, req *orderpb.GetUserOrdersRequest) (*orderpb.GetUserOrdersResponse, error) {
-	response, err := s.svc.GetUserOrders(ctx, &dto.GetUserOrdersRequest{UserID: req.UserId, Page: int(req.Page), Limit: int(req.Limit)})
+	start := time.Now()
+	method := "GetUserOrders"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(method, time.Since(start))
+		s.metrics.GRPCRequestTotal(method, status)
+	}()
+
+	response, err := s.appService.GetUserOrders(ctx, &dto.GetUserOrdersRequest{UserID: req.UserId, Page: int(req.Page), Limit: int(req.Limit)})
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	out := make([]*orderpb.Order, 0, len(response.Orders))
@@ -66,6 +100,14 @@ func (s *PBOrderServer) GetUserOrders(ctx context.Context, req *orderpb.GetUserO
 }
 
 func (s *PBOrderServer) UpdateOrderStatus(ctx context.Context, req *orderpb.UpdateOrderStatusRequest) (*orderpb.UpdateOrderStatusResponse, error) {
+	start := time.Now()
+	method := "UpdateOrderStatus"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(method, time.Since(start))
+		s.metrics.GRPCRequestTotal(method, status)
+	}()
+
 	var st orderValueObjects.OrderStatus
 	switch req.Status {
 	case orderpb.OrderStatus_PENDING:
@@ -75,10 +117,12 @@ func (s *PBOrderServer) UpdateOrderStatus(ctx context.Context, req *orderpb.Upda
 	case orderpb.OrderStatus_CANCELLED:
 		st = orderValueObjects.OrderStatusCancelled
 	default:
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(stdErrors.New("unknown order status"))
 	}
-	ord, err := s.svc.UpdateOrderStatus(ctx, &dto.UpdateOrderStatusRequest{OrderID: req.Id, Status: st})
+	ord, err := s.appService.UpdateOrderStatus(ctx, &dto.UpdateOrderStatusRequest{OrderID: req.Id, Status: st})
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
@@ -86,8 +130,17 @@ func (s *PBOrderServer) UpdateOrderStatus(ctx context.Context, req *orderpb.Upda
 }
 
 func (s *PBOrderServer) CancelOrder(ctx context.Context, req *orderpb.CancelOrderRequest) (*orderpb.CancelOrderResponse, error) {
-	ord, err := s.svc.CancelOrder(ctx, &dto.CancelOrderRequest{OrderID: req.Id, UserID: req.UserId})
+	start := time.Now()
+	method := "CancelOrder"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(method, time.Since(start))
+		s.metrics.GRPCRequestTotal(method, status)
+	}()
+
+	ord, err := s.appService.CancelOrder(ctx, &dto.CancelOrderRequest{OrderID: req.Id, UserID: req.UserId})
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 	return &orderpb.CancelOrderResponse{Order: mapOrderResponseToPB(ord)}, nil
@@ -95,14 +148,14 @@ func (s *PBOrderServer) CancelOrder(ctx context.Context, req *orderpb.CancelOrde
 
 // Mapping helpers
 func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
-	items := make([]*orderpb.OrderItem, 0, len(o.Items))
+	items := make([]*common.OrderItem, 0, len(o.Items))
 	for _, it := range o.Items {
-		items = append(items, &orderpb.OrderItem{
+		items = append(items, &common.OrderItem{
 			ProductId:   it.ProductID,
 			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
-			Price:       &orderpb.Money{Amount: it.UnitPrice.Amount, Currency: it.UnitPrice.Currency.Code()},
-			Total:       &orderpb.Money{Amount: it.TotalPrice.Amount, Currency: it.TotalPrice.Currency.Code()},
+			Price:       &common.Money{Amount: it.UnitPrice.Amount, Currency: it.UnitPrice.Currency.Code},
+			Total:       &common.Money{Amount: it.TotalPrice.Amount, Currency: it.TotalPrice.Currency.Code},
 		})
 	}
 	return &orderpb.Order{
@@ -110,7 +163,7 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 		UserId:          o.UserID,
 		Status:          mapOrderStatusToPB(orderValueObjects.OrderStatus(o.Status)),
 		Items:           items,
-		TotalAmount:     &orderpb.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency.Code()},
+		TotalAmount:     &common.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency.Code},
 		ShippingAddress: o.ShippingAddress,
 		CreatedAt:       timestamppb.New(o.CreatedAt),
 		UpdatedAt:       timestamppb.New(o.UpdatedAt),

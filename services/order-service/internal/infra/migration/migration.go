@@ -111,7 +111,7 @@ func (s *MigrationService) getMigrations() []Migration {
 				if err := db.AutoMigrate(&OrderRecord{}, &OrderItemRecord{}); err != nil {
 					return err
 				}
-				
+
 				// Add foreign key constraint
 				return db.Exec("ALTER TABLE order_items ADD CONSTRAINT fk_order_items_order_id FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE").Error
 			},
@@ -120,6 +120,16 @@ func (s *MigrationService) getMigrations() []Migration {
 					return err
 				}
 				return db.Migrator().DropTable(&OrderRecord{})
+			},
+		},
+		{
+			Version:     2,
+			Description: "Create outbox_events table",
+			Up: func(db *gorm.DB) error {
+				return db.AutoMigrate(&OutboxRecord{})
+			},
+			Down: func(db *gorm.DB) error {
+				return db.Migrator().DropTable(&OutboxRecord{})
 			},
 		},
 	}

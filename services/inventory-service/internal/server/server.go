@@ -7,12 +7,13 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"sync/atomic"
 	"time"
 
 	"ecommerce-platform/pkg/config"
+	pkghealth "ecommerce-platform/pkg/health"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/outbox"
 	appsvc "ecommerce-platform/services/inventory-service/internal/application/services"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/consumer"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
@@ -20,15 +21,14 @@ import (
 	infraConsumer "ecommerce-platform/services/inventory-service/internal/infra/consumer"
 	inventoryGrpc "ecommerce-platform/services/inventory-service/internal/infra/grpc"
 	"ecommerce-platform/services/inventory-service/internal/infra/migration"
-	inventoryOutbox "ecommerce-platform/services/inventory-service/internal/infra/outbox"
 	inventoryPublisher "ecommerce-platform/services/inventory-service/internal/infra/publisher"
 	productRepoImpl "ecommerce-platform/services/inventory-service/internal/infra/repository"
 	inventoryMetrics "ecommerce-platform/services/inventory-service/internal/metrics"
+	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/postgres"
@@ -41,7 +41,7 @@ type Server struct {
 	grpcServer *grpc.Server
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
-	ready      atomic.Bool
+	health     *pkghealth.Manager
 
 	// database
 	db *gorm.DB
@@ -52,7 +52,7 @@ type Server struct {
 	inventorySvc   *appsvc.InventoryApplicationService
 
 	// outbox publisher
-	outboxPublisher interface{ Start(context.Context) }
+	outboxPublisher *outbox.BackgroundPublisher
 
 	// metrics
 	pm      *metrics.MetricsServer
@@ -91,7 +91,7 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 	}
 
 	// Initialize outbox publisher
-	outboxPublisher := inventoryOutbox.NewBackgroundPublisher(
+	outboxPublisher := outbox.NewBackgroundPublisher(
 		inventoryRepo,
 		stockPublisher,
 		loggerAdapter,
@@ -104,16 +104,24 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
 	// Initialize inventory application service
-	inventorySvc := appsvc.NewInventoryApplicationService(inventoryRepo, stockPublisher, loggerAdapter)
+	inventorySvc := appsvc.NewInventoryApplicationService(inventoryRepo, loggerAdapter)
+
+	// Initialize health manager
+	healthManager := pkghealth.NewManager()
+
+	// Add database health check
+	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
+
+	// Create gRPC health checker that syncs with our health manager
+	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
+	healthManager.AddChecker(grpcHealthChecker)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
 	inventoryGrpc.RegisterInventoryServer(gs, inventorySvc, inventoryMetrics)
 
-	// Setup health checks
-	hs := health.NewServer()
-	healthpb.RegisterHealthServer(gs, hs)
-	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	// Register gRPC health server
+	healthpb.RegisterHealthServer(gs, grpcHealthChecker.GetGRPCHealthServer())
 
 	// Setup reflection for development
 	reflection.Register(gs)
@@ -130,6 +138,7 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 		outboxPublisher: outboxPublisher,
 		metrics:         inventoryMetrics,
 		consumerManager: infraConsumer.NewConsumerManager(loggerAdapter),
+		health:          healthManager,
 	}
 
 	// Initialize Kafka consumers if configured
@@ -137,7 +146,23 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 		if err := s.initConsumers(cfg, loggerAdapter); err != nil {
 			return nil, fmt.Errorf("failed to initialize consumers: %w", err)
 		}
+
+		// Add consumer health checks
+		s.health.AddChecker(pkghealth.NewConsumerChecker("order", func() bool {
+			return s.consumerManager != nil
+		}))
+		s.health.AddChecker(pkghealth.NewConsumerChecker("payment", func() bool {
+			return s.consumerManager != nil
+		}))
 	}
+
+	// Add outbox health check
+	s.health.AddChecker(pkghealth.NewOutboxChecker(func() bool {
+		return s.outboxPublisher != nil
+	}))
+
+	// All components initialized successfully - check health status
+	s.health.IsHealthy(context.Background())
 
 	return s, nil
 }
@@ -203,7 +228,7 @@ func (s *Server) initConsumers(cfg *config.InventoryConfig, logger logger.Logger
 	logger.Info("initializing Kafka consumers")
 
 	// Create application service for consumers
-	applicationService := appsvc.NewInventoryApplicationService(s.inventoryRepo, s.stockPublisher, logger)
+	applicationService := appsvc.NewInventoryApplicationService(s.inventoryRepo, logger)
 
 	// Consumer configuration
 	consumerConfig := consumer.ConsumerConfig{
@@ -211,23 +236,25 @@ func (s *Server) initConsumers(cfg *config.InventoryConfig, logger logger.Logger
 		AutoOffsetReset:  "earliest",
 	}
 
-	// Initialize order created consumer
+	// Initialize critical order events consumer - failure should stop service
 	orderConfig := consumerConfig
 	orderConfig.GroupID = "inventory-service-orders"
-	orderConfig.Topics = []string{"orders.v1.order_created"}
+	orderConfig.Topics = []string{"orders.v1.order_created", "orders.v1.order_cancelled"}
 
 	if err := s.consumerManager.StartOrderConsumer(context.Background(), orderConfig, applicationService); err != nil {
-		logger.Warn("failed to initialize order consumer", "error", err)
+		return fmt.Errorf("failed to start critical order consumer: %w", err)
 	}
+	logger.Info("order consumer started successfully")
 
-	// Initialize payment processed consumer
+	// Initialize critical payment processed consumer - failure should stop service
 	paymentConfig := consumerConfig
 	paymentConfig.GroupID = "inventory-service-payments"
 	paymentConfig.Topics = []string{"payments.v1.payment_processed"}
 
 	if err := s.consumerManager.StartPaymentConsumer(context.Background(), paymentConfig, applicationService); err != nil {
-		logger.Warn("failed to initialize payment consumer", "error", err)
+		return fmt.Errorf("failed to start critical payment consumer: %w", err)
 	}
+	logger.Info("payment consumer started successfully")
 
 	return nil
 }
@@ -239,12 +266,48 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if s.ready.Load() {
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		w.Header().Set("Content-Type", "application/json")
+
+		if s.health.IsReady(ctx) {
 			w.WriteHeader(http.StatusOK)
+			response := map[string]interface{}{
+				"status": "ready",
+				"checks": make(map[string]string),
+			}
+
+			// Get status of all components for complete info
+			status := s.health.GetStatus(ctx)
+			for name, err := range status {
+				if err != nil {
+					response["checks"].(map[string]string)[name] = err.Error()
+				} else {
+					response["checks"].(map[string]string)[name] = "ok"
+				}
+			}
+
+			json.NewEncoder(w).Encode(response)
 			return
 		}
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+
+		// Return detailed status for debugging
+		w.WriteHeader(http.StatusServiceUnavailable)
+		response := map[string]interface{}{
+			"status": "not ready",
+			"checks": make(map[string]string),
+		}
+
+		status := s.health.GetStatus(ctx)
+		for name, err := range status {
+			if err != nil {
+				response["checks"].(map[string]string)[name] = err.Error()
+			} else {
+				response["checks"].(map[string]string)[name] = "ok"
+			}
+		}
+
+		json.NewEncoder(w).Encode(response)
 	})
 
 	s.httpSrv = &http.Server{
@@ -293,9 +356,6 @@ func (s *Server) Run(ctx context.Context) error {
 		s.log.Info("outbox publisher starting")
 		s.outboxPublisher.Start(ctx)
 	}()
-
-	// simulate warmup and only then readiness=true
-	time.AfterFunc(500*time.Millisecond, func() { s.ready.Store(true) })
 
 	// wait for completion
 	select {
@@ -347,6 +407,16 @@ func (s *Server) shutdown(ctx context.Context) error {
 		s.log.Warn("consumer close error", zap.Error(err))
 		if firstErr == nil {
 			firstErr = err
+		}
+	}
+
+	// Close outbox publisher
+	if s.outboxPublisher != nil {
+		if err := s.outboxPublisher.Close(); err != nil {
+			s.log.Warn("outbox publisher close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 

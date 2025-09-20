@@ -5,14 +5,15 @@ import (
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/pkg/validation"
+	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/services/order-service/internal/application/dto"
 	"ecommerce-platform/services/order-service/internal/application/usecases"
-	"ecommerce-platform/services/order-service/internal/domain/entities"
-	"ecommerce-platform/services/order-service/internal/domain/ports/publisher"
+	"ecommerce-platform/services/order-service/internal/domain/aggregates"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
-	"ecommerce-platform/services/order-service/internal/metrics"
+	"fmt"
 )
 
 // OrderApplicationService orchestrates order operations and provides a unified interface
@@ -24,45 +25,30 @@ type OrderApplicationService struct {
 	cancelOrderUseCase         *usecases.CancelOrderUseCase
 	addItemToOrderUseCase      *usecases.AddItemToOrderUseCase
 	removeItemFromOrderUseCase *usecases.RemoveItemFromOrderUseCase
+	orderRepo                  repository.OrderRepositoryFacade
 	validator                  *validation.Validate
 	logger                     logger.Logger
 }
 
 // NewOrderApplicationService creates a new OrderApplicationService instance
 func NewOrderApplicationService(
-	orderRepo repository.OrderRepository,
-	orderPublisher publisher.OrderCreatedPublisher,
+	orderRepo repository.OrderRepositoryFacade,
 	l logger.Logger,
-	metrics metrics.OrderMetrics,
 ) *OrderApplicationService {
 	v := validation.New()
 
 	return &OrderApplicationService{
-		createOrderUseCase:         usecases.NewCreateOrderUseCase(l, orderRepo, orderPublisher, metrics),
-		getOrderUseCase:            usecases.NewGetOrderUseCase(l, orderRepo),
-		getUserOrdersUseCase:       usecases.NewGetUserOrdersUseCase(l, orderRepo),
-		updateOrderStatusUseCase:   usecases.NewUpdateOrderStatusUseCase(l, orderRepo),
-		cancelOrderUseCase:         usecases.NewCancelOrderUseCase(l, orderRepo),
-		addItemToOrderUseCase:      usecases.NewAddItemToOrderUseCase(l, orderRepo),
-		removeItemFromOrderUseCase: usecases.NewRemoveItemFromOrderUseCase(l, orderRepo),
+		createOrderUseCase:         usecases.NewCreateOrderUseCase(),
+		getOrderUseCase:            usecases.NewGetOrderUseCase(),
+		getUserOrdersUseCase:       usecases.NewGetUserOrdersUseCase(),
+		updateOrderStatusUseCase:   usecases.NewUpdateOrderStatusUseCase(),
+		cancelOrderUseCase:         usecases.NewCancelOrderUseCase(),
+		addItemToOrderUseCase:      usecases.NewAddItemToOrderUseCase(),
+		removeItemFromOrderUseCase: usecases.NewRemoveItemFromOrderUseCase(),
+		orderRepo:                  orderRepo,
 		validator:                  v,
 		logger:                     l,
 	}
-}
-
-// mapOrderItemsToDTO converts domain order items to DTO responses
-func mapOrderItemsToDTO(items []*entities.OrderItem) []*dto.OrderItemResponse {
-	dtoItems := make([]*dto.OrderItemResponse, len(items))
-	for i, item := range items {
-		dtoItems[i] = &dto.OrderItemResponse{
-			ProductID:   item.ProductID,
-			ProductName: item.ProductName,
-			Quantity:    item.Quantity,
-			UnitPrice:   item.UnitPrice,
-			TotalPrice:  item.TotalPrice(),
-		}
-	}
-	return dtoItems
 }
 
 // CreateOrder creates a new order
@@ -84,22 +70,62 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 		items[i] = orderItem
 	}
 
-	order, err := s.createOrderUseCase.Execute(ctx, req.UserID, req.ShippingAddress, req.Currency, items)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
+		// Execute use case with transaction repository
+		var err error
+		order, err = s.createOrderUseCase.Execute(ctx, req.UserID, req.ShippingAddress, req.Currency, items, txRepo)
+		if err != nil {
+			return err
+		}
+
+		// Save event to outbox table (to be published later)
+		eventItems := make([]*common.OrderItem, len(order.Items))
+		for i, item := range order.Items {
+			eventItems[i] = &common.OrderItem{
+				ProductId:   item.ProductID,
+				ProductName: item.ProductName,
+				Quantity:    item.Quantity,
+				Price: &common.Money{
+					Amount:   item.UnitPrice.Amount,
+					Currency: item.UnitPrice.Currency.Code,
+				},
+				Total: &common.Money{
+					Amount:   item.TotalPrice().Amount,
+					Currency: item.TotalPrice().Currency.Code,
+				},
+			}
+		}
+
+		eventData := dto.OrderEventDTO{
+			UserID:      order.UserID,
+			Items:       eventItems,
+			TotalAmount: order.TotalAmount.Amount,
+			Currency:    order.Currency.Code,
+		}
+		event := outbox.Event{
+			AggregateID: order.ID,
+			Type:        "OrderCreated",
+			Payload:     eventData,
+		}
+
+		// Create outbox service using transaction repository
+		outboxService := outbox.NewService(txRepo, s.logger)
+		if err := outboxService.SaveEvent(ctx, event); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
+		s.logger.Error("failed to create order", "userID", req.UserID, "currency", req.Currency, "error", err)
 		return nil, err
 	}
 
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }
 
 // GetOrder retrieves an order by ID
@@ -111,22 +137,13 @@ func (s *OrderApplicationService) GetOrder(ctx context.Context, req *dto.GetOrde
 	}
 
 	// Convert DTO to domain parameters
-	order, err := s.getOrderUseCase.Execute(ctx, req.OrderID, req.UserID)
+	order, err := s.getOrderUseCase.Execute(ctx, req.OrderID, req.UserID, s.orderRepo)
 	if err != nil {
+		s.logger.Error("failed to get order", "orderID", req.OrderID, "userID", req.UserID, "error", err)
 		return nil, err
 	}
 
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }
 
 // GetUserOrders retrieves paginated list of user orders
@@ -138,25 +155,16 @@ func (s *OrderApplicationService) GetUserOrders(ctx context.Context, req *dto.Ge
 	}
 
 	// Convert DTO to domain parameters
-	orders, total, err := s.getUserOrdersUseCase.Execute(ctx, req.UserID, req.Page, req.Limit)
+	orders, total, err := s.getUserOrdersUseCase.Execute(ctx, req.UserID, req.Page, req.Limit, s.orderRepo)
 	if err != nil {
+		s.logger.Error("failed to get user orders", "userID", req.UserID, "page", req.Page, "limit", req.Limit, "error", err)
 		return nil, err
 	}
 
 	// Convert aggregates to DTO responses
 	orderResponses := make([]*dto.OrderResponse, len(orders))
 	for i, order := range orders {
-		orderResponses[i] = &dto.OrderResponse{
-			ID:              order.ID,
-			UserID:          order.UserID,
-			Status:          string(order.Status),
-			Items:           mapOrderItemsToDTO(order.Items),
-			ShippingAddress: order.ShippingAddress.Value,
-			Currency:        order.Currency.Code(),
-			TotalAmount:     order.TotalAmount,
-			CreatedAt:       order.CreatedAt,
-			UpdatedAt:       order.UpdatedAt,
-		}
+		orderResponses[i] = dto.NewOrderResponse(order)
 	}
 
 	return &dto.OrdersListResponse{
@@ -175,24 +183,23 @@ func (s *OrderApplicationService) UpdateOrderStatus(ctx context.Context, req *dt
 		return nil, errors.ErrOrderValidationFailed
 	}
 
-	// Convert DTO to domain parameters
-	order, err := s.updateOrderStatusUseCase.Execute(ctx, req.OrderID, req.Status)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
+		// Execute use case with transaction repository
+		var err error
+		order, err = s.updateOrderStatusUseCase.Execute(ctx, req.OrderID, req.Status, txRepo)
+		return err
+	})
+
 	if err != nil {
+		s.logger.Error("failed to update order status", "orderID", req.OrderID, "status", req.Status, "error", err)
 		return nil, err
 	}
 
 	// Convert Order aggregate to OrderResponse
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }
 
 // CancelOrder cancels an order
@@ -203,24 +210,59 @@ func (s *OrderApplicationService) CancelOrder(ctx context.Context, req *dto.Canc
 		return nil, errors.ErrOrderValidationFailed
 	}
 
-	// Convert DTO to domain parameters
-	order, err := s.cancelOrderUseCase.Execute(ctx, req.OrderID, req.UserID)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
+		// Execute use case with transaction repository
+		var err error
+		order, err = s.cancelOrderUseCase.Execute(ctx, req.OrderID, req.UserID, txRepo)
+		if err != nil {
+			return err
+		}
+
+		// Publish OrderCancelled event via outbox
+		eventItems := make([]*common.OrderItem, len(order.Items))
+		for i, item := range order.Items {
+			eventItems[i] = &common.OrderItem{
+				ProductId:   item.ProductID,
+				ProductName: item.ProductName,
+				Quantity:    item.Quantity,
+				Price: &common.Money{
+					Amount:   item.UnitPrice.Amount,
+					Currency: item.UnitPrice.Currency.Code,
+				},
+			}
+		}
+
+		orderEvent := dto.OrderEventDTO{
+			UserID:      order.UserID,
+			Items:       eventItems,
+			TotalAmount: order.TotalAmount.Amount,
+			Currency:    order.Currency.Code,
+			Reason:      req.Reason,
+		}
+
+		outboxEvent := outbox.Event{
+			AggregateID: order.ID,
+			Type:        "OrderCancelled",
+			Payload:     orderEvent,
+		}
+
+		if err := txRepo.SaveEvent(ctx, outboxEvent); err != nil {
+			return fmt.Errorf("failed to save OrderCancelled event: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
+		s.logger.Error("failed to cancel order", "orderID", req.OrderID, "userID", req.UserID, "error", err)
 		return nil, err
 	}
 
 	// Convert Order aggregate to OrderResponse
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }
 
 // AddItemToOrder adds an item to an existing order
@@ -231,23 +273,22 @@ func (s *OrderApplicationService) AddItemToOrder(ctx context.Context, req *dto.A
 		return nil, errors.ErrOrderValidationFailed
 	}
 
-	// Convert DTO to domain parameters
-	order, err := s.addItemToOrderUseCase.Execute(ctx, req.OrderID, req.ProductID, req.ProductName, req.Quantity, req.Price)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
+		// Execute use case with transaction repository
+		var err error
+		order, err = s.addItemToOrderUseCase.Execute(ctx, req.OrderID, req.ProductID, req.ProductName, req.Quantity, req.Price, txRepo)
+		return err
+	})
+
 	if err != nil {
+		s.logger.Error("failed to add item to order", "orderID", req.OrderID, "productID", req.ProductID, "error", err)
 		return nil, err
 	}
 
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }
 
 // RemoveItemFromOrder removes an item from an existing order
@@ -258,21 +299,20 @@ func (s *OrderApplicationService) RemoveItemFromOrder(ctx context.Context, req *
 		return nil, errors.ErrOrderValidationFailed
 	}
 
-	// Convert DTO to domain parameters
-	order, err := s.removeItemFromOrderUseCase.Execute(ctx, req.OrderID, req.UserID, req.ProductID)
+	var order *aggregates.Order
+
+	// Execute all operations within a transaction
+	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
+		// Execute use case with transaction repository
+		var err error
+		order, err = s.removeItemFromOrderUseCase.Execute(ctx, req.OrderID, req.UserID, req.ProductID, txRepo)
+		return err
+	})
+
 	if err != nil {
+		s.logger.Error("failed to remove item from order", "orderID", req.OrderID, "userID", req.UserID, "productID", req.ProductID, "error", err)
 		return nil, err
 	}
 
-	return &dto.OrderResponse{
-		ID:              order.ID,
-		UserID:          order.UserID,
-		Status:          string(order.Status),
-		Items:           mapOrderItemsToDTO(order.Items),
-		ShippingAddress: order.ShippingAddress.Value,
-		Currency:        order.Currency.Code(),
-		TotalAmount:     order.TotalAmount,
-		CreatedAt:       order.CreatedAt,
-		UpdatedAt:       order.UpdatedAt,
-	}, nil
+	return dto.NewOrderResponse(order), nil
 }

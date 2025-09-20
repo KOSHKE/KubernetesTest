@@ -38,6 +38,13 @@ func (uc *ReleaseStockUseCase) Execute(ctx context.Context, orderID string, item
 			return errors.ErrProductNotFound
 		}
 
+		// Idempotent check - if no reserved stock, skip silently
+		// This handles cases where order was already cancelled/released
+		if stock.ReservedQuantity == 0 {
+			continue // Skip this item - already released or never reserved
+		}
+
+		// Only check if we have enough reserved stock if there is some reserved
 		if !stock.CanRelease(item.Quantity) {
 			return errors.ErrInsufficientReservedStock
 		}
@@ -47,10 +54,24 @@ func (uc *ReleaseStockUseCase) Execute(ctx context.Context, orderID string, item
 	updatedStocks := make([]*entities.Stock, 0, len(items))
 	for _, item := range items {
 		stock := stocks[item.ProductID]
-		if err := stock.Release(item.Quantity); err != nil {
-			return err
+
+		// Idempotent release - only release if there's reserved stock
+		if stock.ReservedQuantity == 0 {
+			continue // Skip - already released or never reserved
 		}
-		updatedStocks = append(updatedStocks, stock)
+
+		// Calculate actual quantity to release (min of requested and available)
+		actualQuantity := item.Quantity
+		if actualQuantity > stock.ReservedQuantity {
+			actualQuantity = stock.ReservedQuantity // Release only what's actually reserved
+		}
+
+		if actualQuantity > 0 {
+			if err := stock.Release(actualQuantity); err != nil {
+				return err
+			}
+			updatedStocks = append(updatedStocks, stock)
+		}
 	}
 
 	// Save all stock changes in a single batch operation

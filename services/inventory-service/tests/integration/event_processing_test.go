@@ -50,7 +50,7 @@ func TestEventProcessingIntegration(t *testing.T) {
 	// Create a simple logger for tests
 	// Use silent logger for tests to avoid noise
 	log := logger.NewZapLogger(zap.NewNop().Sugar())
-	appService := services.NewInventoryApplicationService(repo, mockPublisher, log)
+	appService := services.NewInventoryApplicationService(repo, log)
 	eventHandlers := consumer.NewEventHandlers(appService, log)
 
 	// Test Case 1: OrderCreated -> StockReserved
@@ -203,7 +203,107 @@ func TestEventProcessingIntegration(t *testing.T) {
 		}, 1*time.Second, 10*time.Millisecond, "StockReleased event should be saved to outbox")
 	})
 
-	// Test Case 4: Concurrent Order Processing
+	// Test Case 4: OrderCancelled -> StockReleased
+	t.Run("OrderCancelled_ShouldReleaseReservedStock", func(t *testing.T) {
+		// Clean database before test
+		cleanDatabase(t, db)
+
+		// Create test data for this test
+		product := createTestProduct(t, ctx, appService)
+		addTestStock(t, ctx, appService, product.ID, 100)
+
+		// Arrange
+		orderID := "order-cancelled-123"
+		orderCancelledEvent := &events.OrderCancelled{
+			OrderId: orderID,
+			UserId:  "user-123",
+			Items: []*common.OrderItem{
+				{
+					ProductId: product.ID,
+					Quantity:  7,
+				},
+			},
+			Reason: "USER_REQUEST",
+		}
+
+		// Pre-reserve stock for the order that will be cancelled
+		reserveStockForOrder(t, ctx, appService, orderID, product.ID, 7)
+
+		// Verify stock is reserved before cancellation
+		stockBefore, err := appService.GetStockByProductID(ctx, product.ID)
+		require.NoError(t, err)
+		assert.Equal(t, int32(93), stockBefore.AvailableQuantity) // 100 - 7
+		assert.Equal(t, int32(7), stockBefore.ReservedQuantity)
+
+		// Configure mock publisher to expect PublishFromOutbox call
+		mockPublisher.EXPECT().
+			PublishFromOutbox(gomock.Any(), gomock.Any()).
+			Return(nil).
+			AnyTimes()
+
+		// Act - handle order cancellation
+		err = eventHandlers.HandleOrderCancelled(ctx, orderCancelledEvent)
+
+		// Assert
+		require.NoError(t, err)
+
+		// Check that reserved stock is released back to available
+		stockAfter, err := appService.GetStockByProductID(ctx, product.ID)
+		require.NoError(t, err)
+		assert.Equal(t, int32(100), stockAfter.AvailableQuantity) // 93 + 7 (stock released back)
+		assert.Equal(t, int32(0), stockAfter.ReservedQuantity)    // 7 - 7 (all reserved stock released)
+
+		// Check that StockReleased event is saved to outbox
+		require.Eventually(t, func() bool {
+			outboxEvents := getOutboxEvents(t, ctx, db)
+			stockReleasedEvents := filterEventsByType(outboxEvents, "StockReleased")
+			return len(stockReleasedEvents) == 1 && stockReleasedEvents[0].AggregateID == orderID
+		}, 1*time.Second, 10*time.Millisecond, "StockReleased event should be saved to outbox after cancellation")
+	})
+
+	// Test Case 5: OrderCancelled with No Reserved Stock (Idempotency)
+	t.Run("OrderCancelled_WithNoReservedStock_ShouldBeIdempotent", func(t *testing.T) {
+		// Clean database before test
+		cleanDatabase(t, db)
+
+		// Create test data for this test
+		product := createTestProduct(t, ctx, appService)
+		addTestStock(t, ctx, appService, product.ID, 100)
+
+		// Arrange - order that was never reserved or already released
+		orderID := "order-no-reservation-456"
+		orderCancelledEvent := &events.OrderCancelled{
+			OrderId: orderID,
+			UserId:  "user-456",
+			Items: []*common.OrderItem{
+				{
+					ProductId: product.ID,
+					Quantity:  5,
+				},
+			},
+			Reason: "USER_REQUEST",
+		}
+
+		// Configure mock publisher to expect PublishFromOutbox call
+		mockPublisher.EXPECT().
+			PublishFromOutbox(gomock.Any(), gomock.Any()).
+			Return(nil).
+			AnyTimes()
+
+		// Act - handle order cancellation without prior reservation
+		err := eventHandlers.HandleOrderCancelled(ctx, orderCancelledEvent)
+
+		// Assert - should handle gracefully (idempotent)
+		require.NoError(t, err)
+
+		// Check that stock remains unchanged
+		stock, err := appService.GetStockByProductID(ctx, product.ID)
+		require.NoError(t, err)
+		assert.Equal(t, int32(100), stock.AvailableQuantity) // unchanged
+		assert.Equal(t, int32(0), stock.ReservedQuantity)    // unchanged
+	})
+
+	// Test Case 6: Concurrent Order Processing
 	t.Run("ConcurrentOrderProcessing_ShouldHandleRaceConditions", func(t *testing.T) {
 		// Clean database before test
 		cleanDatabase(t, db)
@@ -293,7 +393,7 @@ func TestOutboxPatternReliability(t *testing.T) {
 	// Create a simple logger for tests
 	// Use silent logger for tests to avoid noise
 	log := logger.NewZapLogger(zap.NewNop().Sugar())
-	appService := services.NewInventoryApplicationService(repo, failingPublisher, log)
+	appService := services.NewInventoryApplicationService(repo, log)
 
 	// Test Case 1: Event is saved to outbox when publisher fails
 	t.Run("EventSavedToOutbox_WhenPublisherFails", func(t *testing.T) {
@@ -534,7 +634,7 @@ func setupTestDatabase(t *testing.T, ctx context.Context) (*gorm.DB, func()) {
 // cleanDatabase clears all tables in test database
 func cleanDatabase(t *testing.T, db *gorm.DB) {
 	// Clear tables using TRUNCATE for better performance and reliability
-	tables := []string{"outbox_records", "stocks", "products"}
+	tables := []string{"outbox_events", "stocks", "products"}
 
 	for _, table := range tables {
 		err := db.Exec("TRUNCATE TABLE " + table + " RESTART IDENTITY CASCADE").Error
@@ -591,7 +691,7 @@ func getOutboxEvents(t *testing.T, ctx context.Context, db *gorm.DB) []outbox.Ev
 		UpdatedAt   time.Time
 	}
 
-	err := db.Table("outbox_records").Find(&records).Error
+	err := db.Table("outbox_events").Find(&records).Error
 	require.NoError(t, err)
 
 	events := make([]outbox.Event, len(records))

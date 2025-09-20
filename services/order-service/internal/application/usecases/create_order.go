@@ -2,130 +2,52 @@ package usecases
 
 import (
 	"context"
-	"time"
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/pkg/logger"
-	"ecommerce-platform/proto-go/common"
-	"ecommerce-platform/proto-go/events"
 	"ecommerce-platform/services/order-service/internal/domain/aggregates"
-	"ecommerce-platform/services/order-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
-	"ecommerce-platform/services/order-service/internal/metrics"
-
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // CreateOrderUseCase handles order creation business logic
-type CreateOrderUseCase struct {
-	logger         logger.Logger
-	orderRepo      repository.OrderRepository
-	orderPublisher publisher.OrderCreatedPublisher
-	metrics        metrics.OrderMetrics
-}
+type CreateOrderUseCase struct{}
 
 // NewCreateOrderUseCase creates a new create order use case
-func NewCreateOrderUseCase(
-	logger logger.Logger,
-	orderRepo repository.OrderRepository,
-	orderPublisher publisher.OrderCreatedPublisher,
-	metrics metrics.OrderMetrics,
-) *CreateOrderUseCase {
-	return &CreateOrderUseCase{
-		logger:         logger,
-		orderRepo:      orderRepo,
-		orderPublisher: orderPublisher,
-		metrics:        metrics,
-	}
+func NewCreateOrderUseCase() *CreateOrderUseCase {
+	return &CreateOrderUseCase{}
 }
 
 // Execute creates a new order
-func (uc *CreateOrderUseCase) Execute(ctx context.Context, userID, shippingAddress, currency string, items []*orderValueObjects.OrderItem) (*aggregates.Order, error) {
+func (uc *CreateOrderUseCase) Execute(ctx context.Context, userID, shippingAddress, currency string, items []*orderValueObjects.OrderItem, repo repository.OrderRepositoryFacade) (*aggregates.Order, error) {
 	// Create value objects
 	shippingAddr, err := orderValueObjects.NewShippingAddress(shippingAddress)
 	if err != nil {
-		uc.logger.Error("Failed to create shipping address", "error", err)
-		uc.metrics.OrderCreationFailed("shipping_address_invalid")
 		return nil, errors.ErrOrderValidationFailed
 	}
 
 	currencyObj, err := valueobjects.NewCurrency(currency)
 	if err != nil {
-		uc.logger.Error("Failed to create currency", "error", err)
-		uc.metrics.OrderCreationFailed("currency_invalid")
 		return nil, errors.ErrOrderValidationFailed
 	}
 
 	// Create order using domain constructor
 	order, err := aggregates.NewOrder(userID, shippingAddr, currencyObj)
 	if err != nil {
-		uc.logger.Error("Failed to create order aggregate", "error", err)
-		uc.metrics.OrderCreationFailed("aggregate_creation_failed")
 		return nil, errors.ErrOrderCreationFailed
 	}
 
 	// Add items to order with product details
 	for _, item := range items {
 		if err := order.AddItem(item.ProductID, item.ProductName, item.Quantity, item.Price); err != nil {
-			uc.logger.Error("Failed to add item to order", "product_id", item.ProductID, "error", err)
-			uc.metrics.OrderCreationFailed("item_addition_failed")
 			return nil, errors.ErrOrderItemAdditionFailed
 		}
 	}
 
-	// Execute order creation and event publishing within a transaction
-	if err := uc.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepository) error {
-		// Save order to repository
-		if err := txRepo.Create(ctx, order); err != nil {
-			uc.logger.Error("Failed to save order", "error", err)
-			uc.metrics.OrderCreationFailed("persistence_failed")
-			return errors.ErrOrderPersistenceFailed
-		}
-
-		// Publish OrderCreated event - CRITICAL: must succeed
-		if uc.orderPublisher != nil {
-			// Convert order items to event items
-			eventItems := make([]*common.OrderItem, len(order.Items))
-			for i, item := range order.Items {
-				eventItems[i] = &common.OrderItem{
-					ProductId:   item.ProductID,
-					ProductName: item.ProductName,
-					Quantity:    item.Quantity,
-					Price: &common.Money{
-						Amount:   item.UnitPrice.Amount,
-						Currency: item.UnitPrice.Currency.Code(),
-					},
-					Total: &common.Money{
-						Amount:   item.TotalPrice().Amount,
-						Currency: item.TotalPrice().Currency.Code(),
-					},
-				}
-			}
-
-			event := &events.OrderCreated{
-				OrderId:     order.ID,
-				UserId:      order.UserID,
-				Items:       eventItems,
-				TotalAmount: order.TotalAmount.Amount,
-				Currency:    order.Currency.String(),
-				OccurredAt:  timestamppb.New(time.Now()),
-			}
-			if err := uc.orderPublisher.PublishOrderCreated(ctx, event); err != nil {
-				uc.logger.Error("Failed to publish OrderCreated event", "error", err, "orderID", order.ID)
-				// If event publishing fails, the transaction will be rolled back
-				return errors.ErrOrderEventPublishFailed
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return nil, err
+	// Save order to repository
+	if err := repo.Create(ctx, order); err != nil {
+		return nil, errors.ErrOrderPersistenceFailed
 	}
-
-	// Record success metrics
-	uc.metrics.OrderCreated(currency)
 
 	return order, nil
 }

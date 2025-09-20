@@ -11,7 +11,6 @@ import (
 	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/usecases"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
-	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
 )
 
@@ -27,7 +26,6 @@ type InventoryApplicationService struct {
 
 	// Dependencies
 	inventoryRepo repository.InventoryRepositoryFacade
-	publisher     publisher.StockEventsPublisher
 	validator     *validation.Validate
 	logger        logger.Logger
 }
@@ -35,7 +33,6 @@ type InventoryApplicationService struct {
 // NewInventoryApplicationService creates a new inventory application service
 func NewInventoryApplicationService(
 	inventoryRepo repository.InventoryRepositoryFacade,
-	publisher publisher.StockEventsPublisher,
 	logger logger.Logger,
 ) *InventoryApplicationService {
 	// Create use cases
@@ -56,7 +53,6 @@ func NewInventoryApplicationService(
 		releaseStockUseCase:  releaseStockUseCase,
 		commitStockUseCase:   commitStockUseCase,
 		inventoryRepo:        inventoryRepo,
-		publisher:            publisher,
 		validator:            v,
 		logger:               logger,
 	}
@@ -118,18 +114,8 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 		}
 	}
 
-	// Convert domain objects to DTO
-	response := &dto.ProductResponse{
-		ID:        product.ID,
-		Name:      product.Name,
-		Price:     product.Price,
-		ImageURL:  product.ImageURL,
-		Stock:     stockInfo,
-		CreatedAt: product.CreatedAt,
-		UpdatedAt: product.UpdatedAt,
-	}
-
-	return response, nil
+	// Convert domain objects to DTO using the factory method
+	return dto.NewProductResponse(product, stockInfo), nil
 }
 
 // GetProduct retrieves a product by ID
@@ -151,18 +137,8 @@ func (s *InventoryApplicationService) GetProduct(ctx context.Context, productID 
 		}
 	}
 
-	// Convert entity to DTO
-	response := &dto.ProductResponse{
-		ID:        product.ID,
-		Name:      product.Name,
-		Price:     product.Price,
-		ImageURL:  product.ImageURL,
-		Stock:     stockInfo,
-		CreatedAt: product.CreatedAt,
-		UpdatedAt: product.UpdatedAt,
-	}
-
-	return response, nil
+	// Convert entity to DTO using the factory method
+	return dto.NewProductResponse(product, stockInfo), nil
 }
 
 // ReserveStock reserves stock for an order
@@ -261,15 +237,7 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 			}
 		}
 
-		productResponses[i] = dto.ProductResponse{
-			ID:        productInventory.Product.ID,
-			Name:      productInventory.Product.Name,
-			Price:     productInventory.Product.Price,
-			ImageURL:  productInventory.Product.ImageURL,
-			Stock:     stockInfo,
-			CreatedAt: productInventory.Product.CreatedAt,
-			UpdatedAt: productInventory.Product.UpdatedAt,
-		}
+		productResponses[i] = *dto.NewProductResponse(productInventory.Product, stockInfo)
 	}
 
 	return &dto.ListProductsResponse{
