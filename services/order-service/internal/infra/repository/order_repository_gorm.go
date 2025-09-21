@@ -99,19 +99,25 @@ func NewOrderRepository(db *gorm.DB) repository.OrderRepository {
 func (r *GormOrderRepository) Create(ctx context.Context, order *aggregates.Order) error {
 	orderRec, itemRecs := recordFromEntity(order)
 
-	// Create order with items using GORM associations
-	if err := r.db.WithContext(ctx).Create(&orderRec).Error; err != nil {
-		return err
-	}
-
-	// Add items to the order using association
-	if len(itemRecs) > 0 {
-		if err := r.db.WithContext(ctx).Model(&orderRec).Association("Items").Append(itemRecs); err != nil {
+	// Create order and items in a transaction
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Create order first
+		if err := tx.Create(&orderRec).Error; err != nil {
 			return err
 		}
-	}
 
-	return nil
+		// Create items separately to avoid association issues
+		if len(itemRecs) > 0 {
+			for i := range itemRecs {
+				itemRecs[i].OrderID = orderRec.ID // Ensure OrderID is set
+			}
+			if err := tx.Create(&itemRecs).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func (r *GormOrderRepository) GetByID(ctx context.Context, id string) (*aggregates.Order, error) {
@@ -160,10 +166,19 @@ func (r *GormOrderRepository) Update(ctx context.Context, order *aggregates.Orde
 			return err
 		}
 
-		// Replace items using GORM association
-		// This will automatically handle DELETE + INSERT efficiently
-		if err := tx.Model(&orderRec).Association("Items").Replace(itemRecs); err != nil {
+		// Delete existing items first
+		if err := tx.Where("order_id = ?", orderRec.ID).Delete(&OrderItemRecord{}).Error; err != nil {
 			return err
+		}
+
+		// Insert new items
+		if len(itemRecs) > 0 {
+			for i := range itemRecs {
+				itemRecs[i].OrderID = orderRec.ID // Ensure OrderID is set
+			}
+			if err := tx.Create(&itemRecs).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil

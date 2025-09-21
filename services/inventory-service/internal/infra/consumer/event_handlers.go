@@ -134,6 +134,5 @@ func (h *EventHandlers) HandleOrderCancelled(ctx context.Context, evt *events.Or
 		return err
 	}
 
-	h.logger.Info("stock released for cancelled order", "orderID", evt.OrderId, "reason", evt.Reason)
 	return nil
 }

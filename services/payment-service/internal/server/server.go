@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -15,11 +14,12 @@ import (
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
 	appsvc "ecommerce-platform/services/payment-service/internal/application/services"
+	"ecommerce-platform/services/payment-service/internal/domain/ports/consumer"
 	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
 	infraconsumer "ecommerce-platform/services/payment-service/internal/infra/consumer"
-	"ecommerce-platform/services/payment-service/internal/infra/consumer/handlers"
 	paymentgrpc "ecommerce-platform/services/payment-service/internal/infra/grpc"
 	publisherimpl "ecommerce-platform/services/payment-service/internal/infra/publisher"
+	"ecommerce-platform/services/payment-service/internal/infra/repository"
 	paymentmetrics "ecommerce-platform/services/payment-service/internal/metrics"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,6 +28,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type Server struct {
@@ -38,12 +40,15 @@ type Server struct {
 	pprofSrv   *http.Server
 	ready      atomic.Bool
 
-	// business deps
-	paymentProcessedPub publisher.PaymentProcessedPublisher
-	paymentSvc          *appsvc.PaymentApplicationService
+	// database
+	db *gorm.DB
 
-	// consumers
-	consumers []interface{ Close() error }
+	// business deps
+	eventPublisher publisher.PaymentEventsPublisher
+	paymentSvc     *appsvc.PaymentApplicationService
+
+	// consumer manager
+	consumerManager consumer.EventConsumerManager
 
 	// metrics
 	pm *metrics.MetricsServer
@@ -54,21 +59,40 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 		return nil, errors.New("empty ports in config")
 	}
 
-	// dependencies
-	pub, err := publisherimpl.NewPaymentProcessedPublisher(cfg.GetKafkaBrokers(), "payments.v1.payment_processed")
+	// Connect to database
+	db, err := connectDatabase(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("build publisher: %w", err)
+		return nil, fmt.Errorf("connect to database: %w", err)
 	}
+
+	// Auto-migrate database if enabled
+	if cfg.Database.AutoMigrate {
+		if err := autoMigrateDatabase(db); err != nil {
+			return nil, fmt.Errorf("auto-migrate database: %w", err)
+		}
+	}
+
+	// Create outbox repository
+	outboxRepo := repository.NewOutboxRepository(db)
 
 	// Create logger adapter
 	loggerAdapter := logger.NewZapLogger(log.Sugar())
 	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
 
+	// Create consumer manager
+	consumerManager := infraconsumer.NewConsumerManager(loggerAdapter)
+
+	// Initialize event publisher
+	eventPublisher, err := initPublisher(cfg, loggerAdapter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize event publisher: %w", err)
+	}
+
 	// gRPC server
 	gs := grpc.NewServer()
 	paymentAPI := paymentgrpc.NewPaymentServerImpl()
 	paymentMetrics := paymentmetrics.NewPaymentMetrics()
-	paymentSvc := appsvc.NewPaymentApplicationService(pub, loggerAdapter, paymentMetrics)
+	paymentSvc := appsvc.NewPaymentApplicationService(outboxRepo, loggerAdapter, paymentMetrics)
 	paymentAPI.RegisterPaymentService(gs, paymentSvc)
 
 	hs := health.NewServer()
@@ -79,13 +103,14 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 	reflection.Register(gs)
 
 	s := &Server{
-		cfg:                 cfg,
-		log:                 log,
-		grpcServer:          gs,
-		pm:                  pm,
-		paymentProcessedPub: pub,
-		paymentSvc:          paymentSvc,
-		consumers:           make([]interface{ Close() error }, 0),
+		cfg:             cfg,
+		log:             log,
+		db:              db,
+		grpcServer:      gs,
+		pm:              pm,
+		eventPublisher:  eventPublisher,
+		paymentSvc:      paymentSvc,
+		consumerManager: consumerManager,
 	}
 
 	// Initialize consumers if Kafka is configured
@@ -98,42 +123,40 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) initConsumers(cfg *config.PaymentConfig, logger logger.Logger) error {
-	// Initialize stock released consumer
-	if err := s.initStockReleasedConsumer(cfg, logger); err != nil {
-		logger.Warn("failed to initialize stock released consumer", "error", err)
+func initPublisher(cfg *config.PaymentConfig, logger logger.Logger) (publisher.PaymentEventsPublisher, error) {
+	logger.Info("initializing payment events publisher")
+
+	topics := map[string]string{
+		"PaymentProcessed": "payments.v1.payment_processed",
 	}
 
-	return nil
-}
-
-func (s *Server) initStockReleasedConsumer(cfg *config.PaymentConfig, logger logger.Logger) error {
-	// Create application service
-	stockEventService := appsvc.NewStockEventService(s.paymentSvc.GetProcessPaymentUseCase(), logger)
-
-	// Create infrastructure handler
-	stockReleasedHandler := handlers.NewStockReleasedHandler(stockEventService, logger)
-
-	// Create and start stock released consumer
-	stockReleasedConsumer, err := infraconsumer.NewStockReleasedConsumer(
-		strings.Join(cfg.Kafka.Brokers, ","),
-		"payment-service-stock-released",
-		"earliest",
-		stockReleasedHandler,
+	eventPublisher, err := publisherimpl.NewPaymentEventsPublisher(
+		cfg.Kafka.Brokers,
+		topics,
+		logger,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create stock released consumer: %w", err)
+		return nil, fmt.Errorf("failed to create payment events publisher: %w", err)
 	}
 
-	s.consumers = append(s.consumers, stockReleasedConsumer)
+	logger.Info("payment events publisher initialized")
+	return eventPublisher, nil
+}
 
-	// Start consumer in background
-	go func() {
-		if err := stockReleasedConsumer.Run(context.Background(), []string{"inventory.v1.stock_released"}); err != nil {
-			s.log.Error("stock released consumer failed", zap.Error(err))
-		}
-	}()
-	s.log.Info("stock released consumer started")
+func (s *Server) initConsumers(cfg *config.PaymentConfig, logger logger.Logger) error {
+	ctx := context.Background()
+
+	// Initialize stock reserved consumer
+	stockReservedConfig := consumer.ConsumerConfig{
+		BootstrapServers: cfg.Kafka.Brokers,
+		GroupID:          "payment-service-stock-reserved",
+		AutoOffsetReset:  "earliest",
+		Topics:           []string{"inventory.v1.stock_reserved"},
+	}
+
+	if err := s.consumerManager.StartStockReservedConsumer(ctx, stockReservedConfig, s.paymentSvc); err != nil {
+		logger.Warn("failed to initialize stock reserved consumer", "error", err)
+	}
 
 	return nil
 }
@@ -212,10 +235,10 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) shutdown(ctx context.Context) error {
 	var firstErr error
 
-	// Close consumers
-	for _, consumer := range s.consumers {
-		if err := consumer.Close(); err != nil {
-			s.log.Error("consumer close error", zap.Error(err))
+	// Close consumer manager
+	if s.consumerManager != nil {
+		if err := s.consumerManager.Close(); err != nil {
+			s.log.Error("consumer manager close error", zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -252,10 +275,68 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 
+	// close database connection
+	if s.db != nil {
+		if sqlDB, err := s.db.DB(); err == nil {
+			if err := sqlDB.Close(); err != nil {
+				s.log.Error("database close error", zap.Error(err))
+				if firstErr == nil {
+					firstErr = err
+				}
+			}
+		}
+	}
+
 	// close publisher and other resources
-	if closer, ok := any(s.paymentProcessedPub).(interface{ Close() error }); ok {
-		_ = closer.Close()
+	if s.eventPublisher != nil {
+		if err := s.eventPublisher.Close(); err != nil {
+			s.log.Error("event publisher close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
 
 	return firstErr
+}
+
+// connectDatabase connects to the PostgreSQL database
+func connectDatabase(cfg *config.PaymentConfig) (*gorm.DB, error) {
+	dsn := cfg.GetDatabaseDSN()
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// Configure connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	sqlDB.SetMaxOpenConns(cfg.Database.MaxConns)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	return db, nil
+}
+
+// autoMigrateDatabase runs database migrations
+func autoMigrateDatabase(db *gorm.DB) error {
+	// Import the outbox models for auto-migration
+	if err := db.AutoMigrate(&struct {
+		ID          uint `gorm:"primaryKey"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		DeletedAt   gorm.DeletedAt `gorm:"index"`
+		AggregateID string         `gorm:"not null"`
+		Type        string         `gorm:"not null"`
+		Payload     string         `gorm:"type:jsonb"`
+		Processed   bool           `gorm:"default:false"`
+		Error       string
+	}{}); err != nil {
+		return fmt.Errorf("failed to auto-migrate outbox table: %w", err)
+	}
+
+	return nil
 }

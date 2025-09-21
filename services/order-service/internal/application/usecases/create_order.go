@@ -5,6 +5,7 @@ import (
 
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/pkg/idgenerator"
 	"ecommerce-platform/services/order-service/internal/domain/aggregates"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
@@ -36,6 +37,9 @@ func (uc *CreateOrderUseCase) Execute(ctx context.Context, userID, shippingAddre
 	if err != nil {
 		return nil, errors.ErrOrderCreationFailed
 	}
+
+	// Generate ID for the order
+	order.ID = idgenerator.GenerateID()
 
 	// Add items to order with product details
 	for _, item := range items {
