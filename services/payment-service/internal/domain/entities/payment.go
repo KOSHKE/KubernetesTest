@@ -40,7 +40,7 @@ func NewPayment(orderID, userID string, amount valueobjects.Money, method paymen
 
 // CanBeProcessed checks if payment can be processed
 func (p *Payment) CanBeProcessed() error {
-	if !p.Status.IsPending() {
+	if p.Status != paymentvalueobjects.PaymentStatusPending {
 		return fmt.Errorf("%w: payment status is %s, expected PENDING", errors.ErrPaymentAlreadyProcessed, p.Status.String())
 	}
 	return nil

@@ -2,24 +2,31 @@ package grpc
 
 import (
 	"context"
+	"time"
 
 	"ecommerce-platform/pkg/common/grpcutils"
 	"ecommerce-platform/pkg/common/valueobjects"
+	"ecommerce-platform/proto-go/common"
 	pb "ecommerce-platform/proto-go/payment"
 	"ecommerce-platform/services/payment-service/internal/application/dto"
 	appsvc "ecommerce-platform/services/payment-service/internal/application/services"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
+	"ecommerce-platform/services/payment-service/internal/metrics"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type PBPaymentServer struct {
 	pb.UnimplementedPaymentServiceServer
-	svc *appsvc.PaymentApplicationService
+	svc     *appsvc.PaymentApplicationService
+	metrics metrics.PaymentMetrics
 }
 
-func NewPBPaymentServer(svc *appsvc.PaymentApplicationService) *PBPaymentServer {
-	return &PBPaymentServer{svc: svc}
+func NewPBPaymentServer(svc *appsvc.PaymentApplicationService, metrics metrics.PaymentMetrics) *PBPaymentServer {
+	return &PBPaymentServer{
+		svc:     svc,
+		metrics: metrics,
+	}
 }
 
 // helpers
@@ -51,7 +58,7 @@ func toPBPayment(p *dto.PaymentResponse) *pb.Payment {
 		Id:            p.ID,
 		OrderId:       p.OrderID,
 		UserId:        p.UserID,
-		Amount:        &pb.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency.Code()},
+		Amount:        &common.Money{Amount: p.Amount.Amount, Currency: p.Amount.Currency.String()},
 		Status:        toPBStatus(paymentvalueobjects.PaymentStatus(p.Status)),
 		Method:        toPBMethod(paymentvalueobjects.PaymentMethod(p.Method)),
 		TransactionId: p.TransactionID,
@@ -61,9 +68,18 @@ func toPBPayment(p *dto.PaymentResponse) *pb.Payment {
 }
 
 func (s *PBPaymentServer) ProcessPayment(ctx context.Context, req *pb.ProcessPaymentRequest) (*pb.ProcessPaymentResponse, error) {
+	start := time.Now()
+	methodName := "ProcessPayment"
+	status := "success"
+	defer func() {
+		s.metrics.GRPCRequestDuration(methodName, time.Since(start))
+		s.metrics.GRPCRequestTotal(methodName, status)
+	}()
+
 	currency, err := valueobjects.NewCurrency(req.Amount.Currency)
 	if err != nil {
-		return nil, err
+		status = "error"
+		return nil, grpcutils.MapErrorToStatus(err)
 	}
 
 	amt := valueobjects.Money{
@@ -84,12 +100,12 @@ func (s *PBPaymentServer) ProcessPayment(ctx context.Context, req *pb.ProcessPay
 	}
 
 	// Convert proto PaymentMethod to domain PaymentMethod
-	var method paymentvalueobjects.PaymentMethod
+	var paymentMethod paymentvalueobjects.PaymentMethod
 	switch req.Method {
 	case pb.PaymentMethod_CREDIT_CARD:
-		method = paymentvalueobjects.PaymentMethodCreditCard
+		paymentMethod = paymentvalueobjects.PaymentMethodCreditCard
 	default:
-		method = paymentvalueobjects.PaymentMethodCreditCard // Default fallback
+		paymentMethod = paymentvalueobjects.PaymentMethodCreditCard // Default fallback
 	}
 
 	// Process payment directly
@@ -98,12 +114,13 @@ func (s *PBPaymentServer) ProcessPayment(ctx context.Context, req *pb.ProcessPay
 		OrderID:   req.OrderId,
 		UserID:    req.UserId,
 		Amount:    amt,
-		Method:    method,
+		Method:    paymentMethod,
 		Details:   paymentDetails,
 	}
 
 	resp, err := s.svc.ProcessPayment(ctx, processReq)
 	if err != nil {
+		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
 	}
 

@@ -44,6 +44,8 @@ generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 			cd /workspace/services/user-service && \
 			go generate ./tests/mocks/generate.go && \
 			cd /workspace/services/order-service && \
+			go generate ./tests/mocks/generate.go && \
+			cd /workspace/services/payment-service && \
 			go generate ./tests/mocks/generate.go \
 		"
 	@echo "Mocks generated successfully!"
@@ -56,26 +58,6 @@ test: ## Run all tests locally
 	@cd services/user-service && go test -tags=integration -v ./tests/integration/...
 	@cd services/order-service && go test ./tests/unit/...
 	@cd services/order-service && go test -tags=integration -v ./tests/integration/...
+	@cd services/payment-service && go test ./tests/unit/...
+	@cd services/payment-service && go test -tags=integration -v ./tests/integration/...
 	@echo "All tests completed!"
-
-test-unit: ## Run only unit tests for all services
-	@echo "Running unit tests for all services..."
-	@cd services/inventory-service && go test ./tests/unit/...
-	@cd services/user-service && go test ./tests/unit/...
-	@cd services/order-service && go test ./tests/unit/...
-	@echo "Unit tests completed!"
-
-test-order-integration: ## Run order-service integration tests
-	@echo "Running order-service integration tests..."
-	@cd services/order-service && go test -tags=integration -v ./tests/integration/...
-	@echo "Order-service integration tests completed!"
-
-test-inventory-integration: ## Run inventory-service integration tests
-	@echo "Running inventory-service integration tests..."
-	@cd services/inventory-service && go test -tags=integration -v ./tests/integration/...
-	@echo "Inventory-service integration tests completed!"
-
-test-user-integration: ## Run user-service integration tests
-	@echo "Running user-service integration tests..."
-	@cd services/user-service && go test -tags=integration -v ./tests/integration/...
-	@echo "User-service integration tests completed!"

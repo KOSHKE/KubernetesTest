@@ -94,8 +94,6 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 		return nil, err
 	}
 
-	s.logger.Info("Payment processed successfully", "paymentID", payment.ID, "orderID", req.OrderID, "userID", req.UserID, "status", payment.Status)
-
 	// Convert entity to DTO response
 	return &dto.PaymentResponse{
 		ID:            payment.ID,

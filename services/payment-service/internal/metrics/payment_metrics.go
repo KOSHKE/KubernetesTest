@@ -1,14 +1,18 @@
 package metrics
 
 import (
+	"time"
+
 	"ecommerce-platform/pkg/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // PaymentMetrics interface defines payment service specific metrics
 type PaymentMetrics interface {
-	// Payment business metrics
-	PaymentSucceeded(method string)
-	PaymentFailed(reason string)
+	// gRPC metrics
+	GRPCRequestDuration(method string, duration time.Duration)
+	GRPCRequestTotal(method, status string)
 
 	// HTTP metrics (reused from pkg/metrics)
 	metrics.Metrics
@@ -17,6 +21,10 @@ type PaymentMetrics interface {
 // PaymentPrometheusMetrics implements PaymentMetrics interface
 type PaymentPrometheusMetrics struct {
 	*metrics.PrometheusMetrics
+
+	// gRPC metrics
+	grpcRequestDuration *prometheus.HistogramVec
+	grpcRequestTotal    *prometheus.CounterVec
 }
 
 // NewPaymentMetrics creates new payment service metrics instance
@@ -27,22 +35,41 @@ func NewPaymentMetrics() PaymentMetrics {
 		PrometheusMetrics: baseMetrics,
 	}
 
-	// Note: Payment service uses only base metrics from pkg/metrics
-	// No additional service-specific metrics needed for now
+	// Initialize gRPC metrics
+	paymentMetrics.grpcRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "payment_service",
+			Name:      "grpc_request_duration_seconds",
+			Help:      "gRPC request duration in seconds",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"service", "method"},
+	)
+
+	paymentMetrics.grpcRequestTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "payment_service",
+			Name:      "grpc_requests_total",
+			Help:      "Total number of gRPC requests",
+		},
+		[]string{"service", "method", "status"},
+	)
+
+	// Register gRPC metrics
+	baseMetrics.GetRegistry().MustRegister(
+		paymentMetrics.grpcRequestDuration,
+		paymentMetrics.grpcRequestTotal,
+	)
 
 	return paymentMetrics
 }
 
-// PaymentSucceeded increments successful payment counter
-func (m *PaymentPrometheusMetrics) PaymentSucceeded(method string) {
-	// Use base EntityEvent with payment entity type and succeeded action
-	m.EntityEvent(metrics.EntityTypePayment, metrics.ActionSucceeded, "")
+// GRPCRequestDuration records gRPC request duration
+func (m *PaymentPrometheusMetrics) GRPCRequestDuration(method string, duration time.Duration) {
+	m.grpcRequestDuration.WithLabelValues("payment-service", method).Observe(duration.Seconds())
 }
 
-// PaymentFailed increments failed payment counter with reason
-func (m *PaymentPrometheusMetrics) PaymentFailed(reason string) {
-	if reason == "" {
-		reason = "unknown"
-	}
-	m.EntityEvent(metrics.EntityTypePayment, metrics.ActionFailed, reason)
+// GRPCRequestTotal increments gRPC request counter
+func (m *PaymentPrometheusMetrics) GRPCRequestTotal(method, status string) {
+	m.grpcRequestTotal.WithLabelValues("payment-service", method, status).Inc()
 }

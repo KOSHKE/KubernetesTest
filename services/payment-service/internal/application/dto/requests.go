@@ -8,7 +8,7 @@ import (
 // CreatePaymentRequest represents a request to create a payment
 type CreatePaymentRequest struct {
 	OrderID string                            `json:"order_id" validate:"required"`
-	Amount  valueobjects.Money                `json:"amount" validate:"required,money"`
+	Amount  valueobjects.Money                `json:"amount" validate:"required"`
 	Method  paymentvalueobjects.PaymentMethod `json:"method" validate:"required"`
 	UserID  string                            `json:"user_id" validate:"required"`
 }
@@ -18,7 +18,7 @@ type ProcessPaymentRequest struct {
 	PaymentID string                            `json:"payment_id" validate:"required"`
 	OrderID   string                            `json:"order_id" validate:"required"`
 	UserID    string                            `json:"user_id" validate:"required"`
-	Amount    valueobjects.Money                `json:"amount" validate:"required,money"`
+	Amount    valueobjects.Money                `json:"amount" validate:"required"`
 	Method    paymentvalueobjects.PaymentMethod `json:"method" validate:"required"`
 	Details   *PaymentDetails                   `json:"details,omitempty"`
 }

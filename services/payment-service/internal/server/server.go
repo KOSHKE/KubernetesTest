@@ -2,17 +2,19 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"sync/atomic"
 	"time"
 
 	"ecommerce-platform/pkg/config"
+	pkghealth "ecommerce-platform/pkg/health"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/outbox"
 	appsvc "ecommerce-platform/services/payment-service/internal/application/services"
 	"ecommerce-platform/services/payment-service/internal/domain/ports/consumer"
 	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
@@ -25,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/postgres"
@@ -38,20 +39,24 @@ type Server struct {
 	grpcServer *grpc.Server
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
-	ready      atomic.Bool
+	health     *pkghealth.Manager
 
 	// database
 	db *gorm.DB
 
-	// business deps
+	// business dependencies
 	eventPublisher publisher.PaymentEventsPublisher
 	paymentSvc     *appsvc.PaymentApplicationService
 
-	// consumer manager
-	consumerManager consumer.EventConsumerManager
+	// outbox publisher
+	outboxPublisher *outbox.BackgroundPublisher
 
 	// metrics
-	pm *metrics.MetricsServer
+	pm      *metrics.MetricsServer
+	metrics paymentmetrics.PaymentMetrics
+
+	// Kafka consumers
+	consumerManager consumer.EventConsumerManager
 }
 
 func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
@@ -59,10 +64,13 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 		return nil, errors.New("empty ports in config")
 	}
 
-	// Connect to database
-	db, err := connectDatabase(cfg)
+	// Create logger adapter
+	loggerAdapter := logger.NewZapLogger(log.Sugar())
+
+	// Initialize database
+	db, err := initDatabase(cfg, loggerAdapter)
 	if err != nil {
-		return nil, fmt.Errorf("connect to database: %w", err)
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
 
 	// Auto-migrate database if enabled
@@ -75,50 +83,81 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 	// Create outbox repository
 	outboxRepo := repository.NewOutboxRepository(db)
 
-	// Create logger adapter
-	loggerAdapter := logger.NewZapLogger(log.Sugar())
-	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
-
-	// Create consumer manager
-	consumerManager := infraconsumer.NewConsumerManager(loggerAdapter)
-
 	// Initialize event publisher
 	eventPublisher, err := initPublisher(cfg, loggerAdapter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize event publisher: %w", err)
 	}
 
-	// gRPC server
-	gs := grpc.NewServer()
-	paymentAPI := paymentgrpc.NewPaymentServerImpl()
+	// Initialize outbox publisher
+	outboxPublisher := outbox.NewBackgroundPublisher(
+		outboxRepo,
+		eventPublisher,
+		loggerAdapter,
+		5*time.Second, // interval
+		10,            // batch size
+	)
+
+	// Initialize metrics
 	paymentMetrics := paymentmetrics.NewPaymentMetrics()
+	pm := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
+
+	// Initialize payment application service
 	paymentSvc := appsvc.NewPaymentApplicationService(outboxRepo, loggerAdapter, paymentMetrics)
-	paymentAPI.RegisterPaymentService(gs, paymentSvc)
 
-	hs := health.NewServer()
-	healthpb.RegisterHealthServer(gs, hs)
-	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	// Initialize health manager
+	healthManager := pkghealth.NewManager()
 
-	// reflection only for non-prod if needed
+	// Add database health check
+	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
+
+	// Create gRPC health checker that syncs with our health manager
+	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
+	healthManager.AddChecker(grpcHealthChecker)
+
+	// Initialize gRPC server
+	gs := grpc.NewServer()
+	paymentgrpc.RegisterPaymentServer(gs, paymentSvc, paymentMetrics)
+
+	// Register gRPC health server
+	healthpb.RegisterHealthServer(gs, grpcHealthChecker.GetGRPCHealthServer())
+
+	// Setup reflection for development
 	reflection.Register(gs)
 
 	s := &Server{
 		cfg:             cfg,
 		log:             log,
-		db:              db,
 		grpcServer:      gs,
 		pm:              pm,
+		db:              db,
 		eventPublisher:  eventPublisher,
 		paymentSvc:      paymentSvc,
-		consumerManager: consumerManager,
+		outboxPublisher: outboxPublisher,
+		metrics:         paymentMetrics,
+		consumerManager: infraconsumer.NewConsumerManager(loggerAdapter),
+		health:          healthManager,
 	}
 
-	// Initialize consumers if Kafka is configured
+	// Initialize Kafka consumers if configured
 	if len(cfg.Kafka.Brokers) > 0 {
 		if err := s.initConsumers(cfg, loggerAdapter); err != nil {
 			return nil, fmt.Errorf("failed to initialize consumers: %w", err)
 		}
+
+		// Add consumer health checks
+		s.health.AddChecker(pkghealth.NewConsumerChecker("order", func() bool {
+			return s.consumerManager != nil
+		}))
 	}
+
+	// Add outbox health check
+	s.health.AddChecker(pkghealth.NewOutboxChecker(func() bool {
+		return s.outboxPublisher != nil
+	}))
+
+	// All components initialized successfully - check health status
+	s.health.IsHealthy(context.Background())
 
 	return s, nil
 }
@@ -144,19 +183,25 @@ func initPublisher(cfg *config.PaymentConfig, logger logger.Logger) (publisher.P
 }
 
 func (s *Server) initConsumers(cfg *config.PaymentConfig, logger logger.Logger) error {
+	logger.Info("initializing Kafka consumers")
+
 	ctx := context.Background()
 
-	// Initialize stock reserved consumer
-	stockReservedConfig := consumer.ConsumerConfig{
+	// Consumer configuration
+	consumerConfig := consumer.ConsumerConfig{
 		BootstrapServers: cfg.Kafka.Brokers,
-		GroupID:          "payment-service-stock-reserved",
 		AutoOffsetReset:  "earliest",
-		Topics:           []string{"inventory.v1.stock_reserved"},
 	}
 
+	// Initialize critical stock reserved consumer - failure should stop service
+	stockReservedConfig := consumerConfig
+	stockReservedConfig.GroupID = "payment-service-stock-reserved"
+	stockReservedConfig.Topics = []string{"inventory.v1.stock_reserved"}
+
 	if err := s.consumerManager.StartStockReservedConsumer(ctx, stockReservedConfig, s.paymentSvc); err != nil {
-		logger.Warn("failed to initialize stock reserved consumer", "error", err)
+		return fmt.Errorf("failed to start critical stock reserved consumer: %w", err)
 	}
+	logger.Info("stock reserved consumer started successfully")
 
 	return nil
 }
@@ -168,12 +213,48 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if s.ready.Load() {
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		w.Header().Set("Content-Type", "application/json")
+
+		if s.health.IsReady(ctx) {
 			w.WriteHeader(http.StatusOK)
+			response := map[string]interface{}{
+				"status": "ready",
+				"checks": make(map[string]string),
+			}
+
+			// Get status of all components for complete info
+			status := s.health.GetStatus(ctx)
+			for name, err := range status {
+				if err != nil {
+					response["checks"].(map[string]string)[name] = err.Error()
+				} else {
+					response["checks"].(map[string]string)[name] = "ok"
+				}
+			}
+
+			json.NewEncoder(w).Encode(response)
 			return
 		}
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+
+		// Return detailed status for debugging
+		w.WriteHeader(http.StatusServiceUnavailable)
+		response := map[string]interface{}{
+			"status": "not ready",
+			"checks": make(map[string]string),
+		}
+
+		status := s.health.GetStatus(ctx)
+		for name, err := range status {
+			if err != nil {
+				response["checks"].(map[string]string)[name] = err.Error()
+			} else {
+				response["checks"].(map[string]string)[name] = "ok"
+			}
+		}
+
+		json.NewEncoder(w).Encode(response)
 	})
 
 	s.httpSrv = &http.Server{
@@ -217,8 +298,11 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	// simulate warmup and only then readiness=true
-	time.AfterFunc(500*time.Millisecond, func() { s.ready.Store(true) })
+	// start outbox publisher
+	go func() {
+		s.log.Info("outbox publisher starting")
+		s.outboxPublisher.Start(ctx)
+	}()
 
 	// wait for completion
 	select {
@@ -234,16 +318,6 @@ func (s *Server) Run(ctx context.Context) error {
 
 func (s *Server) shutdown(ctx context.Context) error {
 	var firstErr error
-
-	// Close consumer manager
-	if s.consumerManager != nil {
-		if err := s.consumerManager.Close(); err != nil {
-			s.log.Error("consumer manager close error", zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
 
 	// gRPC graceful
 	done := make(chan struct{})
@@ -275,11 +349,39 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 
-	// close database connection
+	// Close Kafka consumers
+	if err := s.consumerManager.Close(); err != nil {
+		s.log.Warn("consumer close error", zap.Error(err))
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	// Close outbox publisher
+	if s.outboxPublisher != nil {
+		if err := s.outboxPublisher.Close(); err != nil {
+			s.log.Warn("outbox publisher close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// Close publisher
+	if closer, ok := s.eventPublisher.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			s.log.Warn("publisher close error", zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+
+	// Close database
 	if s.db != nil {
 		if sqlDB, err := s.db.DB(); err == nil {
 			if err := sqlDB.Close(); err != nil {
-				s.log.Error("database close error", zap.Error(err))
+				s.log.Warn("database close error", zap.Error(err))
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -287,37 +389,33 @@ func (s *Server) shutdown(ctx context.Context) error {
 		}
 	}
 
-	// close publisher and other resources
-	if s.eventPublisher != nil {
-		if err := s.eventPublisher.Close(); err != nil {
-			s.log.Error("event publisher close error", zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-
 	return firstErr
 }
 
-// connectDatabase connects to the PostgreSQL database
-func connectDatabase(cfg *config.PaymentConfig) (*gorm.DB, error) {
-	dsn := cfg.GetDatabaseDSN()
+func initDatabase(cfg *config.PaymentConfig, logger logger.Logger) (*gorm.DB, error) {
+	logger.Info("initializing database connection")
 
+	dsn := cfg.GetDatabaseDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Configure connection pool
+	// Test connection
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
+	if err := sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Configure connection pool
 	sqlDB.SetMaxOpenConns(cfg.Database.MaxConns)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
+	logger.Info("database connection established")
 	return db, nil
 }
 
