@@ -2,96 +2,90 @@ package handlers
 
 import (
 	"ecommerce-platform/services/api-gateway/internal/clients"
-	"ecommerce-platform/services/api-gateway/internal/middleware"
-	"ecommerce-platform/services/api-gateway/pkg/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type OrderHandler struct {
-	http.BaseHandler
-	orderClient     clients.OrderClient
-	inventoryClient clients.InventoryClient
-	paymentClient   clients.PaymentClient
+	orderClient clients.OrderClient
 }
 
-func NewOrderHandler(orderClient clients.OrderClient, inventoryClient clients.InventoryClient, paymentClient clients.PaymentClient) *OrderHandler {
-	return &OrderHandler{orderClient: orderClient, inventoryClient: inventoryClient, paymentClient: paymentClient}
+func NewOrderHandler(orderClient clients.OrderClient) *OrderHandler {
+	return &OrderHandler{
+		orderClient: orderClient,
+	}
 }
 
+// CreateOrder handles POST /api/orders
 func (h *OrderHandler) CreateOrder(c *gin.Context) {
-	userID, ok := middleware.GetUserID(c)
+	// Get user ID from JWT context
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.RespondUnauthorized(c, "User not authenticated")
 		return
 	}
 
-	var req http.CreateOrderRequest
-	if !http.ValidateRequest(c, &req) {
+	// Parse request
+	var req clients.CreateOrderRequest
+	if !validateJSONRequest(c, &req) {
 		return
 	}
 
-	// Set user ID from JWT context
+	// Set user ID from JWT
 	req.UserID = userID
 
-	// Check stock availability
-	var stockResponse *clients.StockCheckResponse
-	if !h.HandleInventoryClientOperation(c, func() error {
-		var err error
-		stockResponse, err = h.inventoryClient.CheckStock(c.Request.Context(), req.ToStockCheckRequest())
-		return err
-	}, "check stock availability") {
+	// Call order service
+	resp, err := h.orderClient.CreateOrder(c.Request.Context(), &req)
+	if !handleGRPCError(c, err) {
 		return
 	}
 
-	if !stockResponse.AllAvailable {
-		http.RespondBadRequest(c, "Some items are not available in requested quantities")
-		return
-	}
-
-	// Create order
-	if h.HandleOrderClientOperation(c, func() error {
-		_, err := h.orderClient.CreateOrder(c.Request.Context(), req.ToClientRequest())
-		return err
-	}, "create order") {
-		http.RespondCreated(c, gin.H{"message": "Order created. Proceed to payment."}, "Order created. Proceed to payment.")
-	}
+	respondCreated(c, gin.H{
+		"order_id": resp.OrderID,
+	}, resp.Message)
 }
 
-func (h *OrderHandler) GetUserOrders(c *gin.Context) {
-	userID, ok := middleware.GetUserID(c)
-	if !ok {
-		http.RespondUnauthorized(c, "User not authenticated")
-		return
-	}
-
-	page, limit := http.GetPageLimit(c, 1, 10, 100)
-	var orders []*clients.Order
-	if h.HandleOrderClientOperation(c, func() error {
-		var err error
-		orders, err = h.orderClient.GetUserOrders(c.Request.Context(), userID, page, limit)
-		return err
-	}, "get user orders") {
-		http.RespondSuccess(c, gin.H{"orders": orders, "page": page, "limit": limit, "total": len(orders)}, "Orders retrieved successfully")
-	}
-}
-
+// GetOrder handles GET /api/orders/:id
 func (h *OrderHandler) GetOrder(c *gin.Context) {
-	userID, ok := middleware.GetUserID(c)
+	// Get user ID from JWT context
+	userID, ok := requireUserID(c)
 	if !ok {
-		http.RespondUnauthorized(c, "User not authenticated")
 		return
 	}
 
-	orderID, ok := h.RequireParam(c, "id")
+	// Get order ID from URL parameter
+	orderID, ok := requireParam(c, "id")
 	if !ok {
-		return // Error response already sent by RequireParam
+		return
 	}
 
-	if h.HandleOrderClientOperation(c, func() error {
-		_, err := h.orderClient.GetOrder(c.Request.Context(), orderID, userID)
-		return err
-	}, "get order") {
-		http.RespondSuccess(c, gin.H{"message": "Order retrieved successfully"}, "Order retrieved successfully")
+	// Call order service
+	resp, err := h.orderClient.GetOrder(c.Request.Context(), orderID)
+	if !handleGRPCError(c, err) {
+		return
 	}
+
+	// Check if user owns this order
+	if resp.UserID != userID {
+		respondError(c, 403, "forbidden", "Access denied")
+		return
+	}
+
+	respondSuccess(c, resp, "Order retrieved successfully")
+}
+
+// GetUserOrders handles GET /api/orders
+func (h *OrderHandler) GetUserOrders(c *gin.Context) {
+	// Get user ID from JWT context
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+
+	// Call order service
+	resp, err := h.orderClient.GetUserOrders(c.Request.Context(), userID)
+	if !handleGRPCError(c, err) {
+		return
+	}
+
+	respondSuccess(c, resp.Orders, "User orders retrieved successfully")
 }

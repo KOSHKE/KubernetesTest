@@ -2,185 +2,159 @@ package clients
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	"ecommerce-platform/pkg/common/valueobjects"
-	orderpb "ecommerce-platform/proto-go/order"
-	"ecommerce-platform/services/api-gateway/pkg/grpc"
+	"ecommerce-platform/proto-go/order"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// ---------------- Order Client Interface ----------------
-
+// OrderClient defines the interface for order operations
 type OrderClient interface {
 	Close() error
-	CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error)
-	GetOrder(ctx context.Context, orderID, userID string) (*Order, error)
-	GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error)
+	CreateOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error)
+	GetOrder(ctx context.Context, orderID string) (*GetOrderResponse, error)
+	GetUserOrders(ctx context.Context, userID string) (*GetUserOrdersResponse, error)
 }
 
 type orderClient struct {
-	*grpc.BaseClient
-	client orderpb.OrderServiceClient
+	conn   *grpc.ClientConn
+	client order.OrderServiceClient
 }
 
-// ---------------- Order Models ----------------
+// NewOrderClient creates a new gRPC client for order service
+func NewOrderClient(address string) (OrderClient, error) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to order service: %w", err)
+	}
 
-type Order struct {
-	ID              string             `json:"id"`
-	UserID          string             `json:"user_id"`
-	Status          string             `json:"status"`
-	Items           []OrderItem        `json:"items"`
-	TotalAmount     valueobjects.Money `json:"total_amount"`
-	ShippingAddress string             `json:"shipping_address"`
-	CreatedAt       string             `json:"created_at"`
-	UpdatedAt       string             `json:"updated_at"`
+	return &orderClient{
+		conn:   conn,
+		client: order.NewOrderServiceClient(conn),
+	}, nil
 }
 
-type OrderItem struct {
-	ID          string             `json:"id"`
-	ProductID   string             `json:"product_id"`
-	ProductName string             `json:"product_name"`
-	Quantity    int32              `json:"quantity"`
-	Price       valueobjects.Money `json:"price"`
-	Total       valueobjects.Money `json:"total"`
+func (c *orderClient) Close() error {
+	return c.conn.Close()
 }
 
+// CreateOrderRequest represents order creation request
 type CreateOrderRequest struct {
-	UserID          string             `json:"user_id"`
-	Items           []OrderItemRequest `json:"items"`
-	ShippingAddress string             `json:"shipping_address"`
-	Currency        string             `json:"currency"`
+	UserID string `json:"user_id"`
+	Items  []Item `json:"items"`
 }
 
-type OrderItemRequest struct {
+type Item struct {
 	ProductID string `json:"product_id"`
 	Quantity  int32  `json:"quantity"`
 }
 
-// ---------------- Constructor ----------------
+// CreateOrderResponse represents order creation response
+type CreateOrderResponse struct {
+	OrderID string `json:"order_id"`
+	Message string `json:"message"`
+}
 
-func NewOrderClient(address string) (OrderClient, error) {
-	baseClient, err := grpc.NewBaseClient(address)
-	if err != nil {
-		return nil, err
+// GetOrderResponse represents get order response
+type GetOrderResponse struct {
+	OrderID string `json:"order_id"`
+	UserID  string `json:"user_id"`
+	Status  string `json:"status"`
+	Items   []Item `json:"items"`
+}
+
+// GetUserOrdersResponse represents get user orders response
+type GetUserOrdersResponse struct {
+	Orders []GetOrderResponse `json:"orders"`
+}
+
+func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Convert to protobuf
+	var items []*order.OrderItemRequest
+	for _, item := range req.Items {
+		items = append(items, &order.OrderItemRequest{
+			ProductId: item.ProductID,
+			Quantity:  item.Quantity,
+		})
 	}
-	return &orderClient{
-		BaseClient: baseClient,
-		client:     orderpb.NewOrderServiceClient(baseClient.GetConn()),
+
+	pbReq := &order.CreateOrderRequest{
+		UserId: req.UserID,
+		Items:  items,
+	}
+
+	resp, err := c.client.CreateOrder(ctx, pbReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	return &CreateOrderResponse{
+		OrderID: resp.Order.Id,
+		Message: resp.Message,
 	}, nil
 }
 
-// ---------------- Order Methods ----------------
+func (c *orderClient) GetOrder(ctx context.Context, orderID string) (*GetOrderResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
-func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*Order, error) {
-	items := make([]*orderpb.OrderItemRequest, len(req.Items))
-	for i, it := range req.Items {
-		items[i] = &orderpb.OrderItemRequest{
-			ProductId: it.ProductID,
-			Quantity:  it.Quantity,
-		}
-	}
-	grpcReq := &orderpb.CreateOrderRequest{
-		UserId:          req.UserID,
-		Items:           items,
-		ShippingAddress: req.ShippingAddress,
-		Currency:        req.Currency,
-	}
-
-	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.CreateOrderResponse, error) {
-		return c.client.CreateOrder(ctx, grpcReq)
-	})
+	resp, err := c.client.GetOrder(ctx, &order.GetOrderRequest{Id: orderID})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get order: %w", err)
 	}
-	return mapOrderFromPB(resp.GetOrder()), nil
-}
 
-func (c *orderClient) GetOrder(ctx context.Context, orderID, userID string) (*Order, error) {
-	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.GetOrderResponse, error) {
-		return c.client.GetOrder(ctx, &orderpb.GetOrderRequest{Id: orderID, UserId: userID})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return mapOrderFromPB(resp.GetOrder()), nil
-}
-
-func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page, limit int32) ([]*Order, error) {
-	resp, err := grpc.WithTimeoutResult(ctx, func(ctx context.Context) (*orderpb.GetUserOrdersResponse, error) {
-		return c.client.GetUserOrders(ctx, &orderpb.GetUserOrdersRequest{
-			UserId: userID, Page: page, Limit: limit,
+	// Convert from protobuf
+	var items []Item
+	for _, item := range resp.Order.Items {
+		items = append(items, Item{
+			ProductID: item.ProductId,
+			Quantity:  item.Quantity,
 		})
-	})
+	}
+
+	return &GetOrderResponse{
+		OrderID: resp.Order.Id,
+		UserID:  resp.Order.UserId,
+		Status:  resp.Order.Status.String(),
+		Items:   items,
+	}, nil
+}
+
+func (c *orderClient) GetUserOrders(ctx context.Context, userID string) (*GetUserOrdersResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := c.client.GetUserOrders(ctx, &order.GetUserOrdersRequest{UserId: userID})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get user orders: %w", err)
 	}
 
-	out := make([]*Order, len(resp.GetOrders()))
-	for i, o := range resp.GetOrders() {
-		out[i] = mapOrderFromPB(o)
-	}
-	return out, nil
-}
+	// Convert from protobuf
+	var orders []GetOrderResponse
+	for _, orderItem := range resp.Orders {
+		var items []Item
+		for _, item := range orderItem.Items {
+			items = append(items, Item{
+				ProductID: item.ProductId,
+				Quantity:  item.Quantity,
+			})
+		}
 
-// ---------------- Mapping Helpers ----------------
+		orders = append(orders, GetOrderResponse{
+			OrderID: orderItem.Id,
+			UserID:  orderItem.UserId,
+			Status:  orderItem.Status.String(),
+			Items:   items,
+		})
+	}
 
-func mapMoneyFromPB(m *orderpb.Money) valueobjects.Money {
-	if m == nil {
-		return valueobjects.Money{}
-	}
-	currency, _ := valueobjects.NewCurrency(m.GetCurrency())
-	return valueobjects.Money{Amount: m.GetAmount(), Currency: currency}
-}
-
-func mapOrderItemFromPB(it *orderpb.OrderItem) OrderItem {
-	if it == nil {
-		return OrderItem{}
-	}
-	return OrderItem{
-		ID:          it.Id,
-		ProductID:   it.ProductId,
-		ProductName: it.ProductName,
-		Quantity:    it.Quantity,
-		Price:       mapMoneyFromPB(it.Price),
-		Total:       mapMoneyFromPB(it.Total),
-	}
-}
-
-func mapOrderFromPB(o *orderpb.Order) *Order {
-	if o == nil {
-		return nil
-	}
-	items := make([]OrderItem, len(o.Items))
-	for i, it := range o.Items {
-		items[i] = mapOrderItemFromPB(it)
-	}
-	return &Order{
-		ID:              o.Id,
-		UserID:          o.UserId,
-		Status:          mapStatusFromPB(o.Status),
-		Items:           items,
-		TotalAmount:     mapMoneyFromPB(o.TotalAmount),
-		ShippingAddress: o.ShippingAddress,
-		CreatedAt:       grpc.FormatTimestamp(o.CreatedAt),
-		UpdatedAt:       grpc.FormatTimestamp(o.UpdatedAt),
-	}
-}
-
-func mapStatusFromPB(s orderpb.OrderStatus) string {
-	switch s {
-	case orderpb.OrderStatus_PENDING:
-		return "PENDING"
-	case orderpb.OrderStatus_CONFIRMED:
-		return "CONFIRMED"
-	case orderpb.OrderStatus_PROCESSING:
-		return "PROCESSING"
-	case orderpb.OrderStatus_SHIPPED:
-		return "SHIPPED"
-	case orderpb.OrderStatus_DELIVERED:
-		return "DELIVERED"
-	case orderpb.OrderStatus_CANCELLED:
-		return "CANCELLED"
-	default:
-		return "UNKNOWN"
-	}
+	return &GetUserOrdersResponse{
+		Orders: orders,
+	}, nil
 }

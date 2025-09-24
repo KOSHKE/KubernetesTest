@@ -4,233 +4,94 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"ecommerce-platform/pkg/metrics"
+	"ecommerce-platform/pkg/jwt"
+	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/services/api-gateway/internal/clients"
 	"ecommerce-platform/services/api-gateway/internal/config"
 	"ecommerce-platform/services/api-gateway/internal/handlers"
 	"ecommerce-platform/services/api-gateway/internal/middleware"
 
-	cors "github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-func Run(ctx context.Context, cfg *config.Config, logger *zap.Logger) error {
-	sugar := logger.Sugar()
+func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
+	// Create logger adapter
+	loggerAdapter := logger.NewZapLogger(log.Sugar())
 
-	userClient, err := clients.NewUserClient(cfg.UserServiceURL)
+	// Create order client
+	orderClient, err := clients.NewOrderClient(cfg.Services.OrderServiceURL)
 	if err != nil {
-		sugar.Errorw("user client connect failed", "error", err)
-		return err
-	}
-	defer func() { _ = userClient.Close() }()
-	orderClient, err := clients.NewOrderClient(cfg.OrderServiceURL)
-	if err != nil {
-		sugar.Errorw("order client connect failed", "error", err)
-		return err
+		loggerAdapter.Error("failed to create order client", "error", err)
+		return fmt.Errorf("failed to create order client: %w", err)
 	}
 	defer func() { _ = orderClient.Close() }()
-	inventoryClient, err := clients.NewInventoryClient(cfg.InventoryServiceURL)
-	if err != nil {
-		sugar.Errorw("inventory client connect failed", "error", err)
-		return err
-	}
-	defer func() { _ = inventoryClient.Close() }()
-	paymentClient, err := clients.NewPaymentClient(cfg.PaymentServiceURL)
-	if err != nil {
-		sugar.Errorw("payment client connect failed", "error", err)
-		return err
-	}
-	defer func() { _ = paymentClient.Close() }()
 
-	userHandler := handlers.NewUserHandler(userClient)
-	orderHandler := handlers.NewOrderHandler(orderClient, inventoryClient, paymentClient)
-	inventoryHandler := handlers.NewInventoryHandler(inventoryClient)
-	paymentHandler := handlers.NewPaymentHandler(paymentClient)
+	// Create JWT manager
+	jwtConfig := cfg.GetJWTConfig()
+	jwtManager := jwt.NewManager(jwt.Config{
+		AccessTokenSecret:  jwtConfig.AccessSecret,
+		RefreshTokenSecret: jwtConfig.RefreshSecret,
+		AccessTokenTTL:     jwtConfig.AccessTTL,
+		RefreshTokenTTL:    jwtConfig.RefreshTTL,
+		Issuer:             jwtConfig.Issuer,
+		Audience:           jwtConfig.Audience,
+	})
 
-	// Initialize metrics
-	promMetrics := metrics.NewPrometheusMetrics("api-gateway", nil)
-	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, sugar.Desugar())
+	// Create handlers
+	orderHandler := handlers.NewOrderHandler(orderClient)
 
-	router := gin.New() // Use gin.New() instead of gin.Default() to avoid default logging
-
-	// Add custom logging middleware that excludes /metrics
-	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		// Skip logging for metrics endpoint
-		if param.Path == "/metrics" {
-			return ""
-		}
-
-		// Custom log format
-		return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %s\n",
-			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
-			param.StatusCode,
-			param.Latency,
-			param.ClientIP,
-			param.Method,
-			param.Path,
-		)
-	}))
-
-	// Add recovery middleware
+	// Setup router
+	router := gin.New()
+	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 
-	// Strict CORS for prod via env list
-	allowed := func() []string {
-		var o []string
-		for _, s := range strings.Split(cfg.FrontendOrigins, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				o = append(o, s)
-			}
-		}
-		return o
-	}()
-	sugar.Infow("CORS configuration", "allowed_origins", allowed)
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     allowed,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour, // Cache preflight requests for 12 hours
-	}))
-
-	// Set trusted proxies for development (can be overridden via TRUSTED_PROXIES env var)
-	trusted := os.Getenv("TRUSTED_PROXIES")
-	if trusted == "" {
-		// In development, trust localhost and common dev IPs
-		trusted = "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8"
-	}
-	var proxyList []string
-	for _, p := range strings.Split(trusted, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			proxyList = append(proxyList, p)
-		}
-	}
-	sugar.Infow("Trusted proxies configuration", "proxies", proxyList)
-	if err := router.SetTrustedProxies(proxyList); err != nil {
-		sugar.Errorw("set proxies failed", "error", err)
-		return err
-	}
-
-	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "healthy"}) })
-
-	// Add metrics endpoint to main HTTP server
-	router.GET("/metrics", func(c *gin.Context) {
-		// Get metrics from metrics server
-		metricsMux := metricsServer.GetMux()
-		metricsMux.ServeHTTP(c.Writer, c.Request)
+	// Health check
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
 
-	// Add metrics middleware to track HTTP requests
-	router.Use(func(c *gin.Context) {
-		// Skip metrics endpoint to avoid log pollution
-		if c.Request.URL.Path == "/metrics" {
-			c.Next()
-			return
-		}
-
-		start := time.Now()
-		c.Next()
-		duration := time.Since(start)
-
-		// Record HTTP metrics with proper status code
-		status := strconv.Itoa(c.Writer.Status())
-		promMetrics.HTTPRequestsTotal(c.Request.Method, c.Request.URL.Path, status)
-		promMetrics.HTTPRequestDuration(c.Request.Method, c.Request.URL.Path, duration)
-	})
-
+	// API routes - WITH AUTHENTICATION!
 	api := router.Group("/api/v1")
 	{
-		// Auth routes (no middleware)
-		auth := api.Group("/auth")
+		orders := api.Group("/orders")
+		orders.Use(middleware.AuthMiddleware(jwtManager))
 		{
-			auth.POST("/register", userHandler.Register)
-			auth.POST("/login", userHandler.Login)
-			auth.POST("/refresh", userHandler.RefreshToken)
-			auth.POST("/logout", userHandler.Logout)
-		}
-
-		// Protected routes (with auth middleware)
-		protected := api.Group("")
-		protected.Use(middleware.AuthMiddleware(cfg))
-		{
-			users := protected.Group("/users")
-			{
-				users.GET("/profile", userHandler.GetProfile)
-				users.PUT("/profile", userHandler.UpdateProfile)
-			}
-
-			orders := protected.Group("/orders")
-			{
-				orders.POST("", orderHandler.CreateOrder)
-				orders.GET("", orderHandler.GetUserOrders)
-				orders.GET("/:id", orderHandler.GetOrder)
-			}
-
-			payments := protected.Group("/payments")
-			{
-				payments.POST("", paymentHandler.ProcessPayment)
-			}
-		}
-
-		// Public routes (no auth required)
-		inventory := api.Group("/inventory")
-		{
-			inventory.GET("/products", inventoryHandler.GetProducts)
-			inventory.GET("/products/:id", inventoryHandler.GetProduct)
-			inventory.GET("/categories", inventoryHandler.GetCategories)
-		}
-
-		api.GET("/payments/methods", paymentHandler.GetPaymentMethods)
-		api.GET("/payments/test-cards", paymentHandler.GetTestCards)
-	}
-
-	httpServer := &http.Server{Addr: ":" + cfg.Port, Handler: router}
-
-	// gracefulShutdown performs graceful shutdown for all servers
-	gracefulShutdown := func(shutdownCtx context.Context) {
-		sugar.Infow("shutting down api-gateway...")
-		_ = httpServer.Shutdown(shutdownCtx)
-		_ = metricsServer.Shutdown(shutdownCtx)
-	}
-
-	// Start metrics server
-	metricsErr := make(chan error, 1)
-	go func() { metricsErr <- metricsServer.Start(ctx) }()
-	sugar.Infow("metrics server starting", "port", cfg.MetricsPort)
-
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpServer.ListenAndServe() }()
-	sugar.Infow("api-gateway starting", "port", cfg.Port)
-
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		gracefulShutdown(shutdownCtx)
-		return nil
-	case err := <-serveErr:
-		if err != nil && err != http.ErrServerClosed {
-			sugar.Errorw("http serve failed", "error", err)
-			return err
-		}
-	case err := <-metricsErr:
-		if err != nil {
-			sugar.Errorw("metrics server failed", "error", err)
-			return err
+			orders.POST("", orderHandler.CreateOrder)
+			orders.GET("", orderHandler.GetUserOrders)
+			orders.GET("/:id", orderHandler.GetOrder)
 		}
 	}
 
-	// If we reached here, one of the servers failed with an error
-	// Wait for context cancellation for graceful shutdown
+	// Start server
+	server := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: router,
+	}
+
+	// Start server in goroutine
+	go func() {
+		loggerAdapter.Info("starting api-gateway", "port", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			loggerAdapter.Error("failed to start server", "error", err)
+		}
+	}()
+
+	// Wait for context cancellation
 	<-ctx.Done()
+
+	// Graceful shutdown
+	loggerAdapter.Info("shutting down api-gateway...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	gracefulShutdown(shutdownCtx)
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		loggerAdapter.Error("failed to shutdown server", "error", err)
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+
+	loggerAdapter.Info("api-gateway stopped gracefully")
 	return nil
 }
