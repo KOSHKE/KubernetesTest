@@ -5,11 +5,10 @@ import (
 	stdErrors "errors"
 	"time"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/pkg/common/grpcutils"
-	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/proto-go/common"
 	orderpb "ecommerce-platform/proto-go/order"
-	"ecommerce-platform/services/order-service/internal/application/dto"
 	appsvc "ecommerce-platform/services/order-service/internal/application/services"
 	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/order-service/internal/metrics"
@@ -43,29 +42,23 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 	items := make([]dto.OrderItemRequest, 0, len(req.Items))
 	for _, it := range req.Items {
 		items = append(items, dto.OrderItemRequest{
-			ProductID: it.ProductId,
-			Quantity:  it.Quantity,
+			ProductID:   it.ProductId,
+			ProductName: "", // TODO: get from product service
+			Quantity:    it.Quantity,
+			Price:       0, // TODO: get from product service
 		})
 	}
 
-	// Create value objects from strings
-	shippingAddr, err := orderValueObjects.NewShippingAddress(req.ShippingAddress)
-	if err != nil {
-		status = "error"
-		return nil, grpcutils.MapErrorToStatus(err)
-	}
-
-	currency, err := valueobjects.NewCurrency(req.Currency)
-	if err != nil {
-		status = "error"
-		return nil, grpcutils.MapErrorToStatus(err)
+	// Parse shipping address
+	shippingAddr := dto.ShippingAddressDTO{
+		Address: req.ShippingAddress,
 	}
 
 	order, err := s.appService.CreateOrder(ctx, &dto.CreateOrderRequest{
 		UserID:          req.UserId,
 		Items:           items,
 		ShippingAddress: shippingAddr,
-		Currency:        currency,
+		Currency:        req.Currency,
 	})
 	if err != nil {
 		status = "error"
@@ -134,7 +127,7 @@ func (s *PBOrderServer) UpdateOrderStatus(ctx context.Context, req *orderpb.Upda
 		status = "error"
 		return nil, grpcutils.MapErrorToStatus(stdErrors.New("unknown order status"))
 	}
-	ord, err := s.appService.UpdateOrderStatus(ctx, &dto.UpdateOrderStatusRequest{OrderID: req.Id, Status: st})
+	ord, err := s.appService.UpdateOrderStatus(ctx, &dto.UpdateOrderStatusRequest{OrderID: req.Id, Status: string(st)})
 	if err != nil {
 		status = "error"
 		return nil, grpcutils.MapErrorToStatus(err)
@@ -168,8 +161,8 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 			ProductId:   it.ProductID,
 			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
-			Price:       &common.Money{Amount: it.UnitPrice.Amount, Currency: it.UnitPrice.Currency.Code},
-			Total:       &common.Money{Amount: it.TotalPrice.Amount, Currency: it.TotalPrice.Currency.Code},
+			Price:       &common.Money{Amount: it.UnitPrice, Currency: o.Currency},
+			Total:       &common.Money{Amount: it.TotalPrice, Currency: o.Currency},
 		})
 	}
 	return &orderpb.Order{
@@ -177,8 +170,8 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 		UserId:          o.UserID,
 		Status:          mapOrderStatusToPB(orderValueObjects.OrderStatus(o.Status)),
 		Items:           items,
-		TotalAmount:     &common.Money{Amount: o.TotalAmount.Amount, Currency: o.TotalAmount.Currency.Code},
-		ShippingAddress: o.ShippingAddress.String(),
+		TotalAmount:     &common.Money{Amount: o.TotalAmount, Currency: o.Currency},
+		ShippingAddress: o.ShippingAddress.Address,
 		CreatedAt:       timestamppb.New(o.CreatedAt),
 		UpdatedAt:       timestamppb.New(o.UpdatedAt),
 	}

@@ -3,13 +3,13 @@ package services
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/pkg/common/errors"
-	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/pkg/validation"
 	"ecommerce-platform/proto-go/common"
-	"ecommerce-platform/services/order-service/internal/application/dto"
+	"ecommerce-platform/services/order-service/internal/application/dtoconverters"
 	"ecommerce-platform/services/order-service/internal/application/usecases"
 	"ecommerce-platform/services/order-service/internal/domain/aggregates"
 	"ecommerce-platform/services/order-service/internal/domain/ports/repository"
@@ -63,7 +63,12 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 	// Convert DTO to domain parameters
 	items := make([]*orderValueObjects.OrderItem, len(req.Items))
 	for i, item := range req.Items {
-		orderItem, err := orderValueObjects.NewOrderItem(item.ProductID, item.ProductName, item.Quantity, item.Price)
+		price, err := dtoconverters.ToDomainMoney(item.Price, req.Currency)
+		if err != nil {
+			s.logger.Error("Failed to convert price to domain Money", "error", err)
+			return nil, errors.ErrOrderValidationFailed
+		}
+		orderItem, err := orderValueObjects.NewOrderItem(item.ProductID, item.ProductName, item.Quantity, price)
 		if err != nil {
 			s.logger.Error("Failed to create order item", "error", err)
 			return nil, errors.ErrOrderValidationFailed
@@ -77,7 +82,12 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
 		// Execute use case with transaction repository
 		var err error
-		order, err = s.createOrderUseCase.Execute(ctx, req.UserID, req.ShippingAddress.String(), req.Currency.String(), items, txRepo)
+		shippingAddress, err := dtoconverters.ToDomainShippingAddress(req.ShippingAddress)
+		if err != nil {
+			s.logger.Error("Failed to convert shipping address", "error", err)
+			return errors.ErrOrderValidationFailed
+		}
+		order, err = s.createOrderUseCase.Execute(ctx, req.UserID, shippingAddress.String(), req.Currency, items, txRepo)
 		if err != nil {
 			return err
 		}
@@ -100,17 +110,11 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 			}
 		}
 
-		currency, err := valueobjects.NewCurrency(order.Currency.Code)
-		if err != nil {
-			s.logger.Error("Failed to create currency value object", "error", err, "currency", order.Currency.Code)
-			return err
-		}
-
 		eventData := dto.OrderEventDTO{
 			UserID:      order.UserID,
 			Items:       eventItems,
 			TotalAmount: order.TotalAmount.Amount,
-			Currency:    currency,
+			Currency:    order.Currency.Code,
 		}
 		event := outbox.Event{
 			AggregateID: order.ID,
@@ -132,7 +136,7 @@ func (s *OrderApplicationService) CreateOrder(ctx context.Context, req *dto.Crea
 		return nil, err
 	}
 
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }
 
 // GetOrder retrieves an order by ID
@@ -150,7 +154,7 @@ func (s *OrderApplicationService) GetOrder(ctx context.Context, req *dto.GetOrde
 		return nil, err
 	}
 
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }
 
 // GetUserOrders retrieves paginated list of user orders
@@ -171,7 +175,7 @@ func (s *OrderApplicationService) GetUserOrders(ctx context.Context, req *dto.Ge
 	// Convert aggregates to DTO responses
 	orderResponses := make([]*dto.OrderResponse, len(orders))
 	for i, order := range orders {
-		orderResponses[i] = dto.NewOrderResponse(order)
+		orderResponses[i] = dtoconverters.NewOrderResponse(order)
 	}
 
 	return &dto.OrdersListResponse{
@@ -196,7 +200,8 @@ func (s *OrderApplicationService) UpdateOrderStatus(ctx context.Context, req *dt
 	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
 		// Execute use case with transaction repository
 		var err error
-		order, err = s.updateOrderStatusUseCase.Execute(ctx, req.OrderID, req.Status, txRepo)
+		status := dtoconverters.ToDomainOrderStatus(req.Status)
+		order, err = s.updateOrderStatusUseCase.Execute(ctx, req.OrderID, status, txRepo)
 		return err
 	})
 
@@ -206,7 +211,7 @@ func (s *OrderApplicationService) UpdateOrderStatus(ctx context.Context, req *dt
 	}
 
 	// Convert Order aggregate to OrderResponse
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }
 
 // CancelOrder cancels an order
@@ -242,17 +247,11 @@ func (s *OrderApplicationService) CancelOrder(ctx context.Context, req *dto.Canc
 			}
 		}
 
-		currency, err := valueobjects.NewCurrency(order.Currency.Code)
-		if err != nil {
-			s.logger.Error("Failed to create currency value object", "error", err, "currency", order.Currency.Code)
-			return err
-		}
-
 		orderEvent := dto.OrderEventDTO{
 			UserID:      order.UserID,
 			Items:       eventItems,
 			TotalAmount: order.TotalAmount.Amount,
-			Currency:    currency,
+			Currency:    order.Currency.Code,
 			Reason:      req.Reason,
 		}
 
@@ -275,7 +274,7 @@ func (s *OrderApplicationService) CancelOrder(ctx context.Context, req *dto.Canc
 	}
 
 	// Convert Order aggregate to OrderResponse
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }
 
 // AddItemToOrder adds an item to an existing order
@@ -292,7 +291,12 @@ func (s *OrderApplicationService) AddItemToOrder(ctx context.Context, req *dto.A
 	err := s.orderRepo.WithTransaction(ctx, func(txRepo repository.OrderRepositoryFacade) error {
 		// Execute use case with transaction repository
 		var err error
-		order, err = s.addItemToOrderUseCase.Execute(ctx, req.OrderID, req.ProductID, req.ProductName, req.Quantity, req.Price, txRepo)
+		price, err := dtoconverters.ToDomainMoney(req.Price, "USD") // TODO: get currency from context or order
+		if err != nil {
+			s.logger.Error("Failed to convert price to domain Money", "error", err)
+			return errors.ErrOrderValidationFailed
+		}
+		order, err = s.addItemToOrderUseCase.Execute(ctx, req.OrderID, req.ProductID, req.ProductName, req.Quantity, price, txRepo)
 		return err
 	})
 
@@ -301,7 +305,7 @@ func (s *OrderApplicationService) AddItemToOrder(ctx context.Context, req *dto.A
 		return nil, err
 	}
 
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }
 
 // RemoveItemFromOrder removes an item from an existing order
@@ -327,5 +331,5 @@ func (s *OrderApplicationService) RemoveItemFromOrder(ctx context.Context, req *
 		return nil, err
 	}
 
-	return dto.NewOrderResponse(order), nil
+	return dtoconverters.NewOrderResponse(order), nil
 }

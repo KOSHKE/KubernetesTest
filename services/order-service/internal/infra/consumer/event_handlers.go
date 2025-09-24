@@ -3,9 +3,9 @@ package consumer
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/order-service/internal/application/dto"
 	"ecommerce-platform/services/order-service/internal/application/services"
 	"ecommerce-platform/services/order-service/internal/domain/valueobjects"
 )
@@ -29,7 +29,7 @@ func (h *EventHandlers) HandleStockReserved(ctx context.Context, evt *events.Sto
 	// Update order status to confirmed
 	req := &dto.UpdateOrderStatusRequest{
 		OrderID: evt.OrderId,
-		Status:  valueobjects.OrderStatusConfirmed,
+		Status:  valueobjects.OrderStatusConfirmed.String(),
 	}
 
 	_, err := h.applicationService.UpdateOrderStatus(ctx, req)
@@ -41,16 +41,12 @@ func (h *EventHandlers) HandleStockReserved(ctx context.Context, evt *events.Sto
 	return nil
 }
 
-// Note: StockReservationFailed event doesn't exist in proto
-// If stock reservation fails, inventory-service simply doesn't send StockReserved event
-// Order will timeout and be cancelled by a separate timeout mechanism
-
 // HandleStockReleased processes StockReleased events
 func (h *EventHandlers) HandleStockReleased(ctx context.Context, evt *events.StockReleased) error {
 	// Update order status to stock released
 	req := &dto.UpdateOrderStatusRequest{
 		OrderID: evt.OrderId,
-		Status:  valueobjects.OrderStatusStockReleased,
+		Status:  valueobjects.OrderStatusStockReleased.String(),
 	}
 
 	_, err := h.applicationService.UpdateOrderStatus(ctx, req)
@@ -67,7 +63,7 @@ func (h *EventHandlers) HandleStockCommitted(ctx context.Context, evt *events.St
 	// Update order status to completed
 	req := &dto.UpdateOrderStatusRequest{
 		OrderID: evt.OrderId,
-		Status:  valueobjects.OrderStatusCompleted,
+		Status:  valueobjects.OrderStatusCompleted.String(),
 	}
 
 	_, err := h.applicationService.UpdateOrderStatus(ctx, req)
@@ -91,7 +87,7 @@ func (h *EventHandlers) HandlePaymentProcessed(ctx context.Context, evt *events.
 	// Update order status based on payment result
 	req := &dto.UpdateOrderStatusRequest{
 		OrderID: evt.OrderId,
-		Status:  status,
+		Status:  status.String(),
 	}
 
 	_, err := h.applicationService.UpdateOrderStatus(ctx, req)

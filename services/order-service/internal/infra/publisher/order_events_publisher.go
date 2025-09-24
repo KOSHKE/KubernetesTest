@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	kafkaclient "ecommerce-platform/pkg/kafkaclient"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/order-service/internal/application/dto"
 	"ecommerce-platform/services/order-service/internal/domain/ports/publisher"
 
 	"google.golang.org/protobuf/proto"
@@ -100,7 +100,7 @@ func (p *OrderEventsPublisherImpl) publishOrderCreatedFromOutbox(ctx context.Con
 		UserId:      orderEvent.UserID,
 		Items:       orderEvent.Items,
 		TotalAmount: orderEvent.TotalAmount,
-		Currency:    orderEvent.Currency.String(),
+		Currency:    orderEvent.Currency,
 	}
 
 	return p.PublishOrderCreated(ctx, protoEvent)

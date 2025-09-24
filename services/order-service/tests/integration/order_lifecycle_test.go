@@ -13,11 +13,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/order-service/internal/application/dto"
 	"ecommerce-platform/services/order-service/internal/application/services"
-	"ecommerce-platform/services/order-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/order-service/internal/infra/consumer"
 	"ecommerce-platform/services/order-service/internal/infra/repository"
 	"ecommerce-platform/services/order-service/tests/integration/helpers"
@@ -89,7 +88,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is updated to Confirmed
 		order := helpers.GetOrderByID(t, ctx, appService, orderID, "user-123")
-		require.Equal(t, valueobjects.OrderStatusConfirmed, order.Status)
+		require.Equal(t, "CONFIRMED", order.Status)
 
 		// Step 3: Simulate successful PaymentProcessed event from payment service
 		paymentProcessedEvent := &events.PaymentProcessed{
@@ -104,7 +103,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is updated to Paid
 		order = helpers.GetOrderByID(t, ctx, appService, orderID, "user-123")
-		require.Equal(t, valueobjects.OrderStatusPaid, order.Status)
+		require.Equal(t, "PAID", order.Status)
 
 		// Step 4: Simulate StockCommitted event from inventory service
 		stockCommittedEvent := &events.StockCommitted{
@@ -116,8 +115,8 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is updated to Completed
 		order = helpers.GetOrderByID(t, ctx, appService, orderID, "user-123")
-		require.Equal(t, valueobjects.OrderStatusCompleted, order.Status)
-		require.Equal(t, int64(2000), order.TotalAmount.Amount)
+		require.Equal(t, "COMPLETED", order.Status)
+		require.Equal(t, int64(2000), order.TotalAmount)
 	})
 
 	// Test Case 2: Payment Failed - Order Should Be Marked as PaymentFailed
@@ -151,7 +150,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is updated to PaymentFailed
 		order := helpers.GetOrderByID(t, ctx, appService, orderID, "user-456")
-		require.Equal(t, valueobjects.OrderStatusPaymentFailed, order.Status)
+		require.Equal(t, "PAYMENT_FAILED", order.Status)
 	})
 
 	// Test Case 3: Order Cancellation - Should Publish OrderCancelled Event
@@ -176,7 +175,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is Cancelled
 		order := helpers.GetOrderByID(t, ctx, appService, orderID, "user-789")
-		require.Equal(t, valueobjects.OrderStatusCancelled, order.Status)
+		require.Equal(t, "CANCELLED", order.Status)
 
 		// Verify OrderCancelled event is saved to outbox
 		require.Eventually(t, func() bool {
@@ -206,7 +205,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is updated to StockReleased
 		order := helpers.GetOrderByID(t, ctx, appService, orderID, "user-stock")
-		require.Equal(t, valueobjects.OrderStatusStockReleased, order.Status)
+		require.Equal(t, "STOCK_RELEASED", order.Status)
 	})
 
 	// Test Case 5: Concurrent Order Processing
@@ -267,7 +266,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		for _, result := range successfulOrders {
 			order := helpers.GetOrderByID(t, ctx, appService, result.orderID, result.userID)
-			require.Equal(t, valueobjects.OrderStatusPending, order.Status)
+			require.Equal(t, "PENDING", order.Status)
 		}
 	})
 
@@ -293,7 +292,7 @@ func TestOrderLifecycleIntegration(t *testing.T) {
 
 		// Verify order status is still Pending
 		order := helpers.GetOrderByID(t, ctx, appService, orderID, "user-owner")
-		require.Equal(t, valueobjects.OrderStatusPending, order.Status)
+		require.Equal(t, "PENDING", order.Status)
 	})
 }
 

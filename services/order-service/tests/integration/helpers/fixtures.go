@@ -6,25 +6,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/services/order-service/internal/application/dto"
 	"ecommerce-platform/services/order-service/internal/application/services"
-	orderValueObjects "ecommerce-platform/services/order-service/internal/domain/valueobjects"
 )
 
 // CreateTestOrder creates a test order with the given parameters
 func CreateTestOrder(t *testing.T, ctx context.Context, appService *services.OrderApplicationService, userID, currency string, items []dto.OrderItemRequest) string {
-	shippingAddr, err := orderValueObjects.NewShippingAddress("123 Test Street, Test City, Test Country")
-	require.NoError(t, err)
-
 	curr, err := valueobjects.NewCurrency(currency)
 	require.NoError(t, err)
 
 	req := &dto.CreateOrderRequest{
-		UserID:          userID,
-		Items:           items,
-		ShippingAddress: shippingAddr,
-		Currency:        curr,
+		UserID: userID,
+		Items:  items,
+		ShippingAddress: dto.ShippingAddressDTO{
+			Address: "123 Test Street, Test City, Test Country",
+		},
+		Currency: curr.Code,
 	}
 
 	response, err := appService.CreateOrder(ctx, req)
@@ -61,6 +59,6 @@ func CreateOrderItemRequest(productID, productName string, quantity int32, price
 		ProductID:   productID,
 		ProductName: productName,
 		Quantity:    quantity,
-		Price:       valueobjects.NewMoney(priceAmount, MustCurrency(currency)),
+		Price:       priceAmount,
 	}
 }
