@@ -29,6 +29,14 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 	defer func() { _ = orderClient.Close() }()
 
+	// Create user client
+	userClient, err := clients.NewUserClient(cfg.Services.UserServiceURL)
+	if err != nil {
+		loggerAdapter.Error("failed to create user client", "error", err)
+		return fmt.Errorf("failed to create user client: %w", err)
+	}
+	defer func() { _ = userClient.Close() }()
+
 	// Create JWT manager
 	jwtConfig := cfg.GetJWTConfig()
 	jwtManager := jwt.NewManager(jwt.Config{
@@ -42,6 +50,7 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 
 	// Create handlers
 	orderHandler := handlers.NewOrderHandler(orderClient)
+	userHandler := handlers.NewUserHandler(userClient)
 
 	// Setup router
 	router := gin.New()
@@ -56,6 +65,29 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// API routes - WITH AUTHENTICATION!
 	api := router.Group("/api/v1")
 	{
+		// Public auth endpoints
+		authPublic := api.Group("/auth")
+		{
+			authPublic.POST("/register", userHandler.Register)
+			authPublic.POST("/login", userHandler.Login)
+			authPublic.POST("/refresh", userHandler.Refresh)
+		}
+
+		// Protected auth endpoints
+		authProtected := api.Group("/auth")
+		authProtected.Use(middleware.AuthMiddleware(jwtManager))
+		{
+			authProtected.POST("/logout", userHandler.Logout)
+		}
+
+		// Protected users endpoints
+		users := api.Group("/users")
+		users.Use(middleware.AuthMiddleware(jwtManager))
+		{
+			users.GET("/:id", userHandler.GetUser)
+		}
+
+		// Protected orders endpoints
 		orders := api.Group("/orders")
 		orders.Use(middleware.AuthMiddleware(jwtManager))
 		{
