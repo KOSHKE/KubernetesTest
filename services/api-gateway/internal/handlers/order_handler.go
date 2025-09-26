@@ -1,10 +1,16 @@
 package handlers
 
 import (
+	"context"
+	"time"
+
+	dto "ecommerce-platform/pkg/common/dto/order-service"
 	"ecommerce-platform/services/api-gateway/internal/clients"
 
 	"github.com/gin-gonic/gin"
 )
+
+const defaultRPCTimeout = 3 * time.Second
 
 type OrderHandler struct {
 	orderClient clients.OrderClient
@@ -25,7 +31,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	// Parse request
-	var req clients.CreateOrderRequest
+	var req dto.CreateOrderRequest
 	if !validateJSONRequest(c, &req) {
 		return
 	}
@@ -33,8 +39,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	// Set user ID from JWT
 	req.UserID = userID
 
-	// Call order service
-	resp, err := h.orderClient.CreateOrder(c.Request.Context(), &req)
+	// Ensure bounded RPC time
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultRPCTimeout)
+	defer cancel()
+	resp, err := h.orderClient.CreateOrder(ctx, &req)
 	if !handleGRPCError(c, err) {
 		return
 	}
@@ -58,8 +66,10 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 		return
 	}
 
-	// Call order service
-	resp, err := h.orderClient.GetOrder(c.Request.Context(), orderID)
+	// Ensure bounded RPC time
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultRPCTimeout)
+	defer cancel()
+	resp, err := h.orderClient.GetOrder(ctx, orderID)
 	if !handleGRPCError(c, err) {
 		return
 	}
@@ -81,11 +91,13 @@ func (h *OrderHandler) GetUserOrders(c *gin.Context) {
 		return
 	}
 
-	// Call order service
-	resp, err := h.orderClient.GetUserOrders(c.Request.Context(), userID)
+	// Ensure bounded RPC time
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultRPCTimeout)
+	defer cancel()
+	resp, err := h.orderClient.GetUserOrders(ctx, userID)
 	if !handleGRPCError(c, err) {
 		return
 	}
 
-	respondSuccess(c, resp.Orders, "User orders retrieved successfully")
+	respondSuccess(c, resp, "User orders retrieved successfully")
 }

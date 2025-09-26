@@ -3,9 +3,9 @@ package clients
 import (
 	"context"
 	"fmt"
-	"time"
 
 	dto "ecommerce-platform/pkg/common/dto/order-service"
+	commonpb "ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/order"
 
 	"google.golang.org/grpc"
@@ -15,9 +15,11 @@ import (
 // OrderClient defines the interface for order operations
 type OrderClient interface {
 	Close() error
-	CreateOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error)
-	GetOrder(ctx context.Context, orderID string) (*GetOrderResponse, error)
-	GetUserOrders(ctx context.Context, userID string) (*GetUserOrdersResponse, error)
+	// Caller should pass ctx with timeout or deadline to avoid hanging calls
+	CreateOrder(ctx context.Context, req *dto.CreateOrderRequest) (*dto.CreateOrderResponse, error)
+	// Caller should pass ctx with timeout or deadline to avoid hanging calls
+	GetOrder(ctx context.Context, orderID string) (*dto.OrderResponse, error)
+	GetUserOrders(ctx context.Context, userID string) ([]*dto.OrderResponse, error)
 }
 
 type orderClient struct {
@@ -42,24 +44,46 @@ func (c *orderClient) Close() error {
 	return c.conn.Close()
 }
 
-// CreateOrderRequest represents order creation request
-type CreateOrderRequest = dto.CreateOrderRequest
+// convertOrderItem maps protobuf OrderItem to DTO
+func convertOrderItem(item *commonpb.OrderItem) *dto.OrderItemResponse {
+	if item == nil {
+		return nil
+	}
+	return &dto.OrderItemResponse{
+		ProductID: item.ProductId,
+		Quantity:  item.Quantity,
+		UnitPrice: item.Price.Amount,
+	}
+}
 
-// CreateOrderResponse represents order creation response
-type CreateOrderResponse = dto.CreateOrderResponse
+// convertOrder maps protobuf Order to DTO
+func convertOrder(orderPb *order.Order) *dto.OrderResponse {
+	if orderPb == nil {
+		return nil
+	}
 
-// GetOrderResponse represents get order response
-type GetOrderResponse = dto.OrderResponse
+	items := make([]*dto.OrderItemResponse, 0, len(orderPb.Items))
+	for _, it := range orderPb.Items {
+		items = append(items, convertOrderItem(it))
+	}
 
-// GetUserOrdersResponse represents get user orders response
-type GetUserOrdersResponse = dto.OrdersListResponse
+	return &dto.OrderResponse{
+		ID:              orderPb.Id,
+		UserID:          orderPb.UserId,
+		Status:          orderPb.Status.String(),
+		Items:           items,
+		ShippingAddress: dto.ShippingAddressDTO{Address: orderPb.ShippingAddress},
+		Currency:        orderPb.TotalAmount.Currency,
+		TotalAmount:     orderPb.TotalAmount.Amount,
+		CreatedAt:       orderPb.CreatedAt.AsTime(),
+		UpdatedAt:       orderPb.UpdatedAt.AsTime(),
+	}
+}
 
-func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
+// CreateOrder performs RPC call. Pass ctx with timeout or deadline in handlers.
+func (c *orderClient) CreateOrder(ctx context.Context, req *dto.CreateOrderRequest) (*dto.CreateOrderResponse, error) {
 	// Convert to protobuf
-	var items []*order.OrderItemRequest
+	items := make([]*order.OrderItemRequest, 0, len(req.Items))
 	for _, item := range req.Items {
 		items = append(items, &order.OrderItemRequest{
 			ProductId: item.ProductID,
@@ -79,7 +103,7 @@ func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) 
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
 
-	return &CreateOrderResponse{
+	return &dto.CreateOrderResponse{
 		OrderID:     resp.Order.Id,
 		TotalAmount: resp.Order.TotalAmount.Amount,
 		Currency:    resp.Order.TotalAmount.Currency,
@@ -88,80 +112,28 @@ func (c *orderClient) CreateOrder(ctx context.Context, req *CreateOrderRequest) 
 	}, nil
 }
 
-func (c *orderClient) GetOrder(ctx context.Context, orderID string) (*GetOrderResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
+// GetOrder performs RPC call. Pass ctx with timeout or deadline in handlers.
+func (c *orderClient) GetOrder(ctx context.Context, orderID string) (*dto.OrderResponse, error) {
 	resp, err := c.client.GetOrder(ctx, &order.GetOrderRequest{Id: orderID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order: %w", err)
 	}
 
 	// Convert from protobuf
-	var items []*dto.OrderItemResponse
-	for _, item := range resp.Order.Items {
-		items = append(items, &dto.OrderItemResponse{
-			ProductID:   item.ProductId,
-			ProductName: "", // TODO: get from product service
-			Quantity:    item.Quantity,
-			UnitPrice:   item.Price.Amount,
-			TotalPrice:  item.Total.Amount,
-		})
-	}
-
-	return &GetOrderResponse{
-		ID:              resp.Order.Id,
-		UserID:          resp.Order.UserId,
-		Status:          resp.Order.Status.String(),
-		Items:           items,
-		ShippingAddress: dto.ShippingAddressDTO{Address: resp.Order.ShippingAddress},
-		Currency:        resp.Order.TotalAmount.Currency,
-		TotalAmount:     resp.Order.TotalAmount.Amount,
-		CreatedAt:       resp.Order.CreatedAt.AsTime(),
-		UpdatedAt:       resp.Order.UpdatedAt.AsTime(),
-	}, nil
+	return convertOrder(resp.Order), nil
 }
 
-func (c *orderClient) GetUserOrders(ctx context.Context, userID string) (*GetUserOrdersResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
+func (c *orderClient) GetUserOrders(ctx context.Context, userID string) ([]*dto.OrderResponse, error) {
 	resp, err := c.client.GetUserOrders(ctx, &order.GetUserOrdersRequest{UserId: userID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user orders: %w", err)
 	}
 
 	// Convert from protobuf
-	var orders []*dto.OrderResponse
+	orders := make([]*dto.OrderResponse, 0, len(resp.Orders))
 	for _, orderItem := range resp.Orders {
-		var items []*dto.OrderItemResponse
-		for _, item := range orderItem.Items {
-			items = append(items, &dto.OrderItemResponse{
-				ProductID:   item.ProductId,
-				ProductName: "", // TODO: get from product service
-				Quantity:    item.Quantity,
-				UnitPrice:   item.Price.Amount,
-				TotalPrice:  item.Total.Amount,
-			})
-		}
-
-		orders = append(orders, &dto.OrderResponse{
-			ID:              orderItem.Id,
-			UserID:          orderItem.UserId,
-			Status:          orderItem.Status.String(),
-			Items:           items,
-			ShippingAddress: dto.ShippingAddressDTO{Address: orderItem.ShippingAddress},
-			Currency:        orderItem.TotalAmount.Currency,
-			TotalAmount:     orderItem.TotalAmount.Amount,
-			CreatedAt:       orderItem.CreatedAt.AsTime(),
-			UpdatedAt:       orderItem.UpdatedAt.AsTime(),
-		})
+		orders = append(orders, convertOrder(orderItem))
 	}
 
-	return &GetUserOrdersResponse{
-		Orders: orders,
-		Total:  int64(len(orders)), // TODO: get from response
-		Page:   1,                  // TODO: get from request
-		Limit:  100,                // TODO: get from request
-	}, nil
+	return orders, nil
 }

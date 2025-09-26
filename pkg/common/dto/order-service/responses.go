@@ -17,11 +17,9 @@ type OrderResponse struct {
 
 // OrderItemResponse represents an order item response
 type OrderItemResponse struct {
-	ProductID   string `json:"product_id"`
-	ProductName string `json:"product_name"`
-	Quantity    int32  `json:"quantity"`
-	UnitPrice   int64  `json:"unit_price"`
-	TotalPrice  int64  `json:"total_price"`
+	ProductID string `json:"product_id"`
+	Quantity  int32  `json:"quantity"`
+	UnitPrice int64  `json:"unit_price"`
 }
 
 // OrdersListResponse represents a paginated list of orders

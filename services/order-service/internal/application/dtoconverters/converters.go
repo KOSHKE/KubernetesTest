@@ -59,11 +59,9 @@ func NewOrderResponse(order *aggregates.Order) *orderService.OrderResponse {
 // NewOrderItemResponse creates an OrderItemResponse from domain entity
 func NewOrderItemResponse(item *entities.OrderItem) *orderService.OrderItemResponse {
 	return &orderService.OrderItemResponse{
-		ProductID:   item.ProductID,
-		ProductName: item.ProductName,
-		Quantity:    item.Quantity,
-		UnitPrice:   item.UnitPrice.Amount,
-		TotalPrice:  item.TotalPrice().Amount,
+		ProductID: item.ProductID,
+		Quantity:  item.Quantity,
+		UnitPrice: item.UnitPrice.Amount,
 	}
 }
 

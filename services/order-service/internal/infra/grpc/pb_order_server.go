@@ -158,11 +158,9 @@ func mapOrderResponseToPB(o *dto.OrderResponse) *orderpb.Order {
 	items := make([]*common.OrderItem, 0, len(o.Items))
 	for _, it := range o.Items {
 		items = append(items, &common.OrderItem{
-			ProductId:   it.ProductID,
-			ProductName: it.ProductName,
-			Quantity:    it.Quantity,
-			Price:       &common.Money{Amount: it.UnitPrice, Currency: o.Currency},
-			Total:       &common.Money{Amount: it.TotalPrice, Currency: o.Currency},
+			ProductId: it.ProductID,
+			Quantity:  it.Quantity,
+			Price:     &common.Money{Amount: it.UnitPrice, Currency: o.Currency},
 		})
 	}
 	return &orderpb.Order{
