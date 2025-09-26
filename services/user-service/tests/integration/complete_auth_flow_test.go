@@ -9,8 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"ecommerce-platform/services/user-service/internal/application/dto"
-	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
+	dto "ecommerce-platform/pkg/common/dto/user-service"
 	"ecommerce-platform/services/user-service/tests/integration/helpers"
 )
 
@@ -32,21 +31,12 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		helpers.CleanRedis(t, ctx, redisClient)
 
 		// Arrange
-		email, err := valueobjects.NewEmail("test@example.com")
-		require.NoError(t, err)
-
-		firstName := valueobjects.NewName("John")
-		lastName := valueobjects.NewName("Doe")
-
-		phone, err := valueobjects.NewPhone("+1234567890")
-		require.NoError(t, err)
-
 		req := &dto.RegisterUserRequest{
-			Email:     email,
+			Email:     "test@example.com",
 			Password:  "TestPassword123!",
-			FirstName: firstName,
-			LastName:  lastName,
-			Phone:     phone,
+			FirstName: "John",
+			LastName:  "Doe",
+			Phone:     "+1234567890",
 		}
 
 		// Act
@@ -55,15 +45,15 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		// Assert
 		require.NoError(t, err)
 		assert.NotNil(t, user)
-		assert.Equal(t, "test@example.com", user.Email.String())
-		assert.Equal(t, "John", user.FirstName.String())
-		assert.Equal(t, "Doe", user.LastName.String())
-		assert.Equal(t, "+1234567890", user.Phone.String())
+		assert.Equal(t, "test@example.com", user.Email)
+		assert.Equal(t, "John", user.FirstName)
+		assert.Equal(t, "Doe", user.LastName)
+		assert.Equal(t, "+1234567890", user.Phone)
 		assert.NotEmpty(t, user.UserID)
 		assert.False(t, user.CreatedAt.IsZero())
 
 		// Verify user exists in database
-		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email.String())
+		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email)
 		helpers.AssertDatabaseUserCount(t, ctx, db, 1)
 	})
 
@@ -77,11 +67,8 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		user := helpers.CreateTestUser(t, ctx, appService)
 
 		// Act
-		email, err := valueobjects.NewEmail("test@example.com")
-		require.NoError(t, err)
-
 		loginReq := &dto.LoginRequest{
-			Email:    email,
+			Email:    "test@example.com",
 			Password: "TestPassword123!",
 		}
 		loginResp, err := appService.LoginUser(ctx, loginReq)
@@ -93,7 +80,7 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 
 		// Verify session exists in Redis
 		helpers.AssertSessionExistsInRedis(t, ctx, redisClient, loginResp.SessionID)
-		helpers.AssertRefreshTokenMappingExists(t, ctx, redisClient, loginResp.RefreshToken.String(), loginResp.SessionID)
+		helpers.AssertRefreshTokenMappingExists(t, ctx, redisClient, loginResp.RefreshToken, loginResp.SessionID)
 		helpers.AssertUserSessionsSetExists(t, ctx, redisClient, user.UserID, 1)
 	})
 
@@ -143,7 +130,7 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 
 		// Verify session is updated in Redis
 		helpers.AssertSessionExistsInRedis(t, ctx, redisClient, loginResp.SessionID)
-		helpers.AssertRefreshTokenMappingExists(t, ctx, redisClient, refreshResp.RefreshToken.String(), loginResp.SessionID)
+		helpers.AssertRefreshTokenMappingExists(t, ctx, redisClient, refreshResp.RefreshToken, loginResp.SessionID)
 	})
 
 	// Test Case 5: User Logout
@@ -181,11 +168,11 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 
 		// Step 1: Register user
 		user := helpers.CreateTestUser(t, ctx, appService)
-		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email.String())
+		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email)
 		helpers.AssertDatabaseUserCount(t, ctx, db, 1)
 
 		// Step 2: Login user
-		loginResp := helpers.LoginTestUser(t, ctx, appService, user.Email.String(), "TestPassword123!")
+		loginResp := helpers.LoginTestUser(t, ctx, appService, user.Email, "TestPassword123!")
 		helpers.AssertSessionExistsInRedis(t, ctx, redisClient, loginResp.SessionID)
 		helpers.AssertUserSessionsSetExists(t, ctx, redisClient, user.UserID, 1)
 
@@ -193,7 +180,7 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		getUserReq := &dto.GetUserRequest{UserID: user.UserID}
 		getUserResp, err := appService.GetUser(ctx, getUserReq)
 		require.NoError(t, err)
-		helpers.AssertUserDataMatches(t, getUserResp, user.Email.String(), user.FirstName.String(), user.LastName.String(), user.Phone.String())
+		helpers.AssertUserDataMatches(t, getUserResp, user.Email, user.FirstName, user.LastName, user.Phone)
 
 		// Step 4: Refresh tokens
 		refreshReq := &dto.RefreshTokenRequest{SessionID: loginResp.SessionID}
@@ -207,9 +194,9 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		require.NoError(t, err)
 
 		// Final verification
-		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email.String()) // User still exists in DB
-		helpers.AssertSessionNotExistsInRedis(t, ctx, redisClient, loginResp.SessionID)  // Session removed from Redis
-		helpers.AssertUserSessionsSetNotExists(t, ctx, redisClient, user.UserID)         // No sessions for user
+		helpers.AssertUserExistsInDatabase(t, ctx, db, user.UserID, user.Email)         // User still exists in DB
+		helpers.AssertSessionNotExistsInRedis(t, ctx, redisClient, loginResp.SessionID) // Session removed from Redis
+		helpers.AssertUserSessionsSetNotExists(t, ctx, redisClient, user.UserID)        // No sessions for user
 	})
 
 	// Test Case 7: Concurrent User Operations
@@ -225,17 +212,17 @@ func TestCompleteUserAuthenticationFlow(t *testing.T) {
 		done := make(chan error, 3)
 
 		go func() {
-			_ = helpers.LoginTestUser(t, ctx, appService, user.Email.String(), "TestPassword123!")
+			_ = helpers.LoginTestUser(t, ctx, appService, user.Email, "TestPassword123!")
 			done <- nil
 		}()
 
 		go func() {
-			_ = helpers.LoginTestUser(t, ctx, appService, user.Email.String(), "TestPassword123!")
+			_ = helpers.LoginTestUser(t, ctx, appService, user.Email, "TestPassword123!")
 			done <- nil
 		}()
 
 		go func() {
-			_ = helpers.LoginTestUser(t, ctx, appService, user.Email.String(), "TestPassword123!")
+			_ = helpers.LoginTestUser(t, ctx, appService, user.Email, "TestPassword123!")
 			done <- nil
 		}()
 

@@ -1,21 +1,17 @@
 package dto
 
-import (
-	"time"
-
-	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/services/inventory-service/internal/domain/entities"
-)
+import "time"
 
 // ProductResponse represents a product response
 type ProductResponse struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	Price     valueobjects.Money `json:"price"`
-	ImageURL  string             `json:"image_url"`
-	Stock     StockInfo          `json:"stock"`
-	CreatedAt time.Time          `json:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	PriceAmount int64     `json:"price_amount"`
+	Currency    string    `json:"currency"`
+	ImageURL    string    `json:"image_url"`
+	Stock       StockInfo `json:"stock"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // StockInfo represents stock information
@@ -58,22 +54,4 @@ type CommitStockResponse struct {
 	FailedItems    []StockReservationItem `json:"failed_items"`
 	Success        bool                   `json:"success"`
 	Message        string                 `json:"message"`
-}
-
-// NewProductResponse creates a ProductResponse from product entity with optional stock info
-func NewProductResponse(product *entities.Product, stockInfo ...StockInfo) *ProductResponse {
-	var stock StockInfo
-	if len(stockInfo) > 0 {
-		stock = stockInfo[0]
-	}
-
-	return &ProductResponse{
-		ID:        product.ID,
-		Name:      product.Name,
-		Price:     product.Price,
-		ImageURL:  product.ImageURL,
-		Stock:     stock,
-		CreatedAt: product.CreatedAt,
-		UpdatedAt: product.UpdatedAt,
-	}
 }

@@ -3,11 +3,11 @@ package consumer
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
 )
 

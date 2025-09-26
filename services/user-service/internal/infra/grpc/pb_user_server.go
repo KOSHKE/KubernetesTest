@@ -4,12 +4,11 @@ import (
 	"context"
 	"time"
 
+	dto "ecommerce-platform/pkg/common/dto/user-service"
 	"ecommerce-platform/pkg/common/grpcutils"
 	"ecommerce-platform/pkg/metrics"
 	userpb "ecommerce-platform/proto-go/user"
-	"ecommerce-platform/services/user-service/internal/application/dto"
 	appsvc "ecommerce-platform/services/user-service/internal/application/services"
-	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
 	userMetrics "ecommerce-platform/services/user-service/internal/metrics"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,30 +40,12 @@ func (s *PBUserServer) Register(ctx context.Context, req *userpb.RegisterRequest
 	}()
 
 	// Convert gRPC request to DTO
-	email, err := valueobjects.NewEmail(req.Email)
-	if err != nil {
-		status = "error"
-		return nil, grpcutils.MapErrorToStatus(err)
-	}
-
-	firstName := valueobjects.NewName(req.FirstName)
-	lastName := valueobjects.NewName(req.LastName)
-
-	var phone valueobjects.Phone
-	if req.Phone != "" {
-		phone, err = valueobjects.NewPhone(req.Phone)
-		if err != nil {
-			status = "error"
-			return nil, grpcutils.MapErrorToStatus(err)
-		}
-	}
-
 	appReq := &dto.RegisterUserRequest{
-		Email:     email,
+		Email:     req.Email,
 		Password:  req.Password,
-		FirstName: firstName,
-		LastName:  lastName,
-		Phone:     phone,
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		Phone:     req.Phone,
 	}
 
 	// Register user
@@ -105,14 +86,8 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 	}()
 
 	// Convert gRPC request to DTO
-	email, err := valueobjects.NewEmail(req.Email)
-	if err != nil {
-		status = "error"
-		return nil, grpcutils.MapErrorToStatus(err)
-	}
-
 	appReq := &dto.LoginRequest{
-		Email:    email,
+		Email:    req.Email,
 		Password: req.Password,
 	}
 
@@ -134,8 +109,8 @@ func (s *PBUserServer) Login(ctx context.Context, req *userpb.LoginRequest) (*us
 			Phone:     response.Phone,
 		}),
 		SessionId:    response.SessionID,
-		AccessToken:  response.AccessToken.String(),
-		RefreshToken: response.RefreshToken.String(),
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
 		ExpiresIn:    int64(time.Until(response.ExpiresAt).Seconds()),
 	}
 
@@ -199,8 +174,8 @@ func (s *PBUserServer) RefreshToken(ctx context.Context, req *userpb.RefreshToke
 
 	// Convert response to gRPC
 	grpcResponse := &userpb.RefreshTokenResponse{
-		AccessToken:  response.AccessToken.String(),
-		RefreshToken: response.RefreshToken.String(),
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
 		ExpiresIn:    int64(time.Until(response.ExpiresAt).Seconds()),
 	}
 
@@ -241,10 +216,10 @@ func (s *PBUserServer) Logout(ctx context.Context, req *userpb.LogoutRequest) (*
 func mapUserResponseToPB(u *dto.GetUserResponse) *userpb.User {
 	return &userpb.User{
 		Id:        u.UserID,
-		Email:     u.Email.String(),
-		FirstName: u.FirstName.String(),
-		LastName:  u.LastName.String(),
-		Phone:     u.Phone.String(),
+		Email:     u.Email,
+		FirstName: u.FirstName,
+		LastName:  u.LastName,
+		Phone:     u.Phone,
 		CreatedAt: timestamppb.New(u.CreatedAt),
 		UpdatedAt: timestamppb.New(u.UpdatedAt),
 	}

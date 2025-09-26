@@ -3,10 +3,11 @@ package services
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/payment-service"
+	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/pkg/validation"
-	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/application/usecases"
 	"ecommerce-platform/services/payment-service/internal/domain/ports/repository"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
@@ -53,7 +54,12 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 	}
 
 	// Convert DTO to domain parameters
-	amount := req.Amount
+	currency, err := valueobjects.NewCurrency(req.AmountCurrency)
+	if err != nil {
+		s.logger.Error("Invalid currency", "currency", req.AmountCurrency, "error", err)
+		return nil, err
+	}
+	amount := valueobjects.NewMoney(req.AmountAmount, currency)
 	method := paymentvalueobjects.PaymentMethod(req.Method)
 
 	// Execute use case with business logic only
@@ -70,15 +76,16 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 	}
 
 	eventData := dto.PaymentEventDTO{
-		OrderID:       payment.OrderID,
-		PaymentID:     payment.ID,
-		UserID:        payment.UserID,
-		Amount:        payment.Amount,
-		Status:        payment.Status,
-		Method:        payment.Method,
-		TransactionID: payment.TransactionID,
-		Success:       payment.Status == paymentvalueobjects.PaymentStatusCompleted,
-		Message:       message,
+		OrderID:        payment.OrderID,
+		PaymentID:      payment.ID,
+		UserID:         payment.UserID,
+		AmountAmount:   payment.Amount.Amount,
+		AmountCurrency: payment.Amount.Currency.Code,
+		Status:         string(payment.Status),
+		Method:         string(payment.Method),
+		TransactionID:  payment.TransactionID,
+		Success:        payment.Status == paymentvalueobjects.PaymentStatusCompleted,
+		Message:        message,
 	}
 
 	event := outbox.Event{
@@ -96,14 +103,15 @@ func (s *PaymentApplicationService) ProcessPayment(ctx context.Context, req *dto
 
 	// Convert entity to DTO response
 	return &dto.PaymentResponse{
-		ID:            payment.ID,
-		OrderID:       payment.OrderID,
-		UserID:        payment.UserID,
-		Amount:        payment.Amount,
-		Status:        payment.Status,
-		Method:        payment.Method,
-		TransactionID: payment.TransactionID,
-		CreatedAt:     payment.CreatedAt,
-		UpdatedAt:     payment.UpdatedAt,
+		ID:             payment.ID,
+		OrderID:        payment.OrderID,
+		UserID:         payment.UserID,
+		AmountAmount:   payment.Amount.Amount,
+		AmountCurrency: payment.Amount.Currency.Code,
+		Status:         string(payment.Status),
+		Method:         string(payment.Method),
+		TransactionID:  payment.TransactionID,
+		CreatedAt:      payment.CreatedAt,
+		UpdatedAt:      payment.UpdatedAt,
 	}, nil
 }

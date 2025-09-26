@@ -3,13 +3,12 @@ package services
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/user-service"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/validation"
-	"ecommerce-platform/services/user-service/internal/application/dto"
 	"ecommerce-platform/services/user-service/internal/application/usecases"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/ports/services"
-	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
 )
 
 // UserApplicationService provides the main interface for user operations
@@ -52,24 +51,19 @@ func (s *UserApplicationService) RegisterUser(ctx context.Context, req *dto.Regi
 	}
 
 	// Convert DTO to domain parameters
-	user, err := s.registerUserUseCase.Execute(ctx, req.Email.String(), req.Password, req.FirstName.String(), req.LastName.String(), req.Phone.String())
+	user, err := s.registerUserUseCase.Execute(ctx, req.Email, req.Password, req.FirstName, req.LastName, req.Phone)
 	if err != nil {
 		s.logger.Error("failed to register user", "error", err)
 		return nil, err
 	}
 
 	// Convert domain entity to DTO response
-	email, _ := valueobjects.NewEmail(user.Email.Value())
-	firstName := valueobjects.NewName(user.FirstName.Value())
-	lastName := valueobjects.NewName(user.LastName.Value())
-	phone, _ := valueobjects.NewPhone(user.Phone.Value())
-
 	return &dto.RegisterUserResponse{
 		UserID:    user.ID,
-		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
-		Phone:     phone,
+		Email:     user.Email.Value(),
+		FirstName: user.FirstName.Value(),
+		LastName:  user.LastName.Value(),
+		Phone:     user.Phone.Value(),
 		CreatedAt: user.CreatedAt,
 	}, nil
 }
@@ -83,29 +77,22 @@ func (s *UserApplicationService) LoginUser(ctx context.Context, req *dto.LoginRe
 	}
 
 	// Convert DTO to domain parameters
-	user, session, err := s.loginUserUseCase.Execute(ctx, req.Email.String(), req.Password)
+	user, session, err := s.loginUserUseCase.Execute(ctx, req.Email, req.Password)
 	if err != nil {
 		s.logger.Error("failed to login user", "email", req.Email, "error", err)
 		return nil, err
 	}
 
 	// Convert domain objects to DTO response
-	email, _ := valueobjects.NewEmail(user.Email.Value())
-	firstName := valueobjects.NewName(user.FirstName.Value())
-	lastName := valueobjects.NewName(user.LastName.Value())
-	phone, _ := valueobjects.NewPhone(user.Phone.Value())
-	accessToken := valueobjects.NewToken(session.AccessToken.Value, session.ExpiresAt)
-	refreshToken := valueobjects.NewToken(session.RefreshToken.Value, session.ExpiresAt)
-
 	return &dto.LoginResponse{
 		UserID:       user.ID,
-		Email:        email,
-		FirstName:    firstName,
-		LastName:     lastName,
-		Phone:        phone,
+		Email:        user.Email.Value(),
+		FirstName:    user.FirstName.Value(),
+		LastName:     user.LastName.Value(),
+		Phone:        user.Phone.Value(),
 		SessionID:    session.ID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		AccessToken:  session.AccessToken.Value,
+		RefreshToken: session.RefreshToken.Value,
 		ExpiresAt:    session.ExpiresAt,
 	}, nil
 }
@@ -126,17 +113,12 @@ func (s *UserApplicationService) GetUser(ctx context.Context, req *dto.GetUserRe
 	}
 
 	// Convert domain entity to DTO response
-	email, _ := valueobjects.NewEmail(user.Email.Value())
-	firstName := valueobjects.NewName(user.FirstName.Value())
-	lastName := valueobjects.NewName(user.LastName.Value())
-	phone, _ := valueobjects.NewPhone(user.Phone.Value())
-
 	return &dto.GetUserResponse{
 		UserID:    user.ID,
-		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
-		Phone:     phone,
+		Email:     user.Email.Value(),
+		FirstName: user.FirstName.Value(),
+		LastName:  user.LastName.Value(),
+		Phone:     user.Phone.Value(),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}, nil
@@ -158,12 +140,9 @@ func (s *UserApplicationService) RefreshToken(ctx context.Context, req *dto.Refr
 	}
 
 	// Convert domain object to DTO response
-	accessToken := valueobjects.NewToken(session.AccessToken.Value, session.ExpiresAt)
-	refreshToken := valueobjects.NewToken(session.RefreshToken.Value, session.ExpiresAt)
-
 	return &dto.RefreshTokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		AccessToken:  session.AccessToken.Value,
+		RefreshToken: session.RefreshToken.Value,
 		ExpiresAt:    session.ExpiresAt,
 	}, nil
 }

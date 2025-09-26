@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	dto "ecommerce-platform/pkg/common/dto/payment-service"
 	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/application/services"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 	"ecommerce-platform/services/payment-service/internal/infra/repository"
@@ -53,11 +53,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		method := paymentvalueobjects.PaymentMethodCreditCard
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-123",
-			OrderID:   orderID,
-			UserID:    userID,
-			Amount:    amount,
-			Method:    method,
+			PaymentID:      "payment-123",
+			OrderID:        orderID,
+			UserID:         userID,
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(method),
 		}
 
 		// Configure mocks
@@ -79,11 +80,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		require.NotNil(t, response)
 		assert.Equal(t, orderID, response.OrderID)
 		assert.Equal(t, userID, response.UserID)
-		assert.Equal(t, amount, response.Amount)
-		assert.Equal(t, method, response.Method)
+		assert.Equal(t, amount.Amount, response.AmountAmount)
+		assert.Equal(t, amount.Currency.Code, response.AmountCurrency)
+		assert.Equal(t, string(method), response.Method)
 		assert.NotEmpty(t, response.ID)
-		assert.True(t, response.Status == paymentvalueobjects.PaymentStatusCompleted ||
-			response.Status == paymentvalueobjects.PaymentStatusFailed)
+		assert.True(t, response.Status == string(paymentvalueobjects.PaymentStatusCompleted) ||
+			response.Status == string(paymentvalueobjects.PaymentStatusFailed))
 
 		// Check that event is saved to outbox
 		require.Eventually(t, func() bool {
@@ -112,11 +114,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		amount := valueobjects.NewMoney(5000, currency)
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-eur-123",
-			OrderID:   "order-eur-123",
-			UserID:    "user-eur-456",
-			Amount:    amount,
-			Method:    paymentvalueobjects.PaymentMethodCreditCard,
+			PaymentID:      "payment-eur-123",
+			OrderID:        "order-eur-123",
+			UserID:         "user-eur-456",
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 		}
 
 		// Configure mocks
@@ -136,8 +139,8 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		// Assert
 		require.NoError(t, err)
 		require.NotNil(t, response)
-		assert.Equal(t, "EUR", response.Amount.Currency.Code)
-		assert.Equal(t, int64(5000), response.Amount.Amount)
+		assert.Equal(t, "EUR", response.AmountCurrency)
+		assert.Equal(t, int64(5000), response.AmountAmount)
 
 		// Check outbox event
 		require.Eventually(t, func() bool {
@@ -156,11 +159,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		amount := valueobjects.NewMoney(0, currency)
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-zero-123",
-			OrderID:   "order-zero-123",
-			UserID:    "user-zero-456",
-			Amount:    amount,
-			Method:    paymentvalueobjects.PaymentMethodCreditCard,
+			PaymentID:      "payment-zero-123",
+			OrderID:        "order-zero-123",
+			UserID:         "user-zero-456",
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 		}
 
 		// Configure mocks
@@ -180,7 +184,7 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		// Assert
 		require.NoError(t, err)
 		require.NotNil(t, response)
-		assert.Equal(t, int64(0), response.Amount.Amount)
+		assert.Equal(t, int64(0), response.AmountAmount)
 
 		// Check outbox event
 		require.Eventually(t, func() bool {
@@ -199,11 +203,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		amount := valueobjects.NewMoney(-100, currency)
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-negative-123",
-			OrderID:   "order-negative-123",
-			UserID:    "user-negative-456",
-			Amount:    amount,
-			Method:    paymentvalueobjects.PaymentMethodCreditCard,
+			PaymentID:      "payment-negative-123",
+			OrderID:        "order-negative-123",
+			UserID:         "user-negative-456",
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 		}
 
 		// Configure mocks
@@ -223,7 +228,7 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		// Assert
 		require.NoError(t, err)
 		require.NotNil(t, response)
-		assert.Equal(t, int64(-100), response.Amount.Amount)
+		assert.Equal(t, int64(-100), response.AmountAmount)
 
 		// Check outbox event
 		require.Eventually(t, func() bool {
@@ -262,12 +267,14 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		currency, _ := valueobjects.NewCurrency("USD")
 
 		for _, p := range payments {
+			amount := valueobjects.NewMoney(p.amount, currency)
 			req := &dto.ProcessPaymentRequest{
-				PaymentID: "payment-" + p.orderID,
-				OrderID:   p.orderID,
-				UserID:    p.userID,
-				Amount:    valueobjects.NewMoney(p.amount, currency),
-				Method:    paymentvalueobjects.PaymentMethodCreditCard,
+				PaymentID:      "payment-" + p.orderID,
+				OrderID:        p.orderID,
+				UserID:         p.userID,
+				AmountAmount:   amount.Amount,
+				AmountCurrency: amount.Currency.Code,
+				Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 			}
 
 			response, err := paymentSvc.ProcessPayment(ctx, req)
@@ -301,11 +308,12 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		amount := valueobjects.NewMoney(1500, currency)
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-details-123",
-			OrderID:   "order-details-123",
-			UserID:    "user-details-456",
-			Amount:    amount,
-			Method:    paymentvalueobjects.PaymentMethodCreditCard,
+			PaymentID:      "payment-details-123",
+			OrderID:        "order-details-123",
+			UserID:         "user-details-456",
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 			Details: &dto.PaymentDetails{
 				CardNumber:  "4111111111111111",
 				CardHolder:  "John Doe",
@@ -334,7 +342,8 @@ func TestPaymentProcessingIntegration(t *testing.T) {
 		require.NotNil(t, response)
 		assert.Equal(t, req.OrderID, response.OrderID)
 		assert.Equal(t, req.UserID, response.UserID)
-		assert.Equal(t, req.Amount, response.Amount)
+		assert.Equal(t, req.AmountAmount, response.AmountAmount)
+		assert.Equal(t, req.AmountCurrency, response.AmountCurrency)
 
 		// Check outbox event
 		require.Eventually(t, func() bool {
@@ -372,11 +381,12 @@ func TestPaymentOutboxReliability(t *testing.T) {
 		amount := valueobjects.NewMoney(1000, currency)
 
 		req := &dto.ProcessPaymentRequest{
-			PaymentID: "payment-reliability-123",
-			OrderID:   "order-reliability-123",
-			UserID:    "user-reliability-456",
-			Amount:    amount,
-			Method:    paymentvalueobjects.PaymentMethodCreditCard,
+			PaymentID:      "payment-reliability-123",
+			OrderID:        "order-reliability-123",
+			UserID:         "user-reliability-456",
+			AmountAmount:   amount.Amount,
+			AmountCurrency: amount.Currency.Code,
+			Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 		}
 
 		// Configure mock logger to return error (simulating logging failure)
@@ -421,12 +431,14 @@ func TestPaymentOutboxReliability(t *testing.T) {
 		orderIDs := []string{"order-1", "order-2", "order-3"}
 
 		for _, orderID := range orderIDs {
+			amount := valueobjects.NewMoney(1000, currency)
 			req := &dto.ProcessPaymentRequest{
-				PaymentID: "payment-" + orderID,
-				OrderID:   orderID,
-				UserID:    "user-" + orderID,
-				Amount:    valueobjects.NewMoney(1000, currency),
-				Method:    paymentvalueobjects.PaymentMethodCreditCard,
+				PaymentID:      "payment-" + orderID,
+				OrderID:        orderID,
+				UserID:         "user-" + orderID,
+				AmountAmount:   amount.Amount,
+				AmountCurrency: amount.Currency.Code,
+				Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 			}
 
 			_, err := paymentSvc.ProcessPayment(ctx, req)
@@ -498,11 +510,12 @@ func TestPaymentConcurrency(t *testing.T) {
 			go func(oid string) {
 				defer wg.Done()
 				req := &dto.ProcessPaymentRequest{
-					PaymentID: "payment-" + oid,
-					OrderID:   oid,
-					UserID:    "user-" + oid,
-					Amount:    amount,
-					Method:    paymentvalueobjects.PaymentMethodCreditCard,
+					PaymentID:      "payment-" + oid,
+					OrderID:        oid,
+					UserID:         "user-" + oid,
+					AmountAmount:   amount.Amount,
+					AmountCurrency: amount.Currency.Code,
+					Method:         string(paymentvalueobjects.PaymentMethodCreditCard),
 				}
 
 				_, err := paymentSvc.ProcessPayment(ctx, req)

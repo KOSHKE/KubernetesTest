@@ -6,19 +6,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"ecommerce-platform/pkg/common/valueobjects"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
 )
 
 // CreateTestProduct creates a test product
 func CreateTestProduct(t *testing.T, ctx context.Context, appService *services.InventoryApplicationService) *dto.ProductResponse {
-	currency, _ := valueobjects.NewCurrency("USD")
 	req := &dto.CreateProductRequest{
-		Name:     "Test Product",
-		Price:    valueobjects.Money{Amount: 1000, Currency: currency},
-		ImageURL: "https://example.com/image.jpg",
-		Stock:    nil, // Add stock separately
+		Name:        "Test Product",
+		PriceAmount: 1000,
+		Currency:    "USD",
+		ImageURL:    "https://example.com/image.jpg",
+		Stock:       nil, // Add stock separately
 	}
 
 	product, err := appService.CreateProduct(ctx, req)

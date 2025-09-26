@@ -3,12 +3,12 @@ package services
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	"ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/pkg/validation"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/usecases"
 	"ecommerce-platform/services/inventory-service/internal/domain/entities"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/repository"
@@ -93,8 +93,16 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 		return nil, err
 	}
 
+	// Convert DTO to domain objects
+	currency, err := valueobjects.NewCurrency(req.Currency)
+	if err != nil {
+		s.logger.Error("Invalid currency", "currency", req.Currency, "error", err)
+		return nil, errors.ErrInvalidCurrencyFormat
+	}
+	price := valueobjects.NewMoney(req.PriceAmount, currency)
+
 	// Create product
-	product, err := s.createProductUseCase.Execute(ctx, req.Name, req.Price, req.ImageURL, s.inventoryRepo)
+	product, err := s.createProductUseCase.Execute(ctx, req.Name, price, req.ImageURL, s.inventoryRepo)
 	if err != nil {
 		s.logger.Error("failed to create product", "name", req.Name, "error", err)
 		return nil, err
@@ -114,8 +122,17 @@ func (s *InventoryApplicationService) CreateProduct(ctx context.Context, req *dt
 		}
 	}
 
-	// Convert domain objects to DTO using the factory method
-	return dto.NewProductResponse(product, stockInfo), nil
+	// Convert domain objects to DTO
+	return &dto.ProductResponse{
+		ID:          product.ID,
+		Name:        product.Name,
+		PriceAmount: product.Price.Amount,
+		Currency:    product.Price.Currency.Code,
+		ImageURL:    product.ImageURL,
+		Stock:       stockInfo,
+		CreatedAt:   product.CreatedAt,
+		UpdatedAt:   product.UpdatedAt,
+	}, nil
 }
 
 // GetProduct retrieves a product by ID
@@ -137,8 +154,17 @@ func (s *InventoryApplicationService) GetProduct(ctx context.Context, productID 
 		}
 	}
 
-	// Convert entity to DTO using the factory method
-	return dto.NewProductResponse(product, stockInfo), nil
+	// Convert entity to DTO
+	return &dto.ProductResponse{
+		ID:          product.ID,
+		Name:        product.Name,
+		PriceAmount: product.Price.Amount,
+		Currency:    product.Price.Currency.Code,
+		ImageURL:    product.ImageURL,
+		Stock:       stockInfo,
+		CreatedAt:   product.CreatedAt,
+		UpdatedAt:   product.UpdatedAt,
+	}, nil
 }
 
 // ReserveStock reserves stock for an order
@@ -168,9 +194,16 @@ func (s *InventoryApplicationService) ReserveStock(ctx context.Context, req *dto
 		}
 
 		// Save event to outbox table (to be published later)
+		eventItems := make([]dto.StockEventItem, len(items))
+		for i, item := range items {
+			eventItems[i] = dto.StockEventItem{
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+			}
+		}
 		eventData := dto.StockEventDTO{
 			OrderID: req.OrderID,
-			Items:   items,
+			Items:   eventItems,
 		}
 		event := outbox.Event{
 			AggregateID: req.OrderID,
@@ -240,7 +273,16 @@ func (s *InventoryApplicationService) ListProducts(ctx context.Context, req *dto
 			}
 		}
 
-		productResponses[i] = *dto.NewProductResponse(productInventory.Product, stockInfo)
+		productResponses[i] = dto.ProductResponse{
+			ID:          productInventory.Product.ID,
+			Name:        productInventory.Product.Name,
+			PriceAmount: productInventory.Product.Price.Amount,
+			Currency:    productInventory.Product.Price.Currency.Code,
+			ImageURL:    productInventory.Product.ImageURL,
+			Stock:       stockInfo,
+			CreatedAt:   productInventory.Product.CreatedAt,
+			UpdatedAt:   productInventory.Product.UpdatedAt,
+		}
 	}
 
 	return &dto.ListProductsResponse{
@@ -278,9 +320,16 @@ func (s *InventoryApplicationService) ReleaseStock(ctx context.Context, req *dto
 		}
 
 		// Save event to outbox table (to be published later)
+		eventItems := make([]dto.StockEventItem, len(items))
+		for i, item := range items {
+			eventItems[i] = dto.StockEventItem{
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+			}
+		}
 		eventData := dto.StockEventDTO{
 			OrderID: req.OrderID,
-			Items:   items,
+			Items:   eventItems,
 		}
 		event := outbox.Event{
 			AggregateID: req.OrderID,
@@ -336,9 +385,16 @@ func (s *InventoryApplicationService) CommitStock(ctx context.Context, req *dto.
 		}
 
 		// Save event to outbox table (to be published later)
+		eventItems := make([]dto.StockEventItem, len(items))
+		for i, item := range items {
+			eventItems[i] = dto.StockEventItem{
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+			}
+		}
 		eventData := dto.StockEventDTO{
 			OrderID: req.OrderID,
-			Items:   items,
+			Items:   eventItems,
 		}
 		event := outbox.Event{
 			AggregateID: req.OrderID,

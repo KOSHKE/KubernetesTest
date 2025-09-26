@@ -3,10 +3,10 @@ package consumer
 import (
 	"context"
 
+	dto "ecommerce-platform/pkg/common/dto/payment-service"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/application/services"
 	paymentvalueobjects "ecommerce-platform/services/payment-service/internal/domain/valueobjects"
 )
@@ -41,10 +41,11 @@ func (h *EventHandlers) HandleStockReserved(ctx context.Context, evt *events.Sto
 
 	// Create payment processing request
 	req := &dto.ProcessPaymentRequest{
-		OrderID: evt.OrderId,
-		UserID:  evt.UserId,
-		Amount:  money,
-		Method:  method,
+		OrderID:        evt.OrderId,
+		UserID:         evt.UserId,
+		AmountAmount:   money.Amount,
+		AmountCurrency: money.Currency.Code,
+		Method:         string(method),
 	}
 
 	// Process payment

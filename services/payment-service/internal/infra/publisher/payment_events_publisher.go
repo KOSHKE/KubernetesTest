@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	dto "ecommerce-platform/pkg/common/dto/payment-service"
 	kafkaclient "ecommerce-platform/pkg/kafkaclient"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/payment-service/internal/application/dto"
 	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
 
 	"google.golang.org/protobuf/proto"
@@ -90,8 +90,8 @@ func (p *PaymentEventsPublisherImpl) publishPaymentProcessedFromOutbox(ctx conte
 		PaymentId:  paymentEvent.PaymentID,
 		Success:    paymentEvent.Success,
 		Message:    paymentEvent.Message,
-		Amount:     paymentEvent.Amount.Amount,
-		Currency:   paymentEvent.Amount.Currency.Code,
+		Amount:     paymentEvent.AmountAmount,
+		Currency:   paymentEvent.AmountCurrency,
 		OccurredAt: timestamppb.Now(),
 	}
 

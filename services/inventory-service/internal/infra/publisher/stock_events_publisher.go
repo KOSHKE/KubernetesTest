@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	kafkaclient "ecommerce-platform/pkg/kafkaclient"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/domain/ports/publisher"
 
 	"google.golang.org/protobuf/proto"

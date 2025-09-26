@@ -18,12 +18,11 @@ import (
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 
-	"ecommerce-platform/pkg/common/valueobjects"
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	"ecommerce-platform/pkg/logger"
 	"ecommerce-platform/pkg/outbox"
 	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/events"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
 	"ecommerce-platform/services/inventory-service/internal/infra/consumer"
 	"ecommerce-platform/services/inventory-service/internal/infra/migration"
@@ -643,12 +642,12 @@ func cleanDatabase(t *testing.T, db *gorm.DB) {
 }
 
 func createTestProduct(t *testing.T, ctx context.Context, appService *services.InventoryApplicationService) *dto.ProductResponse {
-	currency, _ := valueobjects.NewCurrency("USD")
 	req := &dto.CreateProductRequest{
-		Name:     "Test Product",
-		Price:    valueobjects.Money{Amount: 1000, Currency: currency},
-		ImageURL: "https://example.com/image.jpg",
-		Stock:    nil, // Add stock separately
+		Name:        "Test Product",
+		PriceAmount: 1000,
+		Currency:    "USD",
+		ImageURL:    "https://example.com/image.jpg",
+		Stock:       nil, // Add stock separately
 	}
 
 	product, err := appService.CreateProduct(ctx, req)

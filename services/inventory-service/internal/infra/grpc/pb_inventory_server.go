@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	dto "ecommerce-platform/pkg/common/dto/inventory-service"
 	"ecommerce-platform/pkg/common/grpcutils"
 	"ecommerce-platform/pkg/common/valueobjects"
 	"ecommerce-platform/proto-go/common"
 	"ecommerce-platform/proto-go/inventory"
-	"ecommerce-platform/services/inventory-service/internal/application/dto"
 	"ecommerce-platform/services/inventory-service/internal/application/services"
 	"ecommerce-platform/services/inventory-service/internal/metrics"
 )
@@ -73,8 +73,8 @@ func (s *PBInventoryServer) GetProducts(ctx context.Context, req *inventory.GetP
 			Id:   product.ID,
 			Name: product.Name,
 			Price: &common.Money{
-				Amount:   product.Price.Amount,
-				Currency: product.Price.Currency.String(),
+				Amount:   product.PriceAmount,
+				Currency: product.Currency,
 			},
 			ImageUrl:      product.ImageURL,
 			StockQuantity: product.Stock.AvailableQuantity,
@@ -112,8 +112,8 @@ func (s *PBInventoryServer) GetProduct(ctx context.Context, req *inventory.GetPr
 			Id:   response.ID,
 			Name: response.Name,
 			Price: &common.Money{
-				Amount:   response.Price.Amount,
-				Currency: response.Price.Currency.String(),
+				Amount:   response.PriceAmount,
+				Currency: response.Currency,
 			},
 			ImageUrl:      response.ImageURL,
 			StockQuantity: response.Stock.AvailableQuantity,
