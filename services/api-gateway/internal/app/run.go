@@ -51,6 +51,14 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	// Create handlers
 	orderHandler := handlers.NewOrderHandler(orderClient)
 	userHandler := handlers.NewUserHandler(userClient)
+	// Inventory client and handler
+	inventoryClient, err := clients.NewInventoryClient(cfg.Services.InventoryServiceURL)
+	if err != nil {
+		loggerAdapter.Error("failed to create inventory client", "error", err)
+		return fmt.Errorf("failed to create inventory client: %w", err)
+	}
+	defer func() { _ = inventoryClient.Close() }()
+	inventoryHandler := handlers.NewInventoryHandler(inventoryClient)
 
 	// Setup router
 	router := gin.New()
@@ -85,6 +93,13 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		users.Use(middleware.AuthMiddleware(jwtManager))
 		{
 			users.GET("/:id", userHandler.GetUser)
+		}
+
+		// Public inventory endpoints
+		inventory := api.Group("/inventory")
+		{
+			inventory.GET("/products", inventoryHandler.GetProducts)
+			inventory.GET("/products/:id", inventoryHandler.GetProduct)
 		}
 
 		// Protected orders endpoints
