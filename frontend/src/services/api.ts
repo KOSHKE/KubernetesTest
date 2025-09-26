@@ -1,14 +1,17 @@
 import axios from 'axios';
 import type { CreateOrderRequest } from '../types';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8080';
+const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8080';
+const TRIMMED = RAW_API_URL.replace(/\/+$/, '');
+const BASE_URL = TRIMMED.endsWith('/api/v1') ? TRIMMED : `${TRIMMED}/api/v1`;
 
 // Create axios instance
 const api = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1`,
+  baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000,
   withCredentials: false,
 });
 
@@ -32,8 +35,6 @@ export const productsAPI = {
     api.get('/inventory/products', { params, withCredentials: false }),
   getProduct: (id: string) =>
     api.get(`/inventory/products/${id}`, { withCredentials: false }),
-  getCategories: () =>
-    api.get('/inventory/categories?active_only=true', { withCredentials: false }),
 };
 
 // Orders API (requires authentication)

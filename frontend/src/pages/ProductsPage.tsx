@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { productsAPI } from '../services/api';
 import { useQuery } from '@tanstack/react-query';
-import type { Product, Category, CartItem } from '../types';
+import type { Product, CartItem } from '../types';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import InputLabel from '@mui/material/InputLabel';
-import FormControl from '@mui/material/FormControl';
+// Removed categories UI imports
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
@@ -26,20 +23,16 @@ interface ProductsPageProps {
 }
 
 const ProductsPage: React.FC<ProductsPageProps> = () => {
-  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
 
-  useEffect(() => {
-    loadCategories();
-  }, []);
-
   const { data: productsData, isFetching, error: queryError } = useQuery({
-    queryKey: ['products', selectedCategory],
+    queryKey: ['products', selectedCategory, searchTerm],
     queryFn: async () => {
       const params: { category_id?: string } = {};
       if (selectedCategory) params.category_id = selectedCategory;
+      // NOTE: search is applied client-side below; if backend supports, pass search too
       try {
         const response = await productsAPI.getProducts(params as any);
         const fetched = (response.data.data.products || []) as Product[];
@@ -131,22 +124,7 @@ const ProductsPage: React.FC<ProductsPageProps> = () => {
               }
             }}
           >
-            <FormControl>
-              <InputLabel id="category-label">Category</InputLabel>
-              <Select
-                labelId="category-label"
-                id="category"
-                label="Category"
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                sx={{ borderRadius: 2 }}
-              >
-                <MenuItem value="">All Categories</MenuItem>
-                {categories.map(category => (
-                  <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {/* Categories removed: backend/gateway doesn't expose categories */}
             <TextField
               id="search"
               placeholder="Search products..."

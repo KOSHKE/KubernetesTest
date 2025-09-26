@@ -22,7 +22,8 @@ export interface LoginResponse {
   };
   access_token: string;
   refresh_token: string;
-  expires_in: number;
+  session_id: string;
+  expires_at?: string;
 }
 
 export interface RegisterResponse {
@@ -36,12 +37,12 @@ export interface RegisterResponse {
 }
 
 export interface RefreshTokenRequest {
-  refresh_token: string;
+  session_id: string;
 }
 
 export interface RefreshTokenResponse {
   access_token: string;
-  expires_in: number;
+  expires_at?: string;
 }
 
 export interface LogoutRequest {
@@ -51,11 +52,13 @@ export interface LogoutRequest {
 class AuthService {
   private accessTokenKey = 'access_token';
   private refreshTokenKey = 'refresh_token';
+  private sessionIdKey = 'session_id';
 
   // Store tokens in localStorage
-  setTokens(accessToken: string, refreshToken: string): void {
+  setTokens(accessToken: string, refreshToken: string, sessionId?: string): void {
     localStorage.setItem(this.accessTokenKey, accessToken);
     localStorage.setItem(this.refreshTokenKey, refreshToken);
+    if (sessionId) localStorage.setItem(this.sessionIdKey, sessionId);
   }
 
   // Get access token
@@ -68,10 +71,16 @@ class AuthService {
     return localStorage.getItem(this.refreshTokenKey);
   }
 
+  // Get session id
+  getSessionId(): string | null {
+    return localStorage.getItem(this.sessionIdKey);
+  }
+
   // Clear tokens
   clearTokens(): void {
     localStorage.removeItem(this.accessTokenKey);
     localStorage.removeItem(this.refreshTokenKey);
+    localStorage.removeItem(this.sessionIdKey);
   }
 
   // Check if user is authenticated
@@ -86,7 +95,7 @@ class AuthService {
       const { data } = response.data;
       
       // Store tokens
-      this.setTokens(data.access_token, data.refresh_token);
+      this.setTokens(data.access_token, data.refresh_token, data.session_id);
       
       // Set default authorization header
       api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
@@ -120,15 +129,13 @@ class AuthService {
 
   // Refresh access token
   async refreshToken(): Promise<string | null> {
-    const refreshToken = this.getRefreshToken();
-    if (!refreshToken) {
+    const sessionId = this.getSessionId();
+    if (!sessionId) {
       return null;
     }
 
     try {
-      const response = await api.post('/auth/refresh', {
-        refresh_token: refreshToken
-      });
+      const response = await api.post('/auth/refresh', { session_id: sessionId });
       
       const { data } = response.data;
       const newAccessToken = data.access_token;
@@ -150,13 +157,10 @@ class AuthService {
 
   // Logout user
   async logout(): Promise<void> {
-    const refreshToken = this.getRefreshToken();
-    
-    if (refreshToken) {
+    const sessionId = this.getSessionId();
+    if (sessionId) {
       try {
-        await api.post('/auth/logout', {
-          refresh_token: refreshToken
-        });
+        await api.post('/auth/logout', { session_id: sessionId });
       } catch (error) {
         // Continue with logout even if API call fails
       }
