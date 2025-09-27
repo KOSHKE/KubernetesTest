@@ -37,6 +37,8 @@ generate-mocks: ## Generate mocks for all services using gomock (Docker-based)
 		-v go-build-cache:/root/.cache/go-build \
 		$(GO_TEST_IMAGE) sh -c " \
 			go install go.uber.org/mock/mockgen@latest && \
+			cd /workspace/services/api-gateway && \
+			go generate ./tests/mocks/generate.go && \
 			cd /workspace/services/inventory-service && \
 			go generate ./tests/mocks/generate.go && \
 			cd /workspace/services/user-service && \
@@ -58,4 +60,5 @@ test: ## Run all tests locally
 	@cd services/order-service && go test -tags=integration -v ./tests/integration/...
 	@cd services/payment-service && go test ./tests/unit/...
 	@cd services/payment-service && go test -tags=integration -v ./tests/integration/...
+	@cd services/api-gateway && go test -tags=integration -v ./tests/integration/...
 	@echo "All tests completed!"
