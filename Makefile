@@ -18,8 +18,6 @@ proto-clean: ## Remove generated protobuf stubs
 	@rm -rf proto-go/*
 
 dev-up: ## Start local development environment with Air hot-reload (no rebuild)
-	@echo "Generating protobuf stubs (buf generate) and starting dev environment with Air..."
-	$(MAKE) proto
 	docker compose up -d
 
 dev-rebuild: ## Rebuild images and start dev environment with Air (one-off)

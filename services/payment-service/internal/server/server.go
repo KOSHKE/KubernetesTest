@@ -20,6 +20,7 @@ import (
 	"ecommerce-platform/services/payment-service/internal/domain/ports/publisher"
 	infraconsumer "ecommerce-platform/services/payment-service/internal/infra/consumer"
 	paymentgrpc "ecommerce-platform/services/payment-service/internal/infra/grpc"
+	"ecommerce-platform/services/payment-service/internal/infra/migration"
 	publisherimpl "ecommerce-platform/services/payment-service/internal/infra/publisher"
 	"ecommerce-platform/services/payment-service/internal/infra/repository"
 	paymentmetrics "ecommerce-platform/services/payment-service/internal/metrics"
@@ -73,11 +74,9 @@ func New(cfg *config.PaymentConfig, log *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	// Auto-migrate database if enabled
-	if cfg.Database.AutoMigrate {
-		if err := autoMigrateDatabase(db); err != nil {
-			return nil, fmt.Errorf("auto-migrate database: %w", err)
-		}
+	// Run migrations (consistent with inventory-service)
+	if err := runMigrations(db, loggerAdapter); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	// Create outbox repository
@@ -180,6 +179,18 @@ func initPublisher(cfg *config.PaymentConfig, logger logger.Logger) (publisher.P
 
 	logger.Info("payment events publisher initialized")
 	return eventPublisher, nil
+}
+
+func runMigrations(db *gorm.DB, logger logger.Logger) error {
+	logger.Info("running database migrations")
+
+	migrationService := migration.NewMigrationService(db)
+	if err := migrationService.Migrate(context.Background()); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	logger.Info("database migrations completed")
+	return nil
 }
 
 func (s *Server) initConsumers(cfg *config.PaymentConfig, logger logger.Logger) error {
@@ -417,24 +428,4 @@ func initDatabase(cfg *config.PaymentConfig, logger logger.Logger) (*gorm.DB, er
 
 	logger.Info("database connection established")
 	return db, nil
-}
-
-// autoMigrateDatabase runs database migrations
-func autoMigrateDatabase(db *gorm.DB) error {
-	// Import the outbox models for auto-migration
-	if err := db.AutoMigrate(&struct {
-		ID          uint `gorm:"primaryKey"`
-		CreatedAt   time.Time
-		UpdatedAt   time.Time
-		DeletedAt   gorm.DeletedAt `gorm:"index"`
-		AggregateID string         `gorm:"not null"`
-		Type        string         `gorm:"not null"`
-		Payload     string         `gorm:"type:jsonb"`
-		Processed   bool           `gorm:"default:false"`
-		Error       string
-	}{}); err != nil {
-		return fmt.Errorf("failed to auto-migrate outbox table: %w", err)
-	}
-
-	return nil
 }
