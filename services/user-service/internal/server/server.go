@@ -41,6 +41,7 @@ type Server struct {
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
 	health     *pkghealth.Manager
+	grpcHealth *pkghealth.GRPCHealthChecker
 
 	// database
 	db *gorm.DB
@@ -112,9 +113,8 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 	// Add Redis health check
 	healthManager.AddChecker(pkghealth.NewRedisChecker(redisClient))
 
-	// Create gRPC health checker that syncs with our health manager
+	// Create gRPC health checker; do not add to manager to avoid recursion
 	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
-	healthManager.AddChecker(grpcHealthChecker)
 
 	// Initialize user application service
 	userSvc := appsvc.NewUserApplicationService(userRepo, sessionRepo, tokenGenerator, loggerAdapter)
@@ -143,11 +143,12 @@ func New(cfg *config.UserConfig, log *zap.Logger) (*Server, error) {
 		userSvc:        userSvc,
 		metrics:        userMetrics,
 		health:         healthManager,
+		grpcHealth:     grpcHealthChecker,
 		redisClient:    redisClient,
 	}
 
-	// All components initialized successfully - check health status
-	s.health.IsHealthy(context.Background())
+	// Compute initial health once (non-blocking)
+	_ = s.health.IsHealthy(context.Background())
 
 	return s, nil
 }
@@ -276,6 +277,21 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		if err := s.grpcServer.Serve(lis); err != nil {
 			errCh <- fmt.Errorf("grpc serve: %w", err)
+		}
+	}()
+
+	// keep grpc health in sync periodically
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = s.health.IsHealthy(context.Background())
+				_ = s.grpcHealth.Check(context.Background())
+			}
 		}
 	}()
 

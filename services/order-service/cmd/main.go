@@ -4,7 +4,6 @@ import (
 	"context"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"ecommerce-platform/pkg/config"
 	"ecommerce-platform/services/order-service/internal/server"
@@ -38,10 +37,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-
-	// General timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	srv, err := server.New(cfg, log)
 	if err != nil {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os/signal"
 	"syscall"
 
@@ -43,7 +42,7 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to build server", zap.Error(err))
 	}
-	fmt.Println("BEFORE RUN")
+
 	if err := srv.Run(ctx); err != nil {
 		log.Fatal("server terminated with error", zap.Error(err))
 	}

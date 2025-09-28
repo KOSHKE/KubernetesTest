@@ -82,6 +82,13 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
+	// Seed initial data in development environment
+	if cfg.IsDevelopment() {
+		if err := migration.NewMigrationService(db).SeedData(context.Background()); err != nil {
+			return nil, fmt.Errorf("failed to seed data: %w", err)
+		}
+	}
+
 	// Initialize inventory repository
 	inventoryRepo := productRepoImpl.NewInventoryRepository(db)
 
@@ -166,7 +173,6 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 	// All components initialized successfully - compute initial health once
 	_ = s.health.IsHealthy(context.Background())
 
-	fmt.Println("AFTER HEALTH CHECK")
 	return s, nil
 }
 
@@ -264,7 +270,6 @@ func (s *Server) initConsumers(cfg *config.InventoryConfig, logger logger.Logger
 
 func (s *Server) Run(ctx context.Context) error {
 	// HTTP mux: /metrics, /healthz, /readyz
-	s.log.Info(">>> entered Run method <<<")
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

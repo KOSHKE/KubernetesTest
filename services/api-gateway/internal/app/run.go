@@ -13,31 +13,38 @@ import (
 	"ecommerce-platform/services/api-gateway/internal/handlers"
 	"ecommerce-platform/services/api-gateway/internal/middleware"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
-	// Create logger adapter
+	// Logger adapter
 	loggerAdapter := logger.NewZapLogger(log.Sugar())
 
-	// Create order client
+	// Create clients
 	orderClient, err := clients.NewOrderClient(cfg.Services.OrderServiceURL)
 	if err != nil {
 		loggerAdapter.Error("failed to create order client", "error", err)
 		return fmt.Errorf("failed to create order client: %w", err)
 	}
-	defer func() { _ = orderClient.Close() }()
+	defer orderClient.Close()
 
-	// Create user client
 	userClient, err := clients.NewUserClient(cfg.Services.UserServiceURL)
 	if err != nil {
 		loggerAdapter.Error("failed to create user client", "error", err)
 		return fmt.Errorf("failed to create user client: %w", err)
 	}
-	defer func() { _ = userClient.Close() }()
+	defer userClient.Close()
 
-	// Create JWT manager
+	inventoryClient, err := clients.NewInventoryClient(cfg.Services.InventoryServiceURL)
+	if err != nil {
+		loggerAdapter.Error("failed to create inventory client", "error", err)
+		return fmt.Errorf("failed to create inventory client: %w", err)
+	}
+	defer inventoryClient.Close()
+
+	// JWT manager
 	jwtConfig := cfg.GetJWTConfig()
 	jwtManager := jwt.NewManager(jwt.Config{
 		AccessTokenSecret:  jwtConfig.AccessSecret,
@@ -48,32 +55,34 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		Audience:           jwtConfig.Audience,
 	})
 
-	// Create handlers
+	// Handlers
 	orderHandler := handlers.NewOrderHandler(orderClient)
 	userHandler := handlers.NewUserHandler(userClient)
-	// Inventory client and handler
-	inventoryClient, err := clients.NewInventoryClient(cfg.Services.InventoryServiceURL)
-	if err != nil {
-		loggerAdapter.Error("failed to create inventory client", "error", err)
-		return fmt.Errorf("failed to create inventory client: %w", err)
-	}
-	defer func() { _ = inventoryClient.Close() }()
 	inventoryHandler := handlers.NewInventoryHandler(inventoryClient)
 
-	// Setup router
+	// Router setup
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+
+	// --- CORS middleware (using gin-contrib/cors) ---
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.CORS.AllowedOrigins,
+		AllowMethods:     cfg.CORS.AllowedMethods,
+		AllowHeaders:     cfg.CORS.AllowedHeaders,
+		AllowCredentials: cfg.CORS.AllowCredentials,
+		MaxAge:           cfg.CORS.MaxAge,
+	}))
 
 	// Health check
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
 
-	// API routes - WITH AUTHENTICATION!
+	// API routes
 	api := router.Group("/api/v1")
 	{
-		// Public auth endpoints
+		// Public auth
 		authPublic := api.Group("/auth")
 		{
 			authPublic.POST("/register", userHandler.Register)
@@ -81,28 +90,28 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 			authPublic.POST("/refresh", userHandler.Refresh)
 		}
 
-		// Protected auth endpoints
+		// Protected auth
 		authProtected := api.Group("/auth")
 		authProtected.Use(middleware.AuthMiddleware(jwtManager))
 		{
 			authProtected.POST("/logout", userHandler.Logout)
 		}
 
-		// Protected users endpoints
+		// Protected users
 		users := api.Group("/users")
 		users.Use(middleware.AuthMiddleware(jwtManager))
 		{
 			users.GET("/:id", userHandler.GetUser)
 		}
 
-		// Public inventory endpoints
+		// Public inventory
 		inventory := api.Group("/inventory")
 		{
 			inventory.GET("/products", inventoryHandler.GetProducts)
 			inventory.GET("/products/:id", inventoryHandler.GetProduct)
 		}
 
-		// Protected orders endpoints
+		// Protected orders
 		orders := api.Group("/orders")
 		orders.Use(middleware.AuthMiddleware(jwtManager))
 		{
@@ -118,7 +127,6 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		Handler: router,
 	}
 
-	// Start server in goroutine
 	go func() {
 		loggerAdapter.Info("starting api-gateway", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -42,6 +42,7 @@ type Server struct {
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
 	health     *pkghealth.Manager
+	grpcHealth *pkghealth.GRPCHealthChecker
 
 	// database
 	db *gorm.DB
@@ -110,9 +111,8 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 	// Add database health check
 	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
 
-	// Create gRPC health checker that syncs with our health manager
+	// Create gRPC health checker; do not add to manager to avoid recursion
 	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
-	healthManager.AddChecker(grpcHealthChecker)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
@@ -137,6 +137,7 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 		metrics:         orderMetrics,
 		consumerManager: infraconsumer.NewConsumerManager(loggerAdapter),
 		health:          healthManager,
+		grpcHealth:      grpcHealthChecker,
 	}
 
 	// Initialize Kafka consumers if configured
@@ -159,8 +160,8 @@ func New(cfg *config.OrderConfig, log *zap.Logger) (*Server, error) {
 		return s.outboxPublisher != nil
 	}))
 
-	// All components initialized successfully - check health status
-	s.health.IsHealthy(context.Background())
+	// Compute initial health once (non-blocking)
+	_ = s.health.IsHealthy(context.Background())
 	loggerAdapter.Info("server initialized successfully and ready to serve requests")
 
 	return s, nil
@@ -346,6 +347,21 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		if err := s.grpcServer.Serve(lis); err != nil {
 			errCh <- fmt.Errorf("grpc serve: %w", err)
+		}
+	}()
+
+	// keep grpc health in sync periodically
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = s.health.IsHealthy(context.Background())
+				_ = s.grpcHealth.Check(context.Background())
+			}
 		}
 	}()
 
