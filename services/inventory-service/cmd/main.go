@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"ecommerce-platform/pkg/config"
 	"ecommerce-platform/services/inventory-service/internal/server"
@@ -39,15 +39,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	// General timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	srv, err := server.New(cfg, log)
 	if err != nil {
 		log.Fatal("failed to build server", zap.Error(err))
 	}
-
+	fmt.Println("BEFORE RUN")
 	if err := srv.Run(ctx); err != nil {
 		log.Fatal("server terminated with error", zap.Error(err))
 	}

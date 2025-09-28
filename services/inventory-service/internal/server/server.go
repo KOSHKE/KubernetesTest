@@ -42,6 +42,7 @@ type Server struct {
 	httpSrv    *http.Server
 	pprofSrv   *http.Server
 	health     *pkghealth.Manager
+	grpcHealth *pkghealth.GRPCHealthChecker
 
 	// database
 	db *gorm.DB
@@ -112,9 +113,8 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 	// Add database health check
 	healthManager.AddChecker(pkghealth.NewDatabaseChecker(db))
 
-	// Create gRPC health checker that syncs with our health manager
+	// Create gRPC health checker; do not add it to manager to avoid recursion
 	grpcHealthChecker := pkghealth.NewGRPCHealthChecker(healthManager)
-	healthManager.AddChecker(grpcHealthChecker)
 
 	// Initialize gRPC server
 	gs := grpc.NewServer()
@@ -139,6 +139,7 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 		metrics:         inventoryMetrics,
 		consumerManager: infraConsumer.NewConsumerManager(loggerAdapter),
 		health:          healthManager,
+		grpcHealth:      grpcHealthChecker,
 	}
 
 	// Initialize Kafka consumers if configured
@@ -156,14 +157,16 @@ func New(cfg *config.InventoryConfig, log *zap.Logger) (*Server, error) {
 		}))
 	}
 
+	fmt.Println("AFTER ADD CHECKER")
 	// Add outbox health check
 	s.health.AddChecker(pkghealth.NewOutboxChecker(func() bool {
 		return s.outboxPublisher != nil
 	}))
 
-	// All components initialized successfully - check health status
-	s.health.IsHealthy(context.Background())
+	// All components initialized successfully - compute initial health once
+	_ = s.health.IsHealthy(context.Background())
 
+	fmt.Println("AFTER HEALTH CHECK")
 	return s, nil
 }
 
@@ -261,6 +264,7 @@ func (s *Server) initConsumers(cfg *config.InventoryConfig, logger logger.Logger
 
 func (s *Server) Run(ctx context.Context) error {
 	// HTTP mux: /metrics, /healthz, /readyz
+	s.log.Info(">>> entered Run method <<<")
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -348,6 +352,21 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		if err := s.grpcServer.Serve(lis); err != nil {
 			errCh <- fmt.Errorf("grpc serve: %w", err)
+		}
+	}()
+
+	// keep grpc health status in sync without adding it as a checker (avoid recursion)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = s.health.IsHealthy(context.Background())
+				_ = s.grpcHealth.Check(context.Background())
+			}
 		}
 	}()
 
