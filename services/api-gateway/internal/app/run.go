@@ -8,6 +8,7 @@ import (
 
 	"ecommerce-platform/pkg/jwt"
 	"ecommerce-platform/pkg/logger"
+	"ecommerce-platform/pkg/metrics"
 	"ecommerce-platform/services/api-gateway/internal/clients"
 	"ecommerce-platform/services/api-gateway/internal/config"
 	"ecommerce-platform/services/api-gateway/internal/handlers"
@@ -126,6 +127,14 @@ func Run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		Addr:    ":" + cfg.Port,
 		Handler: router,
 	}
+
+	// Start metrics server on a dedicated port
+	metricsServer := metrics.NewMetricsServer(":"+cfg.MetricsPort, loggerAdapter)
+	go func() {
+		if err := metricsServer.Start(ctx); err != nil {
+			loggerAdapter.Error("failed to run metrics server", "error", err)
+		}
+	}()
 
 	go func() {
 		loggerAdapter.Info("starting api-gateway", "port", cfg.Port)

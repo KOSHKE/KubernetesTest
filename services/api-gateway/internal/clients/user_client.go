@@ -60,7 +60,8 @@ func (c *userClient) Register(ctx context.Context, req *dto.RegisterUserRequest)
 
 	resp, err := c.client.Register(ctx, pbReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register user: %w", err)
+		// return raw gRPC error so HTTP mapper can extract status/message
+		return nil, err
 	}
 
 	u := resp.GetUser()
@@ -82,7 +83,7 @@ func (c *userClient) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Log
 
 	resp, err := c.client.Login(ctx, pbReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to login user: %w", err)
+		return nil, err
 	}
 
 	u := resp.GetUser()
@@ -104,7 +105,7 @@ func (c *userClient) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Log
 func (c *userClient) GetUser(ctx context.Context, userID string) (*dto.GetUserResponse, error) {
 	resp, err := c.client.GetUser(ctx, &user.GetUserRequest{Id: userID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
 
 	u := resp.GetUser()
@@ -122,7 +123,7 @@ func (c *userClient) GetUser(ctx context.Context, userID string) (*dto.GetUserRe
 func (c *userClient) RefreshToken(ctx context.Context, req *dto.RefreshTokenRequest) (*dto.RefreshTokenResponse, error) {
 	resp, err := c.client.RefreshToken(ctx, &user.RefreshTokenRequest{SessionId: req.SessionID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to refresh token: %w", err)
+		return nil, err
 	}
 
 	expiresAt := time.Now().Add(time.Duration(resp.GetExpiresIn()) * time.Second)
@@ -136,7 +137,7 @@ func (c *userClient) RefreshToken(ctx context.Context, req *dto.RefreshTokenRequ
 func (c *userClient) Logout(ctx context.Context, sessionID string) error {
 	_, err := c.client.Logout(ctx, &user.LogoutRequest{SessionId: sessionID})
 	if err != nil {
-		return fmt.Errorf("failed to logout: %w", err)
+		return err
 	}
 	return nil
 }

@@ -1,13 +1,10 @@
 package valueobjects
 
 import (
-	"errors"
 	"regexp"
 	"strings"
-)
 
-var (
-	ErrInvalidPhone = errors.New("invalid phone format")
+	"ecommerce-platform/pkg/validation"
 )
 
 type Phone struct {
@@ -38,7 +35,7 @@ func (p Phone) Validate() error {
 
 	// Check if it's a valid international format
 	if !phoneRegex.MatchString(p.value) {
-		return ErrInvalidPhone
+		return validation.NewFieldError("Phone", "must be in E.164 format (e.g. +123456789)")
 	}
 
 	return nil

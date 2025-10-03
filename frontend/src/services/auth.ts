@@ -10,7 +10,7 @@ export interface RegisterRequest {
   password: string;
   first_name: string;
   last_name: string;
-  Phone?: string;
+  phone?: string;
 }
 
 export interface LoginResponse {
@@ -101,8 +101,18 @@ class AuthService {
       api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
       
       return data;
-    } catch (error) {
-      throw new Error('Login failed');
+    } catch (error: any) {
+      if (error.response?.data?.error?.message) {
+        throw new Error(error.response.data.error.message);
+      } else if (typeof error.response?.data?.error === 'string') {
+        throw new Error(error.response.data.error);
+      } else if (error.response?.data?.message) {
+        throw new Error(error.response.data.message);
+      } else if (error.message) {
+        throw new Error(error.message);
+      } else {
+        throw new Error('Login failed');
+      }
     }
   }
 
@@ -115,7 +125,9 @@ class AuthService {
       return data;
     } catch (error: any) {
       // Extract actual error message from server response
-      if (error.response?.data?.error) {
+      if (error.response?.data?.error?.message) {
+        throw new Error(error.response.data.error.message);
+      } else if (typeof error.response?.data?.error === 'string') {
         throw new Error(error.response.data.error);
       } else if (error.response?.data?.message) {
         throw new Error(error.response.data.message);

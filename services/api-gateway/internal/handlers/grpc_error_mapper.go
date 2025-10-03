@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -54,11 +55,40 @@ func handleGRPCError(c *gin.Context, err error) bool {
 		return true
 	}
 
+	st, ok := status.FromError(err)
+	if !ok {
+		respondError(c, 500, "internal_error", "Service temporarily unavailable")
+		return false
+	}
+
 	statusCode, code, message := mapGRPCErrorToHTTP(err)
 
-	// For 4xx errors, use the gRPC message
+	// For 4xx errors, include details if present
 	if statusCode >= 400 && statusCode < 500 {
-		respondError(c, statusCode, code, message)
+		var details []map[string]string
+		for _, d := range st.Details() {
+			switch det := d.(type) {
+			case *errdetails.BadRequest:
+				for _, fv := range det.FieldViolations {
+					details = append(details, map[string]string{
+						"field":       fv.Field,
+						"description": fv.Description,
+					})
+				}
+			}
+		}
+
+		if len(details) > 0 {
+			c.JSON(statusCode, gin.H{
+				"error": gin.H{
+					"code":    code,
+					"message": message,
+					"details": details,
+				},
+			})
+		} else {
+			respondError(c, statusCode, code, message)
+		}
 	} else {
 		// For 5xx errors, use generic message for security
 		respondError(c, statusCode, code, "Service temporarily unavailable")

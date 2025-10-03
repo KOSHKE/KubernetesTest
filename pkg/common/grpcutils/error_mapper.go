@@ -3,9 +3,12 @@ package grpcutils
 import (
 	"errors"
 	"log"
+	"strings"
 
 	commonErrors "ecommerce-platform/pkg/common/errors"
+	pkgvalidation "ecommerce-platform/pkg/validation"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -67,7 +70,7 @@ var errorMap = map[error]struct {
 	commonErrors.ErrOrderStatusUpdateFailed:   {codes.Internal, "failed to update order status"},
 	commonErrors.ErrOrderCancellationFailed:   {codes.Internal, "failed to cancel order"},
 	commonErrors.ErrOrderRetrievalFailed:      {codes.Internal, "failed to retrieve order"},
-	commonErrors.ErrOrderEventPublishFailed:   {codes.Internal, "failed to publish order event"},
+	commonErrors.ErrOrderEventPublishFailed:   {codes.Internal, "failed to publish order"},
 
 	// Order value object domain errors
 	commonErrors.ErrEmptyShippingAddress:         {codes.InvalidArgument, "shipping address cannot be empty"},
@@ -139,10 +142,32 @@ func MapErrorToStatus(err error) error {
 		return nil
 	}
 
+	// First, try to extract validation violations and attach as BadRequest details
+	if violations, ok := pkgvalidation.ExtractViolations(err); ok {
+		br := &errdetails.BadRequest{FieldViolations: make([]*errdetails.BadRequest_FieldViolation, 0, len(violations))}
+		for _, v := range violations {
+			br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{
+				Field:       v.Field,
+				Description: v.Description,
+			})
+		}
+
+		st := status.New(codes.InvalidArgument, pkgvalidation.BuildMessage(violations))
+		stWith, derr := st.WithDetails(br)
+		if derr == nil {
+			return stWith.Err()
+		}
+		return st.Err()
+	}
+
 	// Search in known error map
 	for e, mapping := range errorMap {
 		if errors.Is(err, e) {
-			return status.New(mapping.Code, mapping.Message).Err()
+			msg := mapping.Message
+			if len(msg) > 0 {
+				msg = strings.ToUpper(msg[:1]) + msg[1:]
+			}
+			return status.New(mapping.Code, msg).Err()
 		}
 	}
 
@@ -150,5 +175,5 @@ func MapErrorToStatus(err error) error {
 	log.Printf("[WARN] unmapped error: %v\n", err)
 
 	// Return safe message to client
-	return status.Errorf(codes.Internal, "internal server error")
+	return status.New(codes.Internal, "Internal server error").Err()
 }

@@ -1,18 +1,14 @@
 package valueobjects
 
 import (
-	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
-	"golang.org/x/crypto/bcrypt"
-)
+	commonErrors "ecommerce-platform/pkg/common/errors"
+	"ecommerce-platform/pkg/validation"
 
-var (
-	ErrInvalidPassword    = errors.New("invalid password format")
-	ErrPasswordTooShort   = errors.New("password too short")
-	ErrPasswordTooLong    = errors.New("password too long")
-	ErrPasswordHashFailed = errors.New("failed to hash password")
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Password struct {
@@ -29,7 +25,7 @@ func NewPassword(plainPassword string) (Password, error) {
 	// Hash the password
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return Password{}, ErrPasswordHashFailed
+		return Password{}, fmt.Errorf("%w: failed to hash password", commonErrors.ErrOperationFailed)
 	}
 
 	return Password{hashedValue: string(hashedBytes)}, nil
@@ -46,12 +42,12 @@ func validatePassword(password string) error {
 
 	// Check minimum length
 	if len(password) < 8 {
-		return ErrPasswordTooShort
+		return validation.NewFieldError("Password", "must be at least 8 characters")
 	}
 
 	// Check maximum length
 	if len(password) > 128 {
-		return ErrPasswordTooLong
+		return validation.NewFieldError("Password", "must be at most 128 characters")
 	}
 
 	// Check for at least one uppercase letter
@@ -64,7 +60,7 @@ func validatePassword(password string) error {
 	hasSpecial := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]`).MatchString(password)
 
 	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-		return ErrInvalidPassword
+		return validation.NewFieldError("Password", "must include uppercase, lowercase, digit and special character")
 	}
 
 	return nil

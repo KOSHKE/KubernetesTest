@@ -55,7 +55,7 @@ const RegisterPage: React.FC = () => {
         password: formData.password,
         first_name: formData.first_name,
         last_name: formData.last_name,
-        Phone: formData.phone,
+        phone: formData.phone,
       };
       
       await authService.register(requestData);
