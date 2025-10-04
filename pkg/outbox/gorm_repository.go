@@ -12,12 +12,25 @@ import (
 // GormRepository implements Repository using GORM
 // This is a shared implementation that can be used across all services
 type GormRepository struct {
-	db *gorm.DB
+	db        *gorm.DB
+	tableName string
 }
 
 // NewGormRepository creates a new GORM outbox repository
 func NewGormRepository(db *gorm.DB) Repository {
 	return &GormRepository{db: db}
+}
+
+// NewGormRepositoryWithTable creates a new GORM outbox repository targeting a specific table
+func NewGormRepositoryWithTable(db *gorm.DB, tableName string) Repository {
+	return &GormRepository{db: db, tableName: tableName}
+}
+
+func (r *GormRepository) tbl(tx *gorm.DB) *gorm.DB {
+	if r.tableName != "" {
+		return tx.Table(r.tableName)
+	}
+	return tx.Model(&OutboxRecord{})
 }
 
 // SaveEvent saves an event to the outbox table
@@ -39,13 +52,13 @@ func (r *GormRepository) SaveEvent(ctx context.Context, event Event) error {
 		Error:       event.Error,
 	}
 
-	return r.db.WithContext(ctx).Create(&record).Error
+	return r.tbl(r.db.WithContext(ctx)).Create(&record).Error
 }
 
 // GetUnprocessedEvents returns unprocessed events
 func (r *GormRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([]Event, error) {
 	var records []OutboxRecord
-	err := r.db.WithContext(ctx).
+	err := r.tbl(r.db.WithContext(ctx)).
 		Where("processed = ?", false).
 		Order("created_at ASC").
 		Limit(limit).
@@ -83,8 +96,7 @@ func (r *GormRepository) GetUnprocessedEvents(ctx context.Context, limit int) ([
 // MarkAsProcessed marks an event as processed
 func (r *GormRepository) MarkAsProcessed(ctx context.Context, id uint) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).
-		Model(&OutboxRecord{}).
+	return r.tbl(r.db.WithContext(ctx)).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"processed":    true,
@@ -97,8 +109,7 @@ func (r *GormRepository) MarkAsProcessed(ctx context.Context, id uint) error {
 // MarkAsFailed marks an event as failed
 func (r *GormRepository) MarkAsFailed(ctx context.Context, id uint, err string) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).
-		Model(&OutboxRecord{}).
+	return r.tbl(r.db.WithContext(ctx)).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
 			"processed":    false,

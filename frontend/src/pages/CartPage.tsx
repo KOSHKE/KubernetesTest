@@ -128,21 +128,15 @@ const CartPage: React.FC<CartPageProps> = ({ isAuthenticated, user }) => {
 
     try {
       const orderData: CreateOrderRequest = {
-        user_id: user.id, // Use real user ID instead of hardcoded dev-user-1
+        user_id: user.id,
         items: cartItems.map(item => ({
           product_id: item.product_id,
+          product_name: item.product_name,
           quantity: item.quantity,
+          price: Number(item.price?.amount || 0),
         })),
-        shipping_address: data.shipping_address,
-        payment_method: orderForm.payment_method,
-        payment_details: {
-          card_holder: data.card_holder,
-          card_number: data.card_number,
-          expiry_month: data.expiry_month,
-          expiry_year: data.expiry_year,
-          cvv: data.cvv,
-        },
-        currency: cartItems[0]?.price?.currency || 'USD', // Use currency from first item or default to USD
+        shipping_address: { address: data.shipping_address },
+        currency: cartItems[0]?.price?.currency || 'USD',
       };
 
       try {

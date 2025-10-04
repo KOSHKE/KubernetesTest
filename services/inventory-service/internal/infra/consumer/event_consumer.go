@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"reflect"
 
 	"ecommerce-platform/pkg/kafkaclient"
 
@@ -37,15 +38,13 @@ func NewEventConsumer[T proto.Message](
 	}
 
 	unmarshal := func(data []byte) (T, error) {
-		// Create new instance of T
-		evtPtr := new(T)
-		// Get the underlying type
-		evt := *evtPtr
-		// Unmarshal into the concrete type
-		if err := proto.Unmarshal(data, evt); err != nil {
-			return evt, err
+		var zero T
+		// T is proto.Message (обычно указатель). Создаём новый экземпляр через reflect.
+		msg := reflect.New(reflect.TypeOf(zero).Elem()).Interface().(T)
+		if err := proto.Unmarshal(data, msg); err != nil {
+			return zero, err
 		}
-		return evt, nil
+		return msg, nil
 	}
 
 	typedConsumer, err := kafkaclient.NewTypedConsumer(config, handler, unmarshal)

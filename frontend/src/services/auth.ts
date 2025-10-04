@@ -99,8 +99,26 @@ class AuthService {
       
       // Set default authorization header
       api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
-      
-      return data;
+
+      // Normalize user shape and persist for app reloads
+      const user = {
+        id: data.user_id,
+        email: data.email,
+        first_name: data.first_name,
+        last_name: data.last_name,
+      };
+      try {
+        localStorage.setItem('user_info', JSON.stringify(user));
+      } catch {}
+
+      // Return in expected shape for UI
+      return {
+        user,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        session_id: data.session_id,
+        expires_at: data.expires_at,
+      } as unknown as LoginResponse;
     } catch (error: any) {
       if (error.response?.data?.error?.message) {
         throw new Error(error.response.data.error.message);

@@ -89,7 +89,8 @@ func (p *StockEventsPublisherImpl) PublishFromOutbox(ctx context.Context, event 
 	case "StockCommitted":
 		return p.publishStockCommittedFromOutbox(ctx, event)
 	default:
-		return fmt.Errorf("unknown event type: %s", event.Type)
+		// Ignore unknown/foreign event types gracefully so different services can share DB
+		return nil
 	}
 }
 

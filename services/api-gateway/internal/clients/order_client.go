@@ -19,7 +19,7 @@ type OrderClient interface {
 	CreateOrder(ctx context.Context, req *dto.CreateOrderRequest) (*dto.CreateOrderResponse, error)
 	// Caller should pass ctx with timeout or deadline to avoid hanging calls
 	GetOrder(ctx context.Context, orderID string) (*dto.OrderResponse, error)
-	GetUserOrders(ctx context.Context, userID string) ([]*dto.OrderResponse, error)
+	GetUserOrders(ctx context.Context, userID string, page int32, limit int32) ([]*dto.OrderResponse, error)
 }
 
 type orderClient struct {
@@ -86,8 +86,10 @@ func (c *orderClient) CreateOrder(ctx context.Context, req *dto.CreateOrderReque
 	items := make([]*order.OrderItemRequest, 0, len(req.Items))
 	for _, item := range req.Items {
 		items = append(items, &order.OrderItemRequest{
-			ProductId: item.ProductID,
-			Quantity:  item.Quantity,
+			ProductId:   item.ProductID,
+			Quantity:    item.Quantity,
+			ProductName: item.ProductName,
+			UnitPrice:   item.Price,
 		})
 	}
 
@@ -123,8 +125,8 @@ func (c *orderClient) GetOrder(ctx context.Context, orderID string) (*dto.OrderR
 	return convertOrder(resp.Order), nil
 }
 
-func (c *orderClient) GetUserOrders(ctx context.Context, userID string) ([]*dto.OrderResponse, error) {
-	resp, err := c.client.GetUserOrders(ctx, &order.GetUserOrdersRequest{UserId: userID})
+func (c *orderClient) GetUserOrders(ctx context.Context, userID string, page int32, limit int32) ([]*dto.OrderResponse, error) {
+	resp, err := c.client.GetUserOrders(ctx, &order.GetUserOrdersRequest{UserId: userID, Page: page, Limit: limit})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user orders: %w", err)
 	}

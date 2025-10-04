@@ -31,7 +31,8 @@ func NewInventoryRepository(db *gorm.DB) repository.InventoryRepositoryFacade {
 			return &GormStockRepository{db: db}
 		},
 		outboxRepoFactory: func(db *gorm.DB) repository.OutboxRepository {
-			return outbox.NewGormRepository(db)
+			// Use service-specific outbox table for inventory service
+			return outbox.NewGormRepositoryWithTable(db, "inventory_outbox_events")
 		},
 	}
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	dto "ecommerce-platform/pkg/common/dto/order-service"
@@ -91,10 +92,24 @@ func (h *OrderHandler) GetUserOrders(c *gin.Context) {
 		return
 	}
 
+	// Read pagination params with defaults
+	page := int32(1)
+	limit := int32(20)
+	if v := c.Query("page"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			page = int32(parsed)
+		}
+	}
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			limit = int32(parsed)
+		}
+	}
+
 	// Ensure bounded RPC time
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultRPCTimeout)
 	defer cancel()
-	resp, err := h.orderClient.GetUserOrders(ctx, userID)
+	resp, err := h.orderClient.GetUserOrders(ctx, userID, page, limit)
 	if !handleGRPCError(c, err) {
 		return
 	}

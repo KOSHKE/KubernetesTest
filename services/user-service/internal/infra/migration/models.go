@@ -12,6 +12,11 @@ type MigrationRecord struct {
 	AppliedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
+// TableName returns dedicated table name for user-service migrations
+func (MigrationRecord) TableName() string {
+	return "user_migration_records"
+}
+
 // UserRecord is a GORM model for users (copied from repository)
 type UserRecord struct {
 	ID           string    `gorm:"primaryKey;type:varchar(255)"`

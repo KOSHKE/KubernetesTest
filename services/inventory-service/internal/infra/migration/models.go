@@ -14,6 +14,11 @@ type MigrationRecord struct {
 	AppliedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
+// TableName returns dedicated table name for inventory-service migrations
+func (MigrationRecord) TableName() string {
+	return "inventory_migration_records"
+}
+
 // ProductRecord represents the product table structure
 type ProductRecord struct {
 	ID        string    `gorm:"primaryKey;type:varchar(255)"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	cmnerrors "ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
 	"ecommerce-platform/services/user-service/internal/domain/valueobjects"
@@ -75,14 +76,20 @@ func (r *GormUserRepository) WithTransaction(ctx context.Context, fn func(reposi
 func (r *GormUserRepository) Create(ctx context.Context, user *entities.User) error {
 	rec := recordFromEntity(user)
 	result := r.db.WithContext(ctx).Create(&rec)
-	return result.Error
+	if result.Error != nil {
+		return cmnerrors.ErrDatabaseOperationFailed
+	}
+	return nil
 }
 
 func (r *GormUserRepository) GetByID(ctx context.Context, id string) (*entities.User, error) {
 	var rec userRecord
 	result := r.db.WithContext(ctx).First(&rec, "id = ?", id)
 	if result.Error != nil {
-		return nil, result.Error
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, cmnerrors.ErrUserNotFound
+		}
+		return nil, cmnerrors.ErrDatabaseOperationFailed
 	}
 	return entityFromRecord(rec)
 }
@@ -91,7 +98,10 @@ func (r *GormUserRepository) GetByEmail(ctx context.Context, email valueobjects.
 	var rec userRecord
 	result := r.db.WithContext(ctx).Where("email = ?", email.Value()).First(&rec)
 	if result.Error != nil {
-		return nil, result.Error
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, cmnerrors.ErrUserNotFound
+		}
+		return nil, cmnerrors.ErrDatabaseOperationFailed
 	}
 	return entityFromRecord(rec)
 }
@@ -99,23 +109,35 @@ func (r *GormUserRepository) GetByEmail(ctx context.Context, email valueobjects.
 func (r *GormUserRepository) Update(ctx context.Context, user *entities.User) error {
 	rec := recordFromEntity(user)
 	result := r.db.WithContext(ctx).Save(&rec)
-	return result.Error
+	if result.Error != nil {
+		return cmnerrors.ErrDatabaseOperationFailed
+	}
+	return nil
 }
 
 func (r *GormUserRepository) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&userRecord{}, "id = ?", id)
-	return result.Error
+	if result.Error != nil {
+		return cmnerrors.ErrDatabaseOperationFailed
+	}
+	return nil
 }
 
 func (r *GormUserRepository) ExistsByEmail(ctx context.Context, email valueobjects.Email) (bool, error) {
 	var count int64
 	result := r.db.WithContext(ctx).Model(&userRecord{}).Where("email = ?", email.Value()).Count(&count)
-	return count > 0, result.Error
+	if result.Error != nil {
+		return false, cmnerrors.ErrDatabaseOperationFailed
+	}
+	return count > 0, nil
 }
 
 // ExistsByID checks if user exists by ID
 func (r *GormUserRepository) ExistsByID(ctx context.Context, id string) (bool, error) {
 	var count int64
 	result := r.db.WithContext(ctx).Model(&userRecord{}).Where("id = ?", id).Count(&count)
-	return count > 0, result.Error
+	if result.Error != nil {
+		return false, cmnerrors.ErrDatabaseOperationFailed
+	}
+	return count > 0, nil
 }

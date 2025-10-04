@@ -26,7 +26,8 @@ func NewOrderRepositoryFacade(db *gorm.DB) repository.OrderRepositoryFacade {
 			return NewOrderRepository(db)
 		},
 		outboxRepoFactory: func(db *gorm.DB) repository.OutboxRepository {
-			return outbox.NewGormRepository(db)
+			// Use service-specific outbox table
+			return outbox.NewGormRepositoryWithTable(db, "order_outbox_events")
 		},
 	}
 }

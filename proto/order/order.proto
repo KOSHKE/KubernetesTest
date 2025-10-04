@@ -49,6 +49,8 @@ message CreateOrderRequest {
 message OrderItemRequest {
   string product_id = 1;
   int32 quantity = 2;
+  string product_name = 3;
+  int64 unit_price = 4; // minor units
 }
 
 message CreateOrderResponse {

@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"reflect"
 
 	"ecommerce-platform/pkg/kafkaclient"
 
@@ -28,7 +29,7 @@ type EventConsumer[T proto.Message] struct {
 // NewEventConsumer creates a new generic EventConsumer
 func NewEventConsumer[T proto.Message](
 	bootstrapServers, groupID, autoOffsetReset string,
-	handler EventHandler[T],
+	handler func(ctx context.Context, evt T) error,
 ) (*EventConsumer[T], error) {
 	config := kafkaclient.ConsumerConfig{
 		BootstrapServers: bootstrapServers,
@@ -37,18 +38,15 @@ func NewEventConsumer[T proto.Message](
 	}
 
 	unmarshal := func(data []byte) (T, error) {
-		// Create new instance of T
-		evtPtr := new(T)
-		// Get the underlying type
-		evt := *evtPtr
-		// Unmarshal into the concrete type
-		if err := proto.Unmarshal(data, evt); err != nil {
-			return evt, err
+		var zero T
+		msg := reflect.New(reflect.TypeOf(zero).Elem()).Interface().(T)
+		if err := proto.Unmarshal(data, msg); err != nil {
+			return zero, err
 		}
-		return evt, nil
+		return msg, nil
 	}
 
-	typedConsumer, err := kafkaclient.NewTypedConsumer(config, handler, unmarshal)
+	typedConsumer, err := kafkaclient.NewTypedConsumer(config, EventHandlerFunc[T](handler), unmarshal)
 	if err != nil {
 		return nil, err
 	}

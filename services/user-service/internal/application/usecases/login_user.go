@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"ecommerce-platform/pkg/common/errors"
+	cmnerrors "ecommerce-platform/pkg/common/errors"
 	"ecommerce-platform/pkg/idgenerator"
 	"ecommerce-platform/services/user-service/internal/domain/entities"
 	"ecommerce-platform/services/user-service/internal/domain/ports/repository"
@@ -43,12 +43,15 @@ func (uc *LoginUserUseCase) Execute(ctx context.Context, email, password string)
 	// Find user by email
 	user, err := uc.userRepo.GetByEmail(ctx, emailVO)
 	if err != nil {
+		if err == cmnerrors.ErrUserNotFound {
+			return nil, nil, cmnerrors.ErrInvalidCredentials
+		}
 		return nil, nil, err
 	}
 
 	// Verify password
 	if !user.VerifyPassword(password) {
-		return nil, nil, errors.ErrInvalidCredentials
+		return nil, nil, cmnerrors.ErrInvalidCredentials
 	}
 
 	// Create session - all business logic in use case

@@ -38,14 +38,13 @@ func (s *PBOrderServer) CreateOrder(ctx context.Context, req *orderpb.CreateOrde
 		s.metrics.GRPCRequestTotal(method, status)
 	}()
 
-	// Map proto -> app request
 	items := make([]dto.OrderItemRequest, 0, len(req.Items))
 	for _, it := range req.Items {
 		items = append(items, dto.OrderItemRequest{
 			ProductID:   it.ProductId,
-			ProductName: "", // TODO: get from product service
+			ProductName: it.ProductName,
 			Quantity:    it.Quantity,
-			Price:       0, // TODO: get from product service
+			Price:       it.UnitPrice,
 		})
 	}
 

@@ -124,12 +124,12 @@ func (s *MigrationService) getMigrations() []Migration {
 		},
 		{
 			Version:     2,
-			Description: "Create outbox_events table",
+			Description: "Create order_outbox_events table",
 			Up: func(db *gorm.DB) error {
-				return db.AutoMigrate(&OutboxRecord{})
+				return db.Table("order_outbox_events").AutoMigrate(&OutboxRecord{})
 			},
 			Down: func(db *gorm.DB) error {
-				return db.Migrator().DropTable(&OutboxRecord{})
+				return db.Migrator().DropTable("order_outbox_events")
 			},
 		},
 	}

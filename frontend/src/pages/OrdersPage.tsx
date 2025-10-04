@@ -60,7 +60,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated, user }) => {
         setOrders([]);
         return;
       }
-      const orders = (response.data.data?.orders ?? []) as Order[];
+      const orders = (Array.isArray(response.data?.data) ? response.data.data : []) as Order[];
               orders.forEach((order, index) => {
           order.items?.forEach((item, itemIndex) => {
             // Process order items
@@ -125,24 +125,23 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ isAuthenticated, user }) => {
                       <Stack direction="row" spacing={1} sx={{ mt: 1 }}>{statusChip(order.status)}</Stack>
                     </div>
                     <div style={{ textAlign: 'right' as const }}>
-                      <Typography variant="h6">{formatMoneyMinor((order as any).total_amount?.amount, (order as any).total_amount?.currency)}</Typography>
-                      
+                      <Typography variant="h6">{formatMoneyMinor((order as any).total_amount, (order as any).currency)}</Typography>
                     </div>
                   </Stack>
                   <Typography variant="subtitle1" sx={{ mb: 1 }}>Items:</Typography>
                   <Stack>
-                    {order.items.map(item => (
-                      <Stack key={item.id} direction="row" justifyContent="space-between" sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    {order.items.map((item, itemIndex) => (
+                      <Stack key={`${(item as any).product_id}-${itemIndex}`} direction="row" justifyContent="space-between" sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
                         <div>
-                          <Typography fontWeight={600}>{item.product_name}</Typography>
-                          <Typography color="text.secondary">{formatMoneyMinor((item as any).price?.amount, (item as any).price?.currency)} × {item.quantity}</Typography>
+                          <Typography fontWeight={600}>{(item as any).product_name || (item as any).product_id}</Typography>
+                          <Typography color="text.secondary">{formatMoneyMinor((item as any).unit_price ?? (item as any).price?.amount ?? 0, (order as any).currency)} × {item.quantity}</Typography>
                         </div>
-                        <Typography fontWeight={700}>{formatMoneyMinor((item as any).total?.amount, (item as any).total?.currency)}</Typography>
+                        <Typography fontWeight={700}>{formatMoneyMinor(((item as any).unit_price ?? (item as any).price?.amount ?? 0) * item.quantity, (order as any).currency)}</Typography>
                       </Stack>
                     ))}
                   </Stack>
                   <Typography sx={{ mt: 2 }}><strong>Shipping Address:</strong></Typography>
-                  <Typography color="text.secondary">{order.shipping_address}</Typography>
+                  <Typography color="text.secondary">{(order as any).shipping_address?.address || String((order as any).shipping_address || '')}</Typography>
                 </CardContent>
               </Card>
             </Grid>

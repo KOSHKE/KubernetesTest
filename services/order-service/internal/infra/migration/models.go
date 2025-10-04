@@ -14,6 +14,11 @@ type MigrationRecord struct {
 	AppliedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
+// TableName returns dedicated table name for order-service migrations to avoid conflicts
+func (MigrationRecord) TableName() string {
+	return "order_migration_records"
+}
+
 // OrderRecord is a GORM model for orders
 type OrderRecord struct {
 	ID              string    `gorm:"primaryKey;type:varchar(255)"`
